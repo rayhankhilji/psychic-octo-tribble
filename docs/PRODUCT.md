@@ -11,7 +11,7 @@ It's connected to real metrics and never pretends. The city illustrates the numb
 ## Why it might sell
 
 - **It's personal.** It's tied to the thing the buyer cares about most right now.
-- **It's shareable by design.** *"I connected my startup to TinyTown. Every customer is a resident and my company is now a little night-time city."* That clip is the ad, and other founders see the product before they visit the site.
+- **It's shareable by design.** *"I connected my startup to TinyTown. Every customer is a resident and my company is now a little sunny city by the bay."* That clip is the ad, and other founders see the product before they visit the site.
 - **It's delightful.** Founders pay for things that make the grind feel good.
 
 The commercial hypothesis is simple, and it's untested: enough founders value the delight enough to pay for it month after month.
@@ -20,7 +20,7 @@ The commercial hypothesis is simple, and it's untested: enough founders value th
 
 | | v0 (this repo) | Next |
 | --- | --- | --- |
-| World | One art direction, *Midnight Valley*: a late-night Silicon Valley town with warm windows, neon offices and an elevated train | More hand-made detail before any second theme |
+| World | One art direction, *Golden Coast*: a sunny San Francisco–Los Angeles hybrid with a bay, bridge, pier, beach and a TINYTOWN sign on the hill, on a day/night cycle that follows the viewer's local clock | More hand-made detail before any second theme |
 | Integrations | Stripe (customers, MRR, full history), GitHub (releases, commits) | PostHog (active users), Supabase (signups) |
 | Events | First customer, every join and churn, MRR milestones, releases, pushes, rough weeks | Founder-defined milestones ("first enterprise deal") |
 | Social | Snapshot PNG, metrics hidden by default | Public world page, 15-second growth recap video |

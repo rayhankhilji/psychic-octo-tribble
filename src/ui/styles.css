@@ -172,6 +172,41 @@ input:focus-visible {
   padding: 6px;
 }
 
+/* ── Clock ───────────────────────────────────────────────── */
+
+.clock-wrap {
+  padding: 6px;
+}
+
+.btn.clock {
+  height: 40px;
+  border: none;
+  background: transparent;
+  gap: 9px;
+  padding: 0 10px 0 8px;
+}
+
+.btn.clock svg {
+  width: 20px;
+  height: 20px;
+}
+
+.clock-text {
+  display: grid;
+  text-align: left;
+  line-height: 1.15;
+}
+
+.clock-text b {
+  font: 700 14px/1.1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+
+.clock-text small {
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+
 /* ── Metrics ─────────────────────────────────────────────── */
 
 .left {
@@ -708,7 +743,8 @@ pre {
     display: none;
   }
 
-  .brand-sub {
+  .brand-sub,
+  .clock-text small {
     display: none;
   }
 }

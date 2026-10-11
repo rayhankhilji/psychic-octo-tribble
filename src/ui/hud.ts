@@ -12,6 +12,12 @@ const ICONS = {
   replay: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 8a5 5 0 1 0 1.6-3.7"/><path d="M3 2.5v3h3"/></svg>',
 };
 
+const CLOCK_ICONS = {
+  sun: '<svg viewBox="0 0 16 16" fill="none" stroke="#ffc24a" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3" fill="#ffc24a"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg>',
+  set: '<svg viewBox="0 0 16 16" fill="none" stroke="#ff8a4a" stroke-width="1.5" stroke-linecap="round"><path d="M4 11a4 4 0 0 1 8 0" fill="#ff8a4a"/><path d="M1.5 11h13M3 13.5h10M8 3v2M3.2 5.6l1.2 1M12.8 5.6l-1.2 1"/></svg>',
+  moon: '<svg viewBox="0 0 16 16"><path d="M10.5 2a6 6 0 1 0 3.5 10.7A5 5 0 0 1 10.5 2z" fill="#c9d4ff"/></svg>',
+};
+
 const LEGEND_ICONS = {
   home: '<svg viewBox="0 0 16 16"><path d="M3 8 8 4l5 4v5H3z" fill="#d8c3a0"/><path d="M2 8.5 8 3.5l6 5" stroke="#6a3e3c" stroke-width="1.8" fill="none"/><rect x="6" y="9" width="2" height="2" fill="#ffb347"/></svg>',
   district: '<svg viewBox="0 0 16 16"><rect x="3" y="4" width="4" height="10" fill="#353c5e"/><rect x="8" y="1.5" width="5" height="12.5" fill="#2b3150"/><rect x="8" y="3" width="5" height="1" fill="#ff3fa4"/><rect x="4" y="6" width="1" height="1" fill="#ffb347"/><rect x="10" y="6" width="1" height="1" fill="#4ff2ff"/><rect x="10" y="9" width="1" height="1" fill="#4ff2ff"/></svg>',
@@ -41,6 +47,7 @@ export interface HudHandlers {
   onResetView(): void;
   onShare(): void;
   onRename(name: string): void;
+  onCycleTime(): void;
 }
 
 export class Hud {
@@ -49,6 +56,7 @@ export class Hud {
   private metricValues = new Map<string, { value: HTMLElement; delta: HTMLElement }>();
   private milestonesEl: HTMLElement;
   private feedEl: HTMLElement;
+  private clockBtn: HTMLButtonElement;
   private noticeEl: HTMLElement;
   private dateEl: HTMLElement;
   private scrub: HTMLInputElement;
@@ -80,7 +88,10 @@ export class Hud {
       this.button(`${ICONS.plug}<span class="label">Connect</span>`, 'Connect your startup', () => this.connect.showModal()),
       this.button(`${ICONS.share}<span class="label">Share</span>`, 'Share a snapshot', () => h.onShare(), 'primary'),
     );
-    top.append(brand, tools);
+    this.clockBtn = this.button('', 'Time of day: follows your local clock. Click to preview other times.', () => h.onCycleTime(), 'clock');
+    const clock = el('div', { class: 'clock-wrap panel' });
+    clock.append(this.clockBtn);
+    top.append(brand, clock, tools);
 
     // Metrics (real numbers, always)
     const side = el('div', { class: 'side' });
@@ -95,7 +106,7 @@ export class Hud {
     side.append(metrics);
 
     // Legend
-    const legend = el('details', { class: 'legend panel', open: '' });
+    const legend = el('details', { class: 'legend panel' });
     legend.innerHTML = `
       <summary><div class="eyebrow"><span>How to read your city</span><span>▾</span></div></summary>
       <ul>
@@ -104,7 +115,7 @@ export class Hud {
         <li><span class="swatch">${LEGEND_ICONS.hq}</span><span><b>HQ</b> gains a floor for each GitHub release. The beacon flares on every push.</span></li>
         <li><span class="swatch">${LEGEND_ICONS.train}</span><span><b>The train</b> runs faster the more you shipped this week.</span></li>
         <li><span class="swatch">${LEGEND_ICONS.rain}</span><span><b>Rain</b> starts when MRR falls more than 1% in a week, and clears when the week is back to flat or up.</span></li>
-        <li><span class="swatch">${LEGEND_ICONS.dark}</span><span><b>Dark windows</b> in a district: MRR has slipped below its milestone.</span></li>
+        <li><span class="swatch">${LEGEND_ICONS.dark}</span><span><b>A district dark after sunset</b>: MRR has slipped below its milestone.</span></li>
       </ul>`;
     this.milestonesEl = legend.querySelector('.milestones')!;
 
@@ -188,6 +199,17 @@ export class Hud {
       .join('');
     const rph = document.querySelector('.legend .rph');
     if (rph) rph.textContent = residentsPerHome > 1 ? `Your town is full, so each home now houses ${residentsPerHome} customers.` : '';
+  }
+
+  /** Shows the world's time of day; `preview` is the label when not following the local clock. */
+  setClock(hour: number, phase: string, preview: string | null) {
+    const h = Math.floor(hour);
+    const m = Math.floor((hour - h) * 60);
+    const time = new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const icon = phase === 'night' || phase === 'dusk' ? CLOCK_ICONS.moon : phase === 'evening' || phase === 'dawn' ? CLOCK_ICONS.set : CLOCK_ICONS.sun;
+    const label = phase[0]!.toUpperCase() + phase.slice(1);
+    const html = `${icon}<span class="clock-text"><b>${time}</b><small>${preview ? `Preview · ${preview}` : `${label} · local time`}</small></span>`;
+    if (this.clockBtn.innerHTML !== html) this.clockBtn.innerHTML = html;
   }
 
   setPlaying(playing: boolean) {

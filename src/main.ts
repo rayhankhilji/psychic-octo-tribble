@@ -5,6 +5,7 @@ import { describe, diffMoments, type Moment } from './world/events.ts';
 import { momentsOf } from './world/history.ts';
 import { planWorld } from './world/layout.ts';
 import { hash } from './world/rng.ts';
+import { parseHour } from './world/daylight.ts';
 import { City } from './render/city.ts';
 import { Stage } from './render/stage.ts';
 import { Hud } from './ui/hud.ts';
@@ -18,6 +19,14 @@ const POLL_MS = 60_000;
 const NAME_KEY = 'tinytown:name';
 
 const params = new URLSearchParams(location.search);
+
+/** Click-through previews for the clock chip; null = follow the local clock. */
+const TIME_PREVIEWS: { label: string; hour: number }[] = [
+  { label: 'Morning', hour: 8.5 },
+  { label: 'Midday', hour: 13 },
+  { label: 'Golden hour', hour: 18.5 },
+  { label: 'Night', hour: 22.5 },
+];
 
 function storedName(): string | null {
   try {
@@ -55,11 +64,18 @@ class App {
   private stage: Stage;
   private hud: Hud;
   private seed: number;
+  private preview: { label: string; hour: number } | null = null;
+  private clockTimer = 0;
 
   constructor(timeline: Timeline, notice?: string) {
     const name = storedName() || timeline.name;
     this.seed = hash(name);
     this.city = new City(name, this.seed);
+    const fixed = parseHour(params.get('time'));
+    if (fixed !== null) {
+      this.city.targetHour = fixed;
+      this.preview = { label: params.get('time')!, hour: fixed };
+    }
     this.stage = new Stage(document.getElementById('world')!, this.city);
     this.hud = new Hud(document.getElementById('ui')!, {
       onTogglePlay: () => this.setPlaying(!this.playing),
@@ -75,6 +91,12 @@ class App {
       onRotate: () => this.stage.rotate(1),
       onResetView: () => this.stage.resetView(),
       onShare: () => this.share(),
+      onCycleTime: () => {
+        const i = this.preview ? TIME_PREVIEWS.findIndex((p) => p.label === this.preview!.label) : -1;
+        this.preview = i + 1 < TIME_PREVIEWS.length ? TIME_PREVIEWS[i + 1]! : null;
+        this.city.targetHour = this.preview?.hour ?? null;
+        this.refreshClock();
+      },
       onRename: (n) => {
         try {
           if (n) localStorage.setItem(NAME_KEY, n);
@@ -86,7 +108,14 @@ class App {
       },
     });
     this.stage.onHover = (tip, x, y) => this.hud.showTip(tip, x, y);
-    this.stage.onFrame = (dt) => this.tick(dt);
+    this.stage.onFrame = (dt) => {
+      this.tick(dt);
+      this.clockTimer -= dt;
+      if (this.clockTimer <= 0) {
+        this.clockTimer = 0.25;
+        this.refreshClock();
+      }
+    };
 
     this.load({ ...timeline, name });
     if (notice) this.hud.notice(notice);
@@ -94,8 +123,14 @@ class App {
     if (timeline.source === 'demo' || params.has('replay')) this.replay();
     else this.show(this.last, false);
     this.stage.start();
+    this.refreshClock();
 
     if (timeline.source === 'live') window.setInterval(() => this.poll(), POLL_MS);
+  }
+
+  private refreshClock() {
+    const a = this.city.atmosphere;
+    this.hud.setClock(this.preview ? this.preview.hour : a.hour, a.phase, this.preview?.label ?? null);
   }
 
   private get last() {

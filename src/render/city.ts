@@ -1,8 +1,10 @@
 import * as THREE from 'three';
-import { disposeGroup, GeoBuilder } from './geo.ts';
+import { disposeGroup, GeoBuilder, GLOW, glowMaterial } from './geo.ts';
 import { PALETTE } from './palette.ts';
 import { district, headquarters, home, neighbourhoodGrounds, tree, type Built, type HQ } from './buildings.ts';
 import { Fireworks, Rain, Traffic, Train, type Run } from './effects.ts';
+import { Scenery } from './scenery.ts';
+import { atmosphereAt, localHour, type Atmosphere } from '../world/daylight.ts';
 import { hash, rng } from '../world/rng.ts';
 import {
   BLOCK,
@@ -39,7 +41,7 @@ interface Fade {
 }
 
 const HALF = RADIUS * PITCH + BLOCK / 2 + 1; // outer edge of the outermost road
-const PLATE = HALF + 4;
+const SHADOW_SPAN = 42;
 
 const easeOutBack = (t: number) => 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2;
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
@@ -71,74 +73,50 @@ export class City {
   private fades = new Set<Fade>();
   private homeFades = new Map<string, Fade>();
   private beaconLevel = 0;
-  private moon: THREE.DirectionalLight;
+  private sun: THREE.DirectionalLight;
   private hemi: THREE.HemisphereLight;
+  private warm: THREE.PointLight;
+  private scenery: Scenery;
+  private wilds: THREE.Group | null = null;
+  private pools: THREE.MeshBasicMaterial | null = null;
   private plan: WorldPlan | null = null;
+  /** Local hour shown, eased toward `targetHour`. */
+  private hour = localHour();
+  /** Fixed hour to show, or null to follow the local clock. */
+  targetHour: number | null = null;
+  atmosphere: Atmosphere = atmosphereAt(this.hour);
 
   constructor(name: string, seed = 1) {
     this.name = name;
     this.seed = seed;
-    this.scene.fog = new THREE.Fog(PALETTE.fog, 60, 140);
+    this.scene.fog = new THREE.Fog(0xd6ebf7, 115, 230);
+    this.scene.background = new THREE.Color(0xd6ebf7);
 
-    this.hemi = new THREE.HemisphereLight(0x8a9ce0, 0x2a1d33, 1.6);
-    this.moon = new THREE.DirectionalLight(0xb9c8ff, 1.9);
-    this.moon.position.set(-22, 34, 14);
-    this.moon.castShadow = true;
-    this.moon.shadow.mapSize.set(2048, 2048);
-    const sc = this.moon.shadow.camera;
-    sc.left = sc.bottom = -PLATE;
-    sc.right = sc.top = PLATE;
+    this.hemi = new THREE.HemisphereLight(0xcde6ff, 0x7a9a5e, 1.5);
+    this.sun = new THREE.DirectionalLight(0xfff6e6, 3);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(4096, 4096);
+    const sc = this.sun.shadow.camera;
+    sc.left = sc.bottom = -SHADOW_SPAN;
+    sc.right = sc.top = SHADOW_SPAN;
     sc.near = 1;
-    sc.far = 90;
-    this.moon.shadow.bias = -0.0006;
-    this.moon.shadow.normalBias = 0.02;
-    const warm = new THREE.PointLight(0xffb070, 18, 9, 1.6);
-    warm.position.set(0, 2.5, 0);
-    this.scene.add(this.hemi, this.moon, warm, new THREE.AmbientLight(0x30365a, 0.6));
+    sc.far = 160;
+    this.sun.shadow.bias = -0.0004;
+    this.sun.shadow.normalBias = 0.03;
+    this.sun.target.position.set(0, 0, -6);
+    this.warm = new THREE.PointLight(0xffb070, 0, 9, 1.6);
+    this.warm.position.set(0, 2.5, 0);
+    this.scene.add(this.hemi, this.sun, this.sun.target, this.warm);
 
-    this.scene.add(this.plate(), this.roadLayer, this.fireworks.object, this.rain.object, this.train.object, this.traffic.object);
-    this.scene.add(this.outskirts());
-  }
-
-  // ─── Static scenery ─────────────────────────────────────────────────────
-
-  private plate(): THREE.Group {
-    const g = new THREE.Group();
-    const top = new THREE.MeshStandardMaterial({ color: PALETTE.grass, roughness: 1 });
-    const side = new THREE.MeshStandardMaterial({ color: PALETTE.earth, roughness: 1, flatShading: true });
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(PLATE * 2, 1.4, PLATE * 2), [side, side, top, side, side, side]);
-    slab.position.y = -0.7;
-    slab.receiveShadow = true;
-    const base = new THREE.Mesh(
-      new THREE.BoxGeometry(PLATE * 2 - 0.6, 0.8, PLATE * 2 - 0.6),
-      new THREE.MeshStandardMaterial({ color: PALETTE.earthDark, roughness: 1 }),
-    );
-    base.position.y = -1.8;
-    g.add(slab, base);
-    return g;
-  }
-
-  /** Trees and a river between the city limits and the edge of the world. */
-  private outskirts(): THREE.Group {
-    const r = rng(hash(this.seed, 'outskirts'));
-    const b = new GeoBuilder();
-    for (let i = 0; i < 140; i++) {
-      const edge = Math.floor(r() * 4);
-      const along = (r() - 0.5) * (PLATE * 2 - 1.5);
-      const depth = HALF + 0.6 + r() * (PLATE - HALF - 1.2);
-      const [x, z] = edge === 0 ? [along, depth] : edge === 1 ? [along, -depth] : edge === 2 ? [depth, along] : [-depth, along];
-      if (Math.abs(Math.abs(x) - (HALF + 1.6)) < 0.5 || Math.abs(Math.abs(z) - (HALF + 1.6)) < 0.5) continue; // train pillars
-      tree(b, r, x, z, 1 + r() * 0.5);
-    }
-    const g = b.build().group;
-    return g;
+    this.scenery = new Scenery(seed);
+    this.scene.add(this.scenery.object, this.roadLayer, this.fireworks.object, this.rain.object, this.train.object, this.traffic.object);
   }
 
   // ─── Reconciliation ─────────────────────────────────────────────────────
 
   setPlan(plan: WorldPlan, animate: boolean) {
     this.plan = plan;
-    this.syncRoads(plan.activeBlocks);
+    this.syncRoads(plan.activeBlocks, plan.districts.find((d) => !d.unlocked));
     this.syncHQ(plan.hqFloors, animate);
     this.syncNeighbourhoods(plan, animate);
     this.syncHomes(plan, animate);
@@ -189,6 +167,7 @@ export class City {
     } satisfies Tip;
     this.scene.add(hq.group);
     this.pickables.push(hq.group);
+    this.track(hq, 1, 1);
     if (prev) this.remove(prev.group, false);
     if (animate) {
       const from = prev ? prev.height / hq.height : 0.0001;
@@ -287,8 +266,8 @@ export class City {
     }
   }
 
-  private syncRoads(blocks: BlockCoord[]) {
-    const key = blocks.map((b) => `${b.bx},${b.bz}`).sort().join(';');
+  private syncRoads(blocks: BlockCoord[], teaser?: BlockCoord) {
+    const key = blocks.map((b) => `${b.bx},${b.bz}`).sort().join(';') + `|${teaser?.bx},${teaser?.bz}`;
     if (key === this.roadsKey) return;
     this.roadsKey = key;
     for (const child of [...this.roadLayer.children]) {
@@ -298,6 +277,7 @@ export class City {
 
     const { cells, runs } = roadNetwork(blocks);
     this.traffic.setRoads(runs);
+    this.syncWilds(blocks, teaser);
 
     const asphalt = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 0.02, 1),
@@ -318,14 +298,22 @@ export class City {
     );
     const heads = new THREE.InstancedMesh(
       new THREE.IcosahedronGeometry(0.05, 0).translate(0, 0.62, 0),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(...PALETTE.lamp) }),
+      glowMaterial({ color: new THREE.Color(...PALETTE.lamp) }),
       lampSpots.length,
     );
     const pools = new THREE.InstancedMesh(
       new THREE.PlaneGeometry(1.8, 1.8).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ map: glowTexture(), color: 0xffb066, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }),
+      (this.pools = new THREE.MeshBasicMaterial({ map: glowTexture(), color: 0xffb066, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })),
       lampSpots.length,
     );
+    // Zebra crossings on every side of every junction
+    const zebra = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(0.2, 0.06).rotateX(-Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: PALETTE.roadLine, roughness: 0.8 }),
+      lampSpots.length * 24,
+    );
+    zebra.receiveShadow = true;
+    let zi = 0;
 
     const m = new THREE.Matrix4();
     let dashCount = 0;
@@ -337,13 +325,47 @@ export class City {
       }
     });
     dashes.count = dashCount;
+    const zm = new THREE.Matrix4();
+    for (const c of lampSpots) {
+      for (const side of [-1, 1]) {
+        for (let k = 0; k < 6; k++) {
+          const off = -0.3 + k * 0.12;
+          zebra.setMatrixAt(zi++, zm.makeTranslation(c.x + side * 0.38, 0.023, c.z + off));
+          zebra.setMatrixAt(zi++, zm.makeRotationY(Math.PI / 2).setPosition(c.x + off, 0.023, c.z + side * 0.38));
+        }
+      }
+    }
+    zebra.count = zi;
     lampSpots.forEach((c, i) => {
       poles.setMatrixAt(i, m.makeTranslation(c.x + 0.42, 0, c.z + 0.42));
       heads.setMatrixAt(i, m.makeTranslation(c.x + 0.42, 0, c.z + 0.42));
       pools.setMatrixAt(i, m.makeTranslation(c.x + 0.3, 0.03, c.z + 0.3));
     });
     poles.castShadow = true;
-    this.roadLayer.add(asphalt, dashes, poles, heads, pools);
+    this.roadLayer.add(asphalt, dashes, zebra, poles, heads, pools);
+  }
+
+  /** Undeveloped blocks inside city limits: meadow and trees, waiting for growth. */
+  private syncWilds(blocks: BlockCoord[], teaser?: BlockCoord) {
+    if (this.wilds) {
+      this.scene.remove(this.wilds);
+      disposeGroup(this.wilds);
+    }
+    const taken = new Set(blocks.map((b) => `${b.bx},${b.bz}`));
+    if (teaser) taken.add(`${teaser.bx},${teaser.bz}`);
+    const b = new GeoBuilder();
+    for (let bx = -RADIUS; bx <= RADIUS; bx++) {
+      for (let bz = -RADIUS; bz <= RADIUS; bz++) {
+        if (taken.has(`${bx},${bz}`)) continue;
+        const r = rng(hash(this.seed, 'wild', bx, bz));
+        const c = blockCentre({ bx, bz });
+        const n = 7 + Math.floor(r() * 6);
+        for (let i = 0; i < n; i++) tree(b, r, c.x + (r() - 0.5) * 3.6, c.z + (r() - 0.5) * 3.6, 1.1);
+      }
+    }
+    this.wilds = b.build().group;
+    this.wilds.traverse((o) => (o.receiveShadow = true));
+    this.scene.add(this.wilds);
   }
 
   // ─── Animation plumbing ─────────────────────────────────────────────────
@@ -411,18 +433,39 @@ export class City {
       this.hq.beacon.color.setRGB(0.4, 1.9, 2.0).multiplyScalar(beat + this.beaconLevel);
     }
 
-    // Weather dims the moon and thickens the air.
-    const wet = this.rain.intensity;
-    this.moon.intensity = 1.9 - wet * 1.1;
-    this.hemi.intensity = 1.6 - wet * 0.6;
-    const fog = this.scene.fog as THREE.Fog;
-    fog.color.lerpColors(new THREE.Color(PALETTE.fog), new THREE.Color(PALETTE.fogRain), wet);
-    fog.near = 60 - wet * 25;
-
+    this.updateSky(dt, time);
     this.rain.update(dt);
     this.fireworks.update(dt);
     this.train.update(dt);
     this.traffic.update(dt);
+    this.scenery.update(dt, time, this.atmosphere.night);
+  }
+
+  /** Sun, sky and lights for the current hour (local clock unless overridden). */
+  private updateSky(dt: number, _time: number) {
+    const target = this.targetHour ?? localHour();
+    // Ease forward along the clock so previews sweep through the day instead of cutting.
+    let delta = (((target - this.hour) % 24) + 24) % 24;
+    if (delta > 12) delta -= 24;
+    this.hour = Math.abs(delta) < 0.01 ? target : (this.hour + delta * Math.min(1, dt * 2.2) + 24) % 24;
+
+    const a = (this.atmosphere = atmosphereAt(this.hour, this.rain.intensity));
+    const [lx, ly, lz] = a.lightDir;
+    this.sun.position.set(lx * 70, ly * 70 - 6, lz * 70).add(this.sun.target.position);
+    this.sun.color.setRGB(...a.lightColor);
+    this.sun.intensity = a.lightIntensity;
+    this.hemi.color.setRGB(...a.skyColor);
+    this.hemi.groundColor.setRGB(...a.groundColor);
+    this.hemi.intensity = a.hemiIntensity;
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.setRGB(...a.fog);
+    fog.near = 115 - this.rain.intensity * 12;
+    fog.far = 230 - this.rain.intensity * 50;
+    (this.scene.background as THREE.Color).setRGB(...a.fog);
+    GLOW.night.value = a.night;
+    if (this.pools) this.pools.opacity = 0.45 * a.night;
+    if (this.hq) this.hq.sign.color.setScalar(1 + 1.2 * a.night);
+    this.warm.intensity = 8 * a.night;
   }
 }
 

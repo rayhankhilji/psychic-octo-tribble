@@ -4,7 +4,18 @@
 
 It isn't a dashboard and it isn't a chatbot. It's something you've built, shown as a small world.
 
-![A grown TinyTown at night: neighbourhoods of homes ringing a neon downtown and a glowing HQ tower](docs/images/city.png)
+The world is **Golden Coast**, a sunny cross between San Francisco and Los Angeles: painted-lady terraces and Spanish stucco under terracotta roofs, palms, glass towers, a red suspension bridge over the bay, a pier with a Ferris wheel, a beach, and a **TINYTOWN** sign on the hill behind it all.
+
+![A grown TinyTown at midday: neighbourhoods around a glass downtown, with the bay, bridge, pier, beach and the TINYTOWN sign on the hill](docs/images/city.png)
+
+## Day and night
+
+The sun follows **your local clock**. Mornings are soft, middays are bright, golden hour is long, and at night the windows, street lamps, neon, bridge lights and the floodlit sign come on. The chip next to your startup's name shows the time; click it to preview morning, midday, golden hour and night, then click again to go back to live. Add `?time=19:30` (or `7pm`) to the URL to pin a time, which is handy for recording.
+
+<p>
+  <img src="docs/images/evening.png" width="49%" alt="Golden hour: warm low sun, long shadows, golden hills">
+  <img src="docs/images/night.png" width="49%" alt="Night: lit windows, street lamps and the floodlit TINYTOWN sign">
+</p>
 
 ## Try it
 
@@ -23,18 +34,18 @@ The world is a pure function of your numbers. The panel on the left always shows
 | --- | --- | --- |
 | A home | One paying customer. Ten homes make a neighbourhood. When all 400 lots are full, homes become townhouses and then apartments, and the legend tells you how many customers each one houses. | Stripe |
 | A new district | MRR reached a milestone: first revenue, $1k, $5k, $10k, $25k, $50k, $100k, $1M. | Stripe |
-| Dark windows in a district | MRR has dropped back below that district's milestone. Districts you've earned stay built. | Stripe |
+| A district that stays dark after sunset | MRR has dropped back below that district's milestone. Districts you've earned stay built. | Stripe |
 | A fenced lot with a crane | The next milestone. Hover over it to see the target. | — |
 | HQ floors | One floor per GitHub release, plus fireworks on release day. | GitHub |
 | The beacon flaring, the train sprinting | Commits pushed. The train's cruising speed follows your last 7 days of commits. | GitHub |
-| Rain | MRR fell more than 1% over the trailing week. It clears once the week is flat or up. | Stripe |
+| Rain and overcast skies | MRR fell more than 1% over the trailing week. It clears once the week is flat or up. | Stripe |
 | Cars on the road | Traffic grows with your customer count. | Stripe |
 
 TinyTown never shows fictional progress. Nothing in the city grows unless one of these numbers changed.
 
 <p>
-  <img src="docs/images/early.png" width="49%" alt="Day 95: HQ, Market Street and the first two neighbourhoods">
-  <img src="docs/images/rain.png" width="49%" alt="Rain falling over the city during a week when MRR dropped">
+  <img src="docs/images/early.png" width="49%" alt="Day 161: HQ, the first districts and two neighbourhoods of Spanish and modern homes with pools">
+  <img src="docs/images/rain.png" width="49%" alt="An overcast, rainy afternoon during a week when MRR dropped">
 </p>
 
 ## Connect your startup
@@ -94,7 +105,7 @@ npm run typecheck
 
 From [the product thesis](docs/PRODUCT.md), in priority order:
 
-1. **Ship one world exquisitely.** More hand-made detail in Midnight Valley, sound, and celebration moments people want to record.
+1. **Ship one world exquisitely.** More hand-made detail in Golden Coast, sound, and celebration moments people want to record.
 2. **Public world page.** An opt-in URL for your city, with metrics hidden by default.
 3. **Growth recap video.** Export the replay as a 15-second clip for posting.
 4. **PostHog** (active users become people on the streets) and **Supabase** (signups).

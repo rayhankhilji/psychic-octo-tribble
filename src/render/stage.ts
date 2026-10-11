@@ -4,14 +4,13 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { PALETTE } from './palette.ts';
 import type { City, Tip } from './city.ts';
 import { PITCH } from '../world/layout.ts';
 
 /** Isometric: looking down 35.26° from the horizontal. */
 const ISO_POLAR = Math.acos(1 / Math.sqrt(3));
 const VIEW = 26;
-const LIMIT = 24;
+const LIMIT = 40;
 
 /**
  * Renderer, camera and input. Orthographic isometric camera; drag to pan,
@@ -46,8 +45,6 @@ export class Stage {
     this.renderer.toneMappingExposure = 1.15;
     host.appendChild(this.renderer.domElement);
 
-    city.scene.background = skyTexture();
-
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400);
     this.camera.position.set(60, 60, 60);
     this.camera.zoom = 2.2;
@@ -57,7 +54,7 @@ export class Stage {
     this.controls.dampingFactor = 0.08;
     this.controls.screenSpacePanning = true;
     this.controls.minPolarAngle = this.controls.maxPolarAngle = ISO_POLAR;
-    this.controls.minZoom = 0.6;
+    this.controls.minZoom = 0.4;
     this.controls.maxZoom = 8;
     this.controls.zoomToCursor = true;
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
@@ -104,7 +101,7 @@ export class Stage {
   /** Back to the overview that frames the whole developed city. */
   resetView() {
     this.userZoomed = false;
-    this.controls.target.set(0, 0, 0);
+    this.controls.target.copy(this.framingTarget());
     const d = this.camera.position.clone().sub(this.controls.target).length();
     const az = Math.PI / 4;
     this.camera.position.set(Math.sin(az) * Math.sin(ISO_POLAR) * d, Math.cos(ISO_POLAR) * d, Math.cos(az) * Math.sin(ISO_POLAR) * d);
@@ -131,14 +128,21 @@ export class Stage {
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
   }
 
-  /** Zoom that comfortably frames a city reaching `reach` blocks from HQ. */
+  /** Zoom that frames the developed city plus some coast and hills around it. */
   private framingZoom(): number {
-    const side = (this.city.reach * 2 + 1) * PITCH + 1;
+    const reach = this.city.reach;
+    const side = (reach * 2 + 1) * PITCH + 5 + reach * 4.5;
     const aspect = this.host.clientWidth / Math.max(1, this.host.clientHeight);
     // A square of side s, seen isometrically, is s·√2 wide and s·√2·sin(35.26°) tall.
-    const fitWidth = (VIEW * aspect) / (side * Math.SQRT2 * 1.08);
-    const fitHeight = VIEW / (side * 0.8165 * 1.25 + 5);
-    return THREE.MathUtils.clamp(Math.min(fitWidth, fitHeight), 0.7, 3.2);
+    const fitWidth = (VIEW * aspect) / (side * Math.SQRT2 * 1.02);
+    const fitHeight = VIEW / (side * 0.8165 * 1.1 + 4);
+    return THREE.MathUtils.clamp(Math.min(fitWidth, fitHeight), 0.45, 3.2);
+  }
+
+  /** Where the overview looks: drifts toward the hills as the city grows so the sign stays in shot. */
+  private framingTarget(): THREE.Vector3 {
+    const k = Math.min(1, (this.city.reach - 1) / 2);
+    return new THREE.Vector3(-3.5 * k, 0, -7.5 * k);
   }
 
   start() {
@@ -169,10 +173,18 @@ export class Stage {
       const target = this.framingZoom();
       this.camera.zoom += (target - this.camera.zoom) * Math.min(1, dt * 1.5);
       this.camera.updateProjectionMatrix();
+      const focus = this.framingTarget();
+      const step = focus.sub(this.controls.target).multiplyScalar(Math.min(1, dt * 1.5));
+      this.controls.target.add(step);
+      this.camera.position.add(step);
     }
 
     this.controls.update();
     this.city.update(dt, time);
+    const a = this.city.atmosphere;
+    this.bloom.strength = a.bloom;
+    this.bloom.threshold = 0.92 + (1 - a.night) * 0.25;
+    this.renderer.toneMappingExposure = a.exposure;
     this.onFrame(dt);
 
     if (this.pointerDirty) {
@@ -197,51 +209,4 @@ export class Stage {
     out.getContext('2d')!.drawImage(src, 0, 0);
     return out;
   }
-}
-
-function skyTexture(): THREE.Texture {
-  const c = document.createElement('canvas');
-  c.width = 1024;
-  c.height = 1024;
-  const ctx = c.getContext('2d')!;
-  const g = ctx.createLinearGradient(0, 0, 0, c.height);
-  g.addColorStop(0, PALETTE.skyTop);
-  g.addColorStop(0.55, PALETTE.skyMid);
-  g.addColorStop(1, PALETTE.skyHorizon);
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, c.width, c.height);
-
-  // Stars, denser toward the top
-  let seed = 3;
-  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < 700; i++) {
-    const y = r() ** 1.6 * c.height * 0.85;
-    const a = 0.25 + r() * 0.75 * (1 - y / c.height);
-    ctx.fillStyle = `rgba(255,255,255,${a.toFixed(2)})`;
-    const s = r() < 0.08 ? 2 : 1;
-    ctx.fillRect(r() * c.width, y, s, s);
-  }
-
-  // Moon with a soft halo, upper left (where the moonlight comes from)
-  const mx = c.width * 0.16;
-  const my = c.height * 0.14;
-  const halo = ctx.createRadialGradient(mx, my, 0, mx, my, 140);
-  halo.addColorStop(0, 'rgba(200,215,255,0.35)');
-  halo.addColorStop(1, 'rgba(200,215,255,0)');
-  ctx.fillStyle = halo;
-  ctx.fillRect(mx - 140, my - 140, 280, 280);
-  ctx.fillStyle = '#f2f0e6';
-  ctx.beginPath();
-  ctx.arc(mx, my, 26, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(160,170,200,0.25)';
-  for (const [dx, dy, rr] of [[-8, -6, 6], [9, 7, 4], [3, -12, 3]]) {
-    ctx.beginPath();
-    ctx.arc(mx + dx!, my + dy!, rr!, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
 }

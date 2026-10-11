@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GeoBuilder } from './geo.ts';
+import { GeoBuilder, glowMaterial } from './geo.ts';
 import { PALETTE } from './palette.ts';
 import { bright } from './buildings.ts';
 import { rng } from '../world/rng.ts';
@@ -173,7 +173,7 @@ export class Train {
 
     // Track: a beam on pillars
     const beam = new THREE.TubeGeometry(this.curve, 240, 0.09, 4, true);
-    const track = new THREE.Mesh(beam, new THREE.MeshStandardMaterial({ color: 0x5a5d72, roughness: 0.6, flatShading: true }));
+    const track = new THREE.Mesh(beam, new THREE.MeshStandardMaterial({ color: 0xc9c6bd, roughness: 0.6, flatShading: true }));
     track.castShadow = true;
     track.position.y = -0.06;
     this.object.add(track);
@@ -181,7 +181,7 @@ export class Train {
     const length = this.curve.getLength();
     for (let d = 0; d < length; d += 2.4) {
       const p = this.curve.getPointAt(d / length);
-      pillars.box(0.12, height - 0.12, 0.12, p.x, 0, p.z, 0x4a4c5e);
+      pillars.box(0.12, height - 0.12, 0.12, p.x, 0, p.z, 0xb9b5ab);
     }
     this.object.add(pillars.build().group);
 
@@ -191,9 +191,10 @@ export class Train {
 
   private car(lead: boolean): THREE.Group {
     const b = new GeoBuilder();
-    b.box(0.9, 0.26, 0.3, 0, 0.02, 0, 0xd8dbe8);
-    b.box(0.92, 0.04, 0.32, 0, 0.0, 0, 0x2a2d3c);
-    b.box(0.9, 0.03, 0.31, 0, 0.17, 0, bright(0xff4fd8, 1.6), true);
+    b.box(0.9, 0.26, 0.3, 0, 0.02, 0, 0xf6f4ee);
+    b.box(0.92, 0.04, 0.32, 0, 0.0, 0, 0x3a3d48);
+    b.box(0.91, 0.05, 0.31, 0, 0.05, 0, 0xd8402e);
+    b.box(0.9, 0.03, 0.31, 0, 0.26, 0, 0xd8402e);
     for (const side of [1, -1]) {
       for (let w = 0; w < 4; w++) b.quad(0.14, 0.08, -0.33 + w * 0.22, 0.12, side * 0.155, side > 0 ? 'z+' : 'z-', PALETTE.windowWarm);
     }
@@ -240,7 +241,7 @@ interface Car {
   speed: number;
 }
 
-const CAR_COLOURS = [0xe8e4dc, 0xd84a4a, 0x3a6ad8, 0xf2c94c, 0x2f3542, 0x6fcf97, 0xbb6bd9];
+const CAR_COLOURS = [0xf4f2ee, 0xd84a4a, 0x3a7ad8, 0xf2c94c, 0x2f3542, 0x6fcf97, 0xf28a3a, 0xc9ced6];
 
 export class Traffic {
   readonly object = new THREE.Group();
@@ -259,8 +260,8 @@ export class Traffic {
     this.bodies = new THREE.InstancedMesh(body, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 }), max);
     this.bodies.castShadow = true;
     const light = new THREE.BoxGeometry(0.02, 0.035, 0.14);
-    this.heads = new THREE.InstancedMesh(light.clone().translate(0.171, 0.11, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.8, 2.2) }), max);
-    this.tails = new THREE.InstancedMesh(light.translate(-0.171, 0.11, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 0.2, 0.15) }), max);
+    this.heads = new THREE.InstancedMesh(light.clone().translate(0.171, 0.11, 0), glowMaterial({ color: new THREE.Color(3, 2.8, 2.2) }), max);
+    this.tails = new THREE.InstancedMesh(light.translate(-0.171, 0.11, 0), glowMaterial({ color: new THREE.Color(2.6, 0.2, 0.15) }), max);
     for (let i = 0; i < max; i++) this.bodies.setColorAt(i, new THREE.Color(CAR_COLOURS[i % CAR_COLOURS.length]!));
     for (const m of [this.bodies, this.heads, this.tails]) {
       m.count = 0;

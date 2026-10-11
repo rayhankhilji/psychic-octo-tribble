@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { PALETTE } from './palette.ts';
 
 export type ColorLike = number | readonly [number, number, number];
 
@@ -20,6 +21,29 @@ function prepare(g: THREE.BufferGeometry, color: ColorLike): THREE.BufferGeometr
   for (let i = 0; i < n; i++) colors.set([tmpColor.r, tmpColor.g, tmpColor.b], i * 3);
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   return geo;
+}
+
+/**
+ * Shared by every emissive material. `night` blends from daylight glass
+ * (windows reflecting the sky) to the material's own glow colour.
+ */
+export const GLOW = {
+  night: { value: 1 },
+  day: { value: new THREE.Color(...PALETTE.dayGlass) },
+};
+
+/** A MeshBasicMaterial that looks like glass by day and glows at night. */
+export function glowMaterial(params: THREE.MeshBasicMaterialParameters = { vertexColors: true }): THREE.MeshBasicMaterial {
+  const m = new THREE.MeshBasicMaterial(params);
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uNight = GLOW.night;
+    shader.uniforms.uDay = GLOW.day;
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', 'uniform float uNight;\nuniform vec3 uDay;\nvoid main() {')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.rgb = mix(uDay, diffuseColor.rgb, uNight);');
+  };
+  m.customProgramCacheKey = () => 'tinytown-glow';
+  return m;
 }
 
 /** Shared by every building: flat-shaded, coloured per vertex. */
@@ -51,8 +75,14 @@ export class GeoBuilder {
     this.add(g, color, glow);
   }
 
-  /** Gable roof: a triangular prism with its ridge along x, resting on y. */
-  gable(w: number, h: number, d: number, x: number, y: number, z: number, color: ColorLike, overhang = 0.06) {
+  /** Any geometry, transformed by a matrix (for tilted parts like palm fronds). */
+  transformed(g: THREE.BufferGeometry, m: THREE.Matrix4, color: ColorLike, glow = false) {
+    g.applyMatrix4(m);
+    this.add(g, color, glow);
+  }
+
+  /** Gable roof: a triangular prism with its ridge along x (or z with rotY = π/2), resting on y. */
+  gable(w: number, h: number, d: number, x: number, y: number, z: number, color: ColorLike, overhang = 0.06, rotY = 0) {
     const shape = new THREE.Shape([
       new THREE.Vector2(-d / 2 - overhang, 0),
       new THREE.Vector2(d / 2 + overhang, 0),
@@ -60,13 +90,23 @@ export class GeoBuilder {
     ]);
     const g = new THREE.ExtrudeGeometry(shape, { depth: w + overhang * 2, bevelEnabled: false });
     g.translate(0, 0, -(w + overhang * 2) / 2);
-    g.rotateY(Math.PI / 2);
+    g.rotateY(Math.PI / 2 + rotY);
     g.translate(x, y, z);
     this.add(g, color, false);
   }
 
-  cylinder(rTop: number, rBottom: number, h: number, x: number, y: number, z: number, color: ColorLike, segments = 8, glow = false) {
+  /** Hip roof: a four-sided pyramid frustum, resting on y. */
+  hip(w: number, h: number, d: number, x: number, y: number, z: number, color: ColorLike, overhang = 0.05) {
+    const g = new THREE.CylinderGeometry(0.18, Math.SQRT1_2, 1, 4, 1);
+    g.rotateY(Math.PI / 4);
+    g.scale(w + overhang * 2, h, d + overhang * 2);
+    g.translate(x, y + h / 2, z);
+    this.add(g, color, false);
+  }
+
+  cylinder(rTop: number, rBottom: number, h: number, x: number, y: number, z: number, color: ColorLike, segments = 8, glow = false, rotY = 0) {
     const g = new THREE.CylinderGeometry(rTop, rBottom, h, segments);
+    if (rotY) g.rotateY(rotY);
     g.translate(x, y + h / 2, z);
     this.add(g, color, glow);
   }
@@ -119,14 +159,14 @@ export class GeoBuilder {
             : f === 'z+' ? [o.x + along, o.z + o.d / 2 + eps]
             : [o.x - along, o.z - o.d / 2 - eps];
           const on = r() < lit;
-          this.quad(size.w, size.h, x, y, z, f, on ? light : 0x141a2c, on);
+          this.quad(size.w, size.h, x, y, z, f, on ? light : PALETTE.darkGlass, on);
         }
       }
     }
   }
 
   /** Merges everything into a group. Returns the glow material so it can be dimmed. */
-  build(glowMaterial?: THREE.Material): { group: THREE.Group; glow?: THREE.MeshBasicMaterial } {
+  build(material?: THREE.Material): { group: THREE.Group; glow?: THREE.MeshBasicMaterial } {
     const group = new THREE.Group();
     if (this.solid.length) {
       const mesh = new THREE.Mesh(mergeGeometries(this.solid), solidMaterial);
@@ -136,7 +176,7 @@ export class GeoBuilder {
     }
     let glow: THREE.MeshBasicMaterial | undefined;
     if (this.glow.length) {
-      glow = (glowMaterial as THREE.MeshBasicMaterial) ?? new THREE.MeshBasicMaterial({ vertexColors: true });
+      glow = (material as THREE.MeshBasicMaterial) ?? glowMaterial();
       const mesh = new THREE.Mesh(mergeGeometries(this.glow), glow);
       group.add(mesh);
     }
