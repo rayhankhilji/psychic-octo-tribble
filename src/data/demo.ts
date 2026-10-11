@@ -8,7 +8,8 @@ const PLANS = [19, 19, 19, 19, 19, 19, 49, 49, 49, 199] as const;
  * connected. Includes a launch, steady growth and one rough patch, so every
  * kind of world event shows up during a replay.
  */
-export function demoTimeline(options: { days?: number; end?: number; seed?: number } = {}): Timeline {
+export function demoTimeline(options: { days?: number; end?: number; seed?: number; boost?: number } = {}): Timeline {
+  const boost = Math.max(1, options.boost ?? 1);
   const days = options.days ?? 540;
   const end = startOfDay(options.end ?? Date.now());
   const r = rng(options.seed ?? 7);
@@ -56,10 +57,16 @@ export function demoTimeline(options: { days?: number; end?: number; seed?: numb
       if (major === 0 && nextRelease > 90) nextRelease = 90;
     }
 
+    // Active users: ~2.5% convert, plus a free-tier rush after launch that
+    // outruns revenue for a few weeks (and a handful of beta users pre-revenue).
+    const launchRush = d >= 90 ? 9000 * Math.exp(-(d - 90) / 45) : 0;
+    const users = Math.round(Math.max(d * 12, accounts.length * 40) * (0.97 + r() * 0.06) + launchRush);
+
     snapshots.push({
       t,
-      customers: accounts.length,
-      mrr: Math.round(accounts.reduce((sum, a) => sum + a, 0)),
+      customers: accounts.length * boost,
+      users: users * boost,
+      mrr: Math.round(accounts.reduce((sum, a) => sum + a, 0) * boost),
       releases,
       commits,
       ...(release ? { release } : {}),

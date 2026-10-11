@@ -7,6 +7,11 @@ export interface Snapshot {
   t: number;
   /** Paying customers with an active subscription. */
   customers: number;
+  /**
+   * Monthly active users, paying or not. Optional: without a user source
+   * (PostHog, Supabase) the population is just the paying customers.
+   */
+  users?: number;
   /** Monthly recurring revenue in major currency units (e.g. dollars). */
   mrr: number;
   /** Cumulative published releases. */
