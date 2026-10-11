@@ -23,7 +23,7 @@ export function bright(hex: number, k: number): [number, number, number] {
   return [c.r * k, c.g * k, c.b * k];
 }
 
-function warmth(r: () => number): ColorLike {
+export function warmth(r: () => number): ColorLike {
   const w = PALETTE.windowWarm;
   const v = 0.85 + r() * 0.3;
   return [w[0] * v, w[1] * v, w[2] * v];
@@ -297,7 +297,7 @@ function shops(b: GeoBuilder, r: () => number, def: DistrictDef, neon: ColorLike
 }
 
 /** Art deco pastels with neon blades, Sunset Strip style. */
-function deco(b: GeoBuilder, r: () => number, x: number, z: number, neon: ColorLike) {
+export function deco(b: GeoBuilder, r: () => number, x: number, z: number, neon: ColorLike) {
   const h = 1.1 + r() * 0.8;
   const w = 1.5;
   const wall = pick(r, [0xf3c6a2, 0xbfe4d0, 0xf8f5ee, 0xeab6cf, 0xf6df8c] as const);
@@ -314,7 +314,7 @@ function deco(b: GeoBuilder, r: () => number, x: number, z: number, neon: ColorL
   b.box(0.3, h * 0.6, 0.06, x - 0.35, h * 0.35, z + w / 2 + 0.03, bright(0xffd23f, 2.2), true);
 }
 
-function campus(b: GeoBuilder, r: () => number, x: number, z: number, neon: ColorLike) {
+export function campus(b: GeoBuilder, r: () => number, x: number, z: number, neon: ColorLike) {
   const h = 0.6 + r() * 0.5;
   b.box(1.6, 0.03, 1.6, x, 0.03, z, PALETTE.lawn);
   b.box(1.3, h, 1.0, x, 0.06, z - 0.15, PALETTE.glass);
@@ -327,7 +327,7 @@ function campus(b: GeoBuilder, r: () => number, x: number, z: number, neon: Colo
 }
 
 /** Blue glass tower with white floor bands. */
-function tower(b: GeoBuilder, r: () => number, x: number, z: number, tier: number, neon: ColorLike) {
+export function tower(b: GeoBuilder, r: () => number, x: number, z: number, tier: number, neon: ColorLike) {
   const h = (tier - 1) * (0.9 + r() * 0.5) + 0.8;
   const w = 1.1 + r() * 0.35;
   const glassy = r() < 0.7;
@@ -359,7 +359,7 @@ function tower(b: GeoBuilder, r: () => number, x: number, z: number, tier: numbe
 }
 
 /** A Transamerica-style pyramid for the Financial District. */
-function pyramid(b: GeoBuilder, r: () => number, x: number, z: number) {
+export function pyramid(b: GeoBuilder, r: () => number, x: number, z: number) {
   const h = 6.2;
   b.box(1.7, 0.3, 1.7, x, 0.03, z, PALETTE.concrete);
   b.cylinder(0.08, 0.95, h, x, 0.33, z, 0xf2efe8, 4, false, Math.PI / 4);
@@ -377,7 +377,7 @@ function pyramid(b: GeoBuilder, r: () => number, x: number, z: number) {
   b.cylinder(0.01, 0.06, 1.0, x, 0.33 + h - 0.1, z, 0xf2efe8, 4, false, Math.PI / 4);
 }
 
-function spire(b: GeoBuilder, r: () => number, x: number, z: number, neon: ColorLike) {
+export function spire(b: GeoBuilder, r: () => number, x: number, z: number, neon: ColorLike) {
   b.box(3.2, 0.4, 3.2, x, 0.03, z, PALETTE.concrete);
   let w = 2.0;
   let y = 0.43;
@@ -415,37 +415,75 @@ export interface HQ extends Built {
   height: number;
 }
 
-export function headquarters(name: string, floors: number, seed: number): HQ {
+/**
+ * Your company. `level` is the HQ upgrade bought (0 garage … 4 landmark);
+ * `floors` comes from releases, capped by what the level has room for.
+ */
+export function headquarters(name: string, floors: number, seed: number, level = 1): HQ {
   const r = rng(seed);
   const b = new GeoBuilder();
   b.box(BLOCK, 0.04, BLOCK, 0, 0, 0, PALETTE.plaza);
-  // Fountain, palms, lawn strips
+  // Fountain, palms, lawn strips (the west corner is the founder's lot)
   b.cylinder(0.34, 0.38, 0.08, 1.35, 0.04, 1.35, PALETTE.concrete, 14);
   b.cylinder(0.29, 0.29, 0.02, 1.35, 0.1, 1.35, PALETTE.pool, 14);
   b.cylinder(0.03, 0.05, 0.22, 1.35, 0.1, 1.35, PALETTE.trim, 6);
-  for (const [tx, tz] of [[-1.5, 1.5], [1.5, -1.5], [-1.5, -1.5], [-0.4, 1.6], [1.6, 0.4]] as const) palm(b, r, tx, tz, 1.0, 0.04);
+  for (const [tx, tz] of [[1.5, -1.5], [-1.5, -1.5], [-0.4, 1.6], [1.6, 0.4]] as const) palm(b, r, tx, tz, 1.0, 0.04);
   b.box(3.6, 0.02, 0.3, 0, 0.04, -1.7, PALETTE.lawn);
 
-  const floorH = 0.24;
-  const w = 1.7;
-  const lobby = 0.36;
-  b.box(w + 0.3, lobby, w + 0.3, 0, 0.04, 0, PALETTE.trim);
-  b.quad(1.2, 0.24, 0, 0.04 + 0.14, (w + 0.3) / 2 + 0.005, 'z+', warmth(r));
-  b.quad(1.2, 0.24, (w + 0.3) / 2 + 0.005, 0.04 + 0.14, 0, 'x+', warmth(r));
-  const y0 = 0.04 + lobby;
-  const h = floors * floorH;
-  b.box(w, h, w, 0, y0, 0, 0x5e98c8);
-  b.windows({ w, d: w, x: 0, z: 0, y0, rows: floors, rowHeight: floorH, cols: 5 }, r, 0.55, [1.1, 0.8, 0.45], { w: 0.26, h: 0.15 });
-  for (let f = 0; f <= floors; f++) b.box(w + 0.02, 0.025, w + 0.02, 0, y0 + f * floorH, 0, PALETTE.trim);
-  for (const [fx, fz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
-    b.box(0.08, h + 0.2, 0.08, (fx * w) / 2, y0, (fz * w) / 2, PALETTE.trim);
+  let top: number;
+  if (level === 0) {
+    // The garage: where it starts
+    b.box(1.2, 0.5, 0.9, 0, 0.04, 0, 0xf3c6a2);
+    b.gable(1.2, 0.26, 0.9, 0, 0.54, 0, PALETTE.roofs[0]);
+    b.quad(0.6, 0.34, 0, 0.21, 0.454, 'z+', 0xe8e2d6, false);
+    for (let k = 0; k < 4; k++) b.box(0.6, 0.008, 0.005, 0, 0.08 + k * 0.08, 0.456, 0xc9c2b4);
+    b.quad(0.16, 0.12, 0.6 + 0.004, 0.32, 0, 'x+', warmth(r));
+    top = 0.8;
+  } else {
+    const floorH = 0.24;
+    const w = [0, 1.3, 1.5, 1.7, 1.85][level]!;
+    const lobby = 0.36;
+    if (level === 2) {
+      // Campus wings
+      for (const s of [-1, 1]) {
+        b.box(0.7, 0.5, 2.6, s * 1.25, 0.04, 0.2, 0xf8f5ee);
+        b.box(0.74, 0.04, 2.64, s * 1.25, 0.54, 0.2, PALETTE.lawn);
+        b.windows({ w: 0.7, d: 2.6, x: s * 1.25, z: 0.2, y0: 0.04, rows: 2, rowHeight: 0.25, cols: 6, faces: [s > 0 ? 'x+' : 'x-', 'z+'] }, r, 0.6, warmth(r));
+      }
+    }
+    b.box(w + 0.3, lobby, w + 0.3, 0, 0.04, 0, PALETTE.trim);
+    b.quad(w * 0.7, 0.24, 0, 0.04 + 0.14, (w + 0.3) / 2 + 0.005, 'z+', warmth(r));
+    b.quad(w * 0.7, 0.24, (w + 0.3) / 2 + 0.005, 0.04 + 0.14, 0, 'x+', warmth(r));
+    const y0 = 0.04 + lobby;
+    const h = floors * floorH;
+    b.box(w, h, w, 0, y0, 0, level >= 3 ? 0x4f8cc4 : 0x5e98c8);
+    b.windows({ w, d: w, x: 0, z: 0, y0, rows: floors, rowHeight: floorH, cols: level >= 3 ? 6 : 5 }, r, 0.55, [1.1, 0.8, 0.45], { w: 0.22, h: 0.15 });
+    for (let f = 0; f <= floors; f++) b.box(w + 0.02, 0.025, w + 0.02, 0, y0 + f * floorH, 0, PALETTE.trim);
+    for (const [fx, fz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+      b.box(0.08, h + 0.2, 0.08, (fx * w) / 2, y0, (fz * w) / 2, PALETTE.trim);
+    }
+    top = y0 + h;
+    b.box(w + 0.1, 0.08, w + 0.1, 0, top, 0, PALETTE.trim);
+    if (level >= 2) {
+      // Roof garden
+      b.box(w - 0.1, 0.05, w - 0.1, 0, top + 0.08, 0, PALETTE.lawn);
+      palm(b, r, -0.5, 0.5, 0.5, top + 0.13);
+      palm(b, r, 0.55, -0.45, 0.45, top + 0.13);
+    }
+    if (level === 4) {
+      // Landmark crown: stepped glass and a spire
+      let cw = w * 0.8;
+      let cy = top + 0.08;
+      for (let k = 0; k < 3; k++) {
+        b.box(cw, 0.5, cw, 0, cy, 0, 0x7db3dd);
+        b.box(cw + 0.03, 0.04, cw + 0.03, 0, cy + 0.46, 0, [2.2, 1.9, 1.2], true);
+        cy += 0.5;
+        cw *= 0.72;
+      }
+      b.cylinder(0.02, 0.07, 2.2, 0, cy, 0, PALETTE.trim, 6);
+      top = cy;
+    }
   }
-  const top = y0 + h;
-  b.box(w + 0.1, 0.08, w + 0.1, 0, top, 0, PALETTE.trim);
-  // Roof garden
-  b.box(w - 0.1, 0.05, w - 0.1, 0, top + 0.08, 0, PALETTE.lawn);
-  palm(b, r, -0.5, 0.5, 0.5, top + 0.13);
-  palm(b, r, 0.55, -0.45, 0.45, top + 0.13);
   b.cylinder(0.02, 0.04, 0.9, -0.55, top + 0.08, -0.55, PALETTE.steel, 6);
   const built = b.build();
 

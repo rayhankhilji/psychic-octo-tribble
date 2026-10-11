@@ -9,6 +9,12 @@ import { parseHour } from './world/daylight.ts';
 import { City } from './render/city.ts';
 import { Stage } from './render/stage.ts';
 import { Hud } from './ui/hud.ts';
+import { GameUI } from './ui/game-ui.ts';
+import { DAY } from './data/types.ts';
+import type { Item } from './game/catalog.ts';
+import { demoActions } from './game/demo-script.ts';
+import { describeGame, diffGame, freePlots, money, simulate, type Action, type GameState, type SimOptions } from './game/economy.ts';
+import { clearActions, joinedAt, loadActions, saveActions } from './game/save.ts';
 
 const SPEEDS = [
   { label: '1×', daysPerSecond: 12 },
@@ -38,7 +44,7 @@ function storedName(): string | null {
 
 /** Live data from the server if it's configured, else the demo, with a note when live data failed. */
 async function loadTimeline(): Promise<{ timeline: Timeline; notice?: string }> {
-  if (params.has('demo')) return { timeline: demoTimeline() };
+  if (params.has('demo')) return { timeline: demoTimeline({ boost: Number(params.get('boost')) || 1 }) };
   try {
     const res = await fetch('/api/timeline');
     const body = await res.json().catch(() => ({}));
@@ -53,6 +59,8 @@ async function loadTimeline(): Promise<{ timeline: Timeline; notice?: string }> 
   return { timeline: demoTimeline() };
 }
 
+const BACK_PAY_DAYS = 90;
+
 class App {
   private timeline!: Timeline;
   private moments: Moment[] = [];
@@ -66,6 +74,12 @@ class App {
   private seed: number;
   private preview: { label: string; hour: number } | null = null;
   private clockTimer = 0;
+  private game!: GameState;
+  private gameUI: GameUI;
+  private actions: Action[] = [];
+  private saveKey = '';
+  private sim: SimOptions = {};
+  private placing: Item | null = null;
 
   constructor(timeline: Timeline, notice?: string) {
     const name = storedName() || timeline.name;
@@ -107,6 +121,25 @@ class App {
         location.reload();
       },
     });
+    this.gameUI = new GameUI(document.getElementById('ui')!, this.hud.sideEl, this.hud.toolsEl, {
+      onBuild: (item, plot) => this.startBuild(item, plot),
+      onPickHome: (tier, choice) => this.act({ t: this.today, kind: 'home', tier, choice }),
+      onFlyToMoon: () => {
+        this.stage.focus(this.city.focusOf('launchpad'), 1.6);
+        const ok = this.city.launchRocket(() => this.hud.feed('game.moon', 'Back from your moon house. Worth every penny.', this.today));
+        if (ok) this.hud.feed('game.moon', 'Lift-off! Flying to your house on the moon', this.today);
+      },
+      onZoom: (f) => this.stage.zoomBy(f),
+      onCancelPlacement: () => this.setPlacing(null),
+      onFocus: (what) => this.stage.focus(this.city.focusOf(what), 2.2),
+    });
+    this.stage.onPick = (pick) => {
+      if (this.placing) {
+        if (pick?.plot) this.build(this.placing, pick.plot);
+        return;
+      }
+      if (pick?.plot) this.gameUI.toggleBuild(pick.plot);
+    };
     this.stage.onHover = (tip, x, y) => this.hud.showTip(tip, x, y);
     this.stage.onFrame = (dt) => {
       this.tick(dt);
@@ -118,6 +151,16 @@ class App {
     };
 
     this.load({ ...timeline, name });
+    this.saveKey = timeline.source === 'demo' ? 'demo' : String(this.seed);
+    this.actions = loadActions(this.saveKey) ?? (timeline.source === 'demo' ? demoActions(timeline.snapshots) : []);
+    if (timeline.source === 'live') {
+      const joined = joinedAt(this.saveKey, timeline.snapshots.at(-1)?.t ?? Date.now());
+      this.sim = { incomeFrom: joined - BACK_PAY_DAYS * DAY };
+    }
+    if (params.has('fresh')) {
+      clearActions(this.saveKey);
+      this.actions = timeline.source === 'demo' ? demoActions(timeline.snapshots) : [];
+    }
     if (notice) this.hud.notice(notice);
     // Demo opens with the story from day one; a live world opens on today.
     if (timeline.source === 'demo' || params.has('replay')) this.replay();
@@ -143,25 +186,75 @@ class App {
     this.hud.setTimeline(t);
   }
 
-  private plan(i: number) {
+  /** Homes are drawn for the users your city can house. */
+  private plan(i: number, game: GameState) {
     const m = this.moments[i]!;
-    return planWorld(m.snapshot, { peakMrr: m.peakMrr, weather: m.weather, seed: this.seed });
+    return planWorld({ ...m.snapshot, customers: game.housed }, { peakMrr: m.peakMrr, weather: m.weather, seed: this.seed });
+  }
+
+  private get today(): number {
+    return this.moments[this.index]!.snapshot.t;
+  }
+
+  // ─── Building ──────────────────────────────────────────────────────────
+
+  private startBuild(item: Item, plot?: string) {
+    if (plot || item.placement.kind !== 'plot') return this.build(item, plot);
+    const free = freePlots(this.game, item.placement.size);
+    const ids = item.placement.size === 4 ? free.flatMap((p) => this.game.plots.filter((q) => q.block === p.block).map((q) => q.id)) : free.map((p) => p.id);
+    this.setPlacing(item, ids);
+  }
+
+  private setPlacing(item: Item | null, plots: string[] = []) {
+    this.placing = item;
+    this.city.setPlacement(item ? plots : null);
+    this.gameUI.setPlacing(item);
+  }
+
+  private build(item: Item, plot?: string) {
+    this.setPlacing(null);
+    this.act({ t: this.today, kind: 'build', item: item.id, ...(plot ? { plot } : {}) });
+    if (item.placement.kind === 'site') this.stage.focus(this.city.focusOf(item.placement.site), 2.2);
+  }
+
+  /** Record a choice at today's date and show its effect straight away. */
+  private act(action: Action) {
+    const next = [...this.actions, action];
+    const result = simulate(this.timeline.snapshots, next, this.index, this.sim);
+    const failed = result.rejected.find((r) => r.action === action);
+    if (failed) {
+      this.hud.feed('game.error', `Couldn't do that: ${failed.reason}`, this.today);
+      return;
+    }
+    this.actions = next;
+    saveActions(this.saveKey, this.actions);
+    if (action.kind === 'build') {
+      this.hud.feed('game.build', `Bought for ${money(this.game.treasury - result.treasury)}`, this.today);
+    }
+    this.show(this.index, true, true);
   }
 
   /** Jump to a day. `animate` = arrive as if time passed (pop-ins, celebrations). */
-  private show(i: number, animate: boolean) {
+  private show(i: number, animate: boolean, sameDay = false) {
     i = Math.max(0, Math.min(this.last, i));
     const prev = this.index;
     this.index = i;
-    const plan = this.plan(i);
-    this.city.setPlan(plan, animate);
+    const prevGame = this.game;
+    const game = (this.game = simulate(this.timeline.snapshots, this.actions, i, this.sim));
+    const plan = this.plan(i, game);
+    this.city.setWorld(plan, game, animate);
+    this.gameUI.setState(game);
+    if (prevGame && animate && (i === prev + 1 || sameDay)) {
+      const events = diffGame(prevGame, game);
+      this.city.celebrateGame(events);
+      for (const e of events) this.hud.feed(`game.${e.type}`, describeGame(e), game.t);
+    }
     const m = this.moments[i]!;
     const weekAgo = this.moments[Math.max(0, i - 7)]!;
     this.city.setShippingPace(m.snapshot.commits - weekAgo.snapshot.commits);
     this.hud.setIndex(i);
-    this.hud.setPlan(plan.districts, plan.residentsPerHome);
 
-    if (animate && i === prev + 1) {
+    if (animate && i === prev + 1 && !sameDay) {
       const events = diffMoments(this.moments[prev]!, m);
       this.city.celebrate(events);
       for (const e of events) {
@@ -239,7 +332,7 @@ class App {
       const day = `Day ${this.index + 1}`;
       const line = withMetrics
         ? `${day} · ${s.customers.toLocaleString('en-US')} customers · ${formatMoney(s.mrr, t.currency)} MRR · ${s.releases} releases`
-        : `${day} · ${this.plan(this.index).neighbourhoods.length} neighbourhoods and counting`;
+        : `${day} · satisfaction ${this.game.satisfaction.score} · ${this.game.owned.length} things built`;
       ctx.fillText(line, pad, out.height - pad);
       ctx.textAlign = 'right';
       ctx.fillStyle = '#ffb347';

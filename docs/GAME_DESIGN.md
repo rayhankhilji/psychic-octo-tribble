@@ -1,6 +1,6 @@
 # TinyTown: game design
 
-Status: draft for review. Nothing here is built yet.
+Status: **step 1 is playable** in the browser demo (`npm run dev`, saved locally). Numbers below are the ones in `src/game/`. Hosting, live cash from Stripe, flights and the moon trip's destination scene are next.
 
 ## The one rule
 
@@ -64,19 +64,19 @@ How it works under the hood:
   - Not all-time signups. A five-year-old product would be punished forever for people who left years ago.
   - Sources, in order of preference: PostHog, Supabase auth, a manual number you update, or (if nothing else is connected) your paying customers.
   - If only Stripe is connected, everyone is a paying customer, so everyone is housed. We never invent users.
-- **Housing upkeep is $2,000 per resident per month in game money**, which is $0.20 of real MRR per user. That's your rule: 1,000 users need $200 MRR.
+- **Each user needs $0.20 of real MRR to be housed.** That's your rule: 1,000 users need $200 MRR.
   - At $20 ARPU that means converting at least 1% of active users, which is below typical freemium rates.
   - It's lenient enough that a healthy startup clears it and strict enough that a vanity-metric startup visibly can't.
-  - The $0.20 is a tunable constant. Later we could let founders enter their real cost per user.
-- **Housing is built automatically by default.** The city builds homes for new residents when the treasury allows.
-  - You can turn auto-housing off and choose types yourself.
-  - At scale you *have* to upgrade density, because land is limited: house (4 people), terrace (12), apartment block (120), residential tower (1,000).
+  - The $0.20 is a tunable constant (`MRR_PER_USER`). Later we could let founders enter their real cost per user.
+- **Housing upkeep is $1,000 per housed resident per month in game money** (the first 100 are free). At exactly the $0.20 line, housing eats half your income, so poor conversion leaves little to build with.
+- **Homes build themselves, for free.** Density steps down from downtown: apartment blocks near HQ, painted-lady terraces in the middle, houses with pools at the edge. Land is finite, so big populations get denser.
+- **A homelessness crisis also runs the city down:** the share of residents without a home drags maintenance down (100% homeless takes 60 points off). Poor conversion shows up as a dark sign and a rusting bridge, not only as tents.
 - **Unhoused residents** appear as tents and sleeping bags along park edges, under the bridge and by the train line, with a count on the meter. They're shown plainly, never as a joke. When housing catches up, they move into homes and you see it happen.
 - **Friends & family housing:** the first 100 users are always housed. Pre-launch founders shouldn't open the app to a tent city.
 
 ## Upkeep and decay
 
-Every building has monthly upkeep, roughly 1% of its build price. Housing upkeep is per resident (above). Each day, upkeep is paid from income first, then from the treasury.
+Every building has monthly upkeep: 2% of its build price (3% for planes, yachts and rockets). Housing upkeep is per resident (above). Each day, upkeep is paid from income first, then from the treasury.
 
 If upkeep isn't fully funded, the city's **maintenance level** drops below 100%. Things decay in this order, so the warning signs come first and are the most visible:
 
@@ -90,7 +90,7 @@ If upkeep isn't fully funded, the city's **maintenance level** drops below 100%.
 | < 35% | Housing fails, which adds to the unhoused count. |
 
 - **Nothing is ever destroyed.** Decay dims, rusts and closes things, and lowers satisfaction.
-- **Repairs cost money.** "Auto-repair" (on by default) fixes things as soon as funds allow. Turn it off to choose what gets fixed first.
+- **Things decay gradually and recover faster:** maintenance falls at most 2 points a day and recovers up to 4 a day once upkeep is covered again. Repairs are automatic once the money is there. A manual "choose what to fix" mode is a later idea.
 - **Comebacks are celebrated.** When the sign relights after a dark spell, it gets a moment and a share prompt. *"Fixed churn. The sign's back on."* is the best video this product will ever produce.
 
 ## Citizen satisfaction (0–100)
@@ -102,7 +102,7 @@ The score people will obsess over. It has no effect on money, so the only way to
 | Housing | 35% | Share of residents housed (MRR per user) |
 | Upkeep | 25% | Maintenance level (income vs costs) |
 | Amenities | 20% | Parks, transport and entertainment per resident (bought with revenue) |
-| Momentum | 20% | Trailing 4-week growth in MRR and active users |
+| Momentum | 20% | Trailing 4-week MRR growth |
 
 - **Visible mood:** happy cities have street festivals, people waving and fireworks on milestones. Unhappy ones have grey crowds and protest signs at City Hall.
 - **Public score:** satisfaction can show on your public city page and in the visitor list. It's safer to compete on than MRR, which many founders keep private.
@@ -119,7 +119,7 @@ The score people will obsess over. It has no effect on money, so the only way to
 | $1k | Your first **TinyTown Hills** house, a mid-century modern with a pool | The Hills |
 | $10k | **Pick one of three estates:** Spanish villa, glass cliffside house, or modernist compound | Upper Hills |
 | $100k | **Island estate + superyacht** | Your own island in the bay |
-| $1M | **To discuss:** a launch pad on the island? A floating city? | Island |
+| $1M | **A house on the moon.** The clouded end of your island clears to reveal a launch site; buy a rocket and fly there and back. | The moon |
 
 **Swapping a pick** costs a renovation fee in game money (25% of the house's value), never real money. Your MRR earns the option; your treasury pays to change your mind.
 
@@ -129,27 +129,31 @@ The map starts mostly under cloud. **Regions open at MRR milestones.** Within a 
 
 | Region | Opens at | Highlights |
 |---|---|---|
-| Downtown | Sign-up | HQ, offices, shops, first homes |
-| TinyTown Hills | $1k | Founder houses, villas, the sign, winding roads |
-| Airfield | $1k | Airstrip, hangars |
-| Boardwalk & pier | $3k | Amusement park, Ferris wheel, arcade |
-| Harbour & marina | $10k | Shipyard, docks, yachts, ferries |
-| Northside (across the bridge) | $25k | A second district: stadium, campus, skyline |
-| Your island | $100k | Founder estate, superyacht berth |
-| Space coast | $1M | Launch pad (to discuss) |
+| Downtown blocks | Sign-up, then $100, $1k, $5k, $10k, $25k, $100k | Four plots each. The next block clears only once every open plot is built on **and** MRR has reached its gate. |
+| TinyTown Hills | $1k | Switchback road, villas, luxury cars, your Hills house, the sign |
+| The pier | $3k | Ferris wheel and roller coaster to buy |
+| Harbour & marina | $10k | Yacht berths |
+| Your island | $100k | Founder estate and superyacht |
+| Launch site (the island's clouded end) | $1M | Rocket pad |
+
+**The airport is free infrastructure**, always there for every city. Planes are what you buy.
 
 ## What you can build
 
 Each item unlocks at an MRR tier and costs roughly 1–4 months of that tier's income. You can afford a few things at your tier each month, and the next tier's items are about 10× pricier.
 
-| Unlocks at | Examples (game money) |
+| Unlocks at | Items (game money) |
 |---|---|
-| Sign-up | Park $50k · food truck $20k · bus stop $10k · street repair $5k · small shop $80k |
-| $100 | Café $300k · co-working office $1.5M · starter apartment block $2M (120 people) · basketball court $200k · tram segment $1M |
-| $1k | Office tower $25M · **airstrip $5M** · **prop plane $1M** · Hills plots · marina dock $8M |
-| $10k | Skyscraper $250M · new train line $200M · shipyard $150M · amusement park $300M · stadium $500M · **airport terminal $150M** · **Gulfstream-style jet $70M** · day yacht $30M |
-| $100k | Supertall $3B · international airport $5B · long-range jet $120M · second bridge $2B |
-| $1M | Supersonic jet $500M (flies faster, sonic boom) · launch pad $10B (to discuss) |
+| Sign-up | Community garden $40k · pocket park $50k · corner shops $80k · food truck court $120k |
+| $100 | Basketball courts $200k · café & bookshop $300k · co-working space $1.5M · HQ office building $500k |
+| $1k | Prop plane $1M · public library $8M · neon theatre $15M · office tower $25M · tech campus $40M · HQ campus $20M |
+| $3k | Ferris wheel $20M · pier roller coaster $45M |
+| $10k | Day yacht $30M · Gulfstream-style jet $70M · skyscraper $250M · amusement park $300M (whole block) · stadium $500M (whole block) · HQ tower $200M |
+| $25k | Pyramid tower $800M · concert arena $900M · venture studio $1B (launch your next startups) · university $1.5B (whole block) |
+| $100k | Long-range jet $120M · research institute $2B · supertall $3B (whole block) · HQ landmark tower $2B |
+| $1M | Supersonic jet $500M · rocket $2B |
+
+**What a city does with $1B a month** (about $100k MRR): found a top university, open a research institute, launch new ventures from the venture studio, raise a supertall, build stadiums and an amusement park, and keep everything maintained. More big-ticket projects (a second bridge, a new district across the bay, an international airport) are natural additions.
 
 **HQ upgrades** are bought too: garage → office floor → campus → tower → landmark tower. They're gated by MRR and decorated with your brand (below). Releases still add floors, as now.
 
@@ -171,7 +175,7 @@ Each item unlocks at an MRR tier and costs roughly 1–4 months of that tier's i
 
 ## Flights and visiting other founders
 
-- **Every city has a public airport**, so anyone can be visited.
+- **Every city has an airport, for free**, so anyone can be visited.
 - **Flying needs your own plane.** The first plane unlocks at $1k MRR, so the social loop opens early enough for lots of people to use it. Better planes (Gulfstream at $10k, long-range at $100k, supersonic at $1M) look better and fly faster. Any plane can reach any city.
 - **The flight:**
   1. The camera zooms to your airport, where your plane taxis and takes off.
@@ -185,7 +189,8 @@ Each item unlocks at an MRR tier and costs roughly 1–4 months of that tier's i
 
 **Paid only, as a subscription.** We never sell in-game currency, speed-ups or unlocks, because that would break the one rule.
 
-- Proposed: **$12/month or $99/year**, with a **14-day free trial**. The aha moment ("I connected Stripe and saw my city") has to happen before the card.
+- **$12/month or $99/year. No free trial.**
+- Open question: a 14-day money-back guarantee would keep "paid only" while removing the risk of paying before seeing your city.
 - Later, possibly: cosmetic-only extras such as plane liveries, house paint and seasonal decorations. Never anything that touches money, land, housing or unlocks.
 
 ## Edge cases
@@ -205,7 +210,7 @@ Each item unlocks at an MRR tier and costs roughly 1–4 months of that tier's i
 
 ## Build order
 
-1. **Game loop on the demo startup, no accounts.**
+1. **Game loop on the demo startup, no accounts. ✅ Built.**
    - Treasury, daily income, the build catalogue on plots, the cloud regions (Downtown + Hills).
    - Housing and unhoused residents, upkeep and decay (sign, lamps, bridge, train), satisfaction.
    - The founder house ladder, wealth-based cars, zoom buttons, a bigger sign on a proper Hollywood Hills.
@@ -213,6 +218,6 @@ Each item unlocks at an MRR tier and costs roughly 1–4 months of that tier's i
 2. **Hosted.**
    - Accounts, "Connect with Stripe" (OAuth, read-only, no pasted keys), PostHog, GitHub.
    - The server computes the treasury and validates every purchase, so it can't be cheated from the browser.
-   - Brand import from URL, subscriptions and the trial.
-3. **Harbour, airfield, planes, flights and visits.**
+   - Brand import from URL and subscriptions (Vercel + Supabase).
+3. **Flights and visits** (planes can already be bought and parked), and the moon scene at the end of the rocket trip.
 4. **More regions, then more cities.**

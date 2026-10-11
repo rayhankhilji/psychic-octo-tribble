@@ -246,6 +246,9 @@ const CAR_COLOURS = [0xf4f2ee, 0xd84a4a, 0x3a7ad8, 0xf2c94c, 0x2f3542, 0x6fcf97,
 export class Traffic {
   readonly object = new THREE.Group();
   private bodies: THREE.InstancedMesh;
+  /** Low, wide sports cars: their share grows with the city's wealth. */
+  private sports: THREE.InstancedMesh;
+  private luxury = 0;
   private heads: THREE.InstancedMesh;
   private tails: THREE.InstancedMesh;
   private cars: Car[] = [];
@@ -259,11 +262,17 @@ export class Traffic {
     body.translate(0, 0.1, 0);
     this.bodies = new THREE.InstancedMesh(body, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 }), max);
     this.bodies.castShadow = true;
+    const sport = new THREE.BoxGeometry(0.4, 0.08, 0.2);
+    sport.translate(0, 0.07, 0);
+    this.sports = new THREE.InstancedMesh(sport, new THREE.MeshStandardMaterial({ roughness: 0.25, metalness: 0.5 }), max);
+    this.sports.castShadow = true;
+    const SPORT_COLOURS = [0xd8402e, 0xf2c84b, 0x1c1c24, 0xf4f4f0, 0x2f6fa8];
+    for (let i = 0; i < max; i++) this.sports.setColorAt(i, new THREE.Color(SPORT_COLOURS[i % SPORT_COLOURS.length]!));
     const light = new THREE.BoxGeometry(0.02, 0.035, 0.14);
     this.heads = new THREE.InstancedMesh(light.clone().translate(0.171, 0.11, 0), glowMaterial({ color: new THREE.Color(3, 2.8, 2.2) }), max);
     this.tails = new THREE.InstancedMesh(light.translate(-0.171, 0.11, 0), glowMaterial({ color: new THREE.Color(2.6, 0.2, 0.15) }), max);
     for (let i = 0; i < max; i++) this.bodies.setColorAt(i, new THREE.Color(CAR_COLOURS[i % CAR_COLOURS.length]!));
-    for (const m of [this.bodies, this.heads, this.tails]) {
+    for (const m of [this.bodies, this.sports, this.heads, this.tails]) {
       m.count = 0;
       m.frustumCulled = false;
       this.object.add(m);
@@ -275,6 +284,11 @@ export class Traffic {
     for (const car of this.cars) {
       if (!this.runs.includes(car.run)) this.place(car);
     }
+  }
+
+  /** Share of cars (0–1) that are sports cars. */
+  setLuxury(share: number) {
+    this.luxury = Math.min(1, Math.max(0, share));
   }
 
   setCount(n: number) {
@@ -297,6 +311,7 @@ export class Traffic {
   }
 
   update(dt: number) {
+    const regular = this.cars.length - Math.round(this.cars.length * this.luxury);
     this.cars.forEach((car, i) => {
       car.pos += car.dir * car.speed * dt;
       if (car.pos > car.run.to || car.pos < car.run.from) {
@@ -307,12 +322,16 @@ export class Traffic {
       this.dummy.position.set(x, 0, z);
       this.dummy.rotation.y = car.run.axis === 'x' ? (car.dir > 0 ? 0 : Math.PI) : car.dir > 0 ? -Math.PI / 2 : Math.PI / 2;
       this.dummy.updateMatrix();
-      this.bodies.setMatrixAt(i, this.dummy.matrix);
+      // The last `sporty` cars are sports cars; the rest are everyday cars.
+      if (i >= regular) this.sports.setMatrixAt(i - regular, this.dummy.matrix);
+      else this.bodies.setMatrixAt(i, this.dummy.matrix);
       this.heads.setMatrixAt(i, this.dummy.matrix);
       this.tails.setMatrixAt(i, this.dummy.matrix);
     });
-    for (const m of [this.bodies, this.heads, this.tails]) {
-      m.count = this.cars.length;
+    this.bodies.count = regular;
+    this.sports.count = this.cars.length - regular;
+    for (const m of [this.bodies, this.sports, this.heads, this.tails]) {
+      if (m !== this.bodies && m !== this.sports) m.count = this.cars.length;
       m.instanceMatrix.needsUpdate = true;
     }
   }

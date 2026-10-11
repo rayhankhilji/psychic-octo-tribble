@@ -29,11 +29,9 @@ describe('diffMoments', () => {
   });
 
   it('quotes the real number behind each visual', () => {
-    expect(describeEvent({ type: 'customers.joined', count: 1, total: 1 }, 'usd')).toBe('Your first customer moved in.');
-    expect(describeEvent({ type: 'customers.joined', count: 2, total: 14 }, 'usd')).toBe('2 new customers moved in · 14 total');
-    expect(describeEvent({ type: 'district.unlocked', id: 'arcade', name: 'Neon Arcade', threshold: 1000 }, 'usd')).toBe(
-      'Neon Arcade unlocked · MRR passed $1,000',
-    );
+    expect(describeEvent({ type: 'customers.joined', count: 1, total: 1 }, 'usd')).toBe('Your first paying customer!');
+    expect(describeEvent({ type: 'customers.joined', count: 2, total: 14 }, 'usd')).toBe('2 new customers · 14 total');
+    expect(describeEvent({ type: 'district.unlocked', id: 'arcade', name: 'Neon Arcade', threshold: 1000 }, 'usd')).toBe('MRR passed $1,000');
     expect(describeEvent({ type: 'code.pushed', commits: 3 }, 'usd')).toBeUndefined();
   });
 });

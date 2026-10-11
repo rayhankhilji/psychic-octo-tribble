@@ -46,19 +46,14 @@ export function diffMoments(prev: Moment, next: Moment): WorldEvent[] {
 export function describe(e: WorldEvent, currency: string): string | undefined {
   switch (e.type) {
     case 'customers.joined':
-      return e.total === 1
-        ? 'Your first customer moved in.'
-        : `${plural(e.count, 'new customer')} moved in · ${e.total.toLocaleString('en-US')} total`;
+      return e.total === 1 ? 'Your first paying customer!' : `${plural(e.count, 'new customer')} · ${e.total.toLocaleString('en-US')} total`;
     case 'customers.left':
-      return `${plural(e.count, 'customer')} moved out · ${e.total.toLocaleString('en-US')} total`;
+      return `${plural(e.count, 'customer')} churned · ${e.total.toLocaleString('en-US')} total`;
     case 'district.unlocked':
-      return e.threshold <= 1
-        ? `First revenue! ${e.name} opened.`
-        : `${e.name} unlocked · MRR passed ${formatMoney(e.threshold, currency)}`;
+      return e.threshold <= 1 ? 'First revenue! The treasury starts filling up.' : `MRR passed ${formatMoney(e.threshold, currency)}`;
     case 'district.dimmed':
-      return `${e.name} went dark · MRR slipped below its milestone`;
     case 'district.relit':
-      return `${e.name} lit up again`;
+      return undefined; // Upkeep and decay tell this story now.
     case 'release.shipped':
       return `Shipped ${e.name}. HQ grew a floor.`;
     case 'weather.changed':

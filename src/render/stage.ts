@@ -4,7 +4,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import type { City, Tip } from './city.ts';
+import type { City, Pick, Tip } from './city.ts';
 import { PITCH } from '../world/layout.ts';
 
 /** Isometric: looking down 35.26° from the horizontal. */
@@ -29,6 +29,9 @@ export class Stage {
   private userZoomed = false;
   private spin: { from: number; to: number; t: number } | null = null;
   onHover: (tip: Tip | null, x: number, y: number) => void = () => {};
+  onPick: (pick: Pick | null) => void = () => {};
+  private down: { x: number; y: number } | null = null;
+  private glide: { target: THREE.Vector3; zoom: number; t: number; fromT: THREE.Vector3; fromZ: number } | null = null;
   onFrame: (dt: number) => void = () => {};
   private lastClient = { x: 0, y: 0 };
   private host: HTMLElement;
@@ -55,7 +58,7 @@ export class Stage {
     this.controls.screenSpacePanning = true;
     this.controls.minPolarAngle = this.controls.maxPolarAngle = ISO_POLAR;
     this.controls.minZoom = 0.4;
-    this.controls.maxZoom = 8;
+    this.controls.maxZoom = 12;
     this.controls.zoomToCursor = true;
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
     this.controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
@@ -80,6 +83,19 @@ export class Stage {
       this.onHover(null, 0, 0);
     });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
+    el.addEventListener('pointerdown', (e) => (this.down = { x: e.clientX, y: e.clientY }));
+    el.addEventListener('pointerup', (e) => {
+      const d = this.down;
+      this.down = null;
+      if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || e.button !== 0) return;
+      const rect = el.getBoundingClientRect();
+      const p = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      this.raycaster.setFromCamera(p, this.camera);
+      const hit = this.raycaster.intersectObjects(this.city.clickables, true)[0];
+      let o: THREE.Object3D | null = hit?.object ?? null;
+      while (o && !o.userData.tip && !o.userData.plot) o = o.parent;
+      this.onPick(o ? { tip: o.userData.tip as Tip | undefined, plot: o.userData.plot as string | undefined } : null);
+    });
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
       if (e.key === 'q' || e.key === 'Q') this.rotate(-1);
@@ -96,6 +112,19 @@ export class Stage {
     const quarter = Math.PI / 2;
     const to = Math.round((from + dir * quarter - Math.PI / 4) / quarter) * quarter + Math.PI / 4;
     this.spin = { from, to, t: 0 };
+  }
+
+  /** Zoom in (>1) or out (<1) around the current focus. */
+  zoomBy(factor: number) {
+    this.userZoomed = true;
+    const zoom = THREE.MathUtils.clamp(this.camera.zoom * factor, this.controls.minZoom, this.controls.maxZoom);
+    this.glide = { target: this.controls.target.clone(), zoom, t: 0, fromT: this.controls.target.clone(), fromZ: this.camera.zoom };
+  }
+
+  /** Smoothly fly the camera to look at a point. */
+  focus(target: THREE.Vector3, zoom = 2.4) {
+    this.userZoomed = true;
+    this.glide = { target: target.clone(), zoom, t: 0, fromT: this.controls.target.clone(), fromZ: this.camera.zoom };
   }
 
   /** Back to the overview that frames the whole developed city. */
@@ -131,7 +160,7 @@ export class Stage {
   /** Zoom that frames the developed city plus some coast and hills around it. */
   private framingZoom(): number {
     const reach = this.city.reach;
-    const side = (reach * 2 + 1) * PITCH + 5 + reach * 4.5;
+    const side = (reach * 2 + 1) * PITCH + 5 + reach * 4.5 + this.city.framingExtra;
     const aspect = this.host.clientWidth / Math.max(1, this.host.clientHeight);
     // A square of side s, seen isometrically, is s·√2 wide and s·√2·sin(35.26°) tall.
     const fitWidth = (VIEW * aspect) / (side * Math.SQRT2 * 1.02);
@@ -142,7 +171,7 @@ export class Stage {
   /** Where the overview looks: drifts toward the hills as the city grows so the sign stays in shot. */
   private framingTarget(): THREE.Vector3 {
     const k = Math.min(1, (this.city.reach - 1) / 2);
-    return new THREE.Vector3(-3.5 * k, 0, -7.5 * k);
+    return new THREE.Vector3(-6 * k, 0, -12 * k);
   }
 
   start() {
@@ -169,7 +198,17 @@ export class Stage {
       if (this.spin.t >= 1) this.spin = null;
     }
 
-    if (!this.userZoomed) {
+    if (this.glide) {
+      const g = this.glide;
+      g.t = Math.min(1, g.t + dt / 0.9);
+      const k = 1 - (1 - g.t) ** 3;
+      const next = g.fromT.clone().lerp(g.target, k);
+      this.camera.position.add(next.clone().sub(this.controls.target));
+      this.controls.target.copy(next);
+      this.camera.zoom = g.fromZ + (g.zoom - g.fromZ) * k;
+      this.camera.updateProjectionMatrix();
+      if (g.t >= 1) this.glide = null;
+    } else if (!this.userZoomed) {
       const target = this.framingZoom();
       this.camera.zoom += (target - this.camera.zoom) * Math.min(1, dt * 1.5);
       this.camera.updateProjectionMatrix();
@@ -190,9 +229,10 @@ export class Stage {
     if (this.pointerDirty) {
       this.pointerDirty = false;
       this.raycaster.setFromCamera(this.pointer, this.camera);
-      const hit = this.raycaster.intersectObjects(this.city.pickables, true)[0];
+      const hit = this.raycaster.intersectObjects(this.city.clickables, true)[0];
       let o: THREE.Object3D | null = hit?.object ?? null;
       while (o && !o.userData.tip) o = o.parent;
+      this.renderer.domElement.style.cursor = o?.userData.plot ? 'pointer' : '';
       this.onHover((o?.userData.tip as Tip) ?? null, this.lastClient.x, this.lastClient.y);
     }
 

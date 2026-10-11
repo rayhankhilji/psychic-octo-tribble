@@ -1,5 +1,4 @@
 import { formatMoney, type Snapshot, type Timeline } from '../data/types.ts';
-import type { DistrictPlan } from '../world/layout.ts';
 import type { Tip } from '../render/city.ts';
 
 const ICONS = {
@@ -27,14 +26,14 @@ const LEGEND_ICONS = {
   dark: '<svg viewBox="0 0 16 16"><rect x="4" y="2" width="8" height="12" fill="#232842"/><rect x="6" y="4" width="1.4" height="1.4" fill="#141a2c"/><rect x="9" y="4" width="1.4" height="1.4" fill="#141a2c"/><rect x="6" y="7" width="1.4" height="1.4" fill="#141a2c"/><rect x="9" y="10" width="1.4" height="1.4" fill="#141a2c"/></svg>',
 };
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, html = ''): HTMLElementTagNameMap[K] {
+export function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
   e.innerHTML = html;
   return e;
 }
 
-function escape(s: string): string {
+export function escape(s: string): string {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
@@ -54,7 +53,9 @@ export class Hud {
   private brandName: HTMLElement;
   private brandSub: HTMLElement;
   private metricValues = new Map<string, { value: HTMLElement; delta: HTMLElement }>();
-  private milestonesEl: HTMLElement;
+  /** Containers the game UI mounts into. */
+  readonly sideEl: HTMLElement;
+  readonly toolsEl: HTMLElement;
   private feedEl: HTMLElement;
   private clockBtn: HTMLButtonElement;
   private noticeEl: HTMLElement;
@@ -82,10 +83,11 @@ export class Hud {
     this.brandName = brand.querySelector('.brand-name')!;
     this.brandSub = brand.querySelector('.brand-sub')!;
     const tools = el('div', { class: 'toolbar panel' });
+    this.toolsEl = tools;
     tools.append(
       this.button(`${ICONS.rotate}`, 'Rotate (Q / E)', () => h.onRotate(), 'icon'),
       this.button(`${ICONS.home}`, 'Reset view', () => h.onResetView(), 'icon'),
-      this.button(`${ICONS.plug}<span class="label">Connect</span>`, 'Connect your startup', () => this.connect.showModal()),
+      this.button(`${ICONS.plug}`, 'Connect your startup', () => this.connect.showModal(), 'icon'),
       this.button(`${ICONS.share}<span class="label">Share</span>`, 'Share a snapshot', () => h.onShare(), 'primary'),
     );
     this.clockBtn = this.button('', 'Time of day: follows your local clock. Click to preview other times.', () => h.onCycleTime(), 'clock');
@@ -95,29 +97,29 @@ export class Hud {
 
     // Metrics (real numbers, always)
     const side = el('div', { class: 'side' });
+    this.sideEl = side;
     const metrics = el('div', { class: 'metrics panel' }, `<div class="eyebrow"><span>Real metrics</span><span class="as-of"></span></div><div class="metric-list"></div>`);
     const list = metrics.querySelector('.metric-list')!;
-    for (const [key, label] of [['customers', 'Customers'], ['mrr', 'MRR'], ['releases', 'Releases'], ['commits', 'Commits']] as const) {
+    for (const [key, label] of [['mrr', 'MRR'], ['customers', 'Customers'], ['users', 'Active users'], ['releases', 'Releases'], ['commits', 'Commits']] as const) {
       const row = el('div', { class: 'metric' }, `<span class="metric-label">${label}</span><span><span class="metric-value">–</span><span class="metric-delta"></span></span>`);
       this.metricValues.set(key, { value: row.querySelector('.metric-value')!, delta: row.querySelector('.metric-delta')! });
       list.append(row);
     }
-    metrics.append(el('div', { class: 'honesty' }, 'The city is an illustration of these numbers. It never invents progress: every home, tower and raindrop maps to the data above.'));
+    metrics.append(el('div', { class: 'honesty' }, 'Every $1 of real revenue is $10,000 to build with. Nothing in the game makes money: the only way to grow your city is to grow your startup.'));
     side.append(metrics);
 
     // Legend
     const legend = el('details', { class: 'legend panel' });
     legend.innerHTML = `
-      <summary><div class="eyebrow"><span>How to read your city</span><span>▾</span></div></summary>
+      <summary><div class="eyebrow"><span>How to play</span><span>▾</span></div></summary>
       <ul>
-        <li><span class="swatch">${LEGEND_ICONS.home}</span><span><b>A home</b> for every paying customer. Ten homes make a neighbourhood. <span class="rph"></span></span></li>
-        <li><span class="swatch">${LEGEND_ICONS.district}</span><span><b>Districts</b> open at MRR milestones:<span class="milestones"></span></span></li>
-        <li><span class="swatch">${LEGEND_ICONS.hq}</span><span><b>HQ</b> gains a floor for each GitHub release. The beacon flares on every push.</span></li>
-        <li><span class="swatch">${LEGEND_ICONS.train}</span><span><b>The train</b> runs faster the more you shipped this week.</span></li>
-        <li><span class="swatch">${LEGEND_ICONS.rain}</span><span><b>Rain</b> starts when MRR falls more than 1% in a week, and clears when the week is back to flat or up.</span></li>
-        <li><span class="swatch">${LEGEND_ICONS.dark}</span><span><b>A district dark after sunset</b>: MRR has slipped below its milestone.</span></li>
+        <li><span class="swatch">${LEGEND_ICONS.district}</span><span><b>Every $1 you earn is $10,000</b> to spend, paid daily. Build offices, parks, towers, rides and planes on your plots.</span></li>
+        <li><span class="swatch">${LEGEND_ICONS.home}</span><span><b>Your users live here.</b> Each needs $0.20 of MRR to be housed: 1,000 users need $200 MRR. Short of that, people end up in tents and the city runs down.</span></li>
+        <li><span class="swatch">${LEGEND_ICONS.dark}</span><span><b>Upkeep.</b> Buildings cost upkeep. If you can't cover it, the TINYTOWN sign goes dark first, then lamps fail, the bridge rusts and the train stops.</span></li>
+        <li><span class="swatch">${LEGEND_ICONS.hq}</span><span><b>Your home</b> upgrades with every extra digit of MRR: hacker house, studio, the Hills, an island, the moon.</span></li>
+        <li><span class="swatch">${LEGEND_ICONS.train}</span><span><b>Land</b> opens as you fill your plots and grow MRR: clouds clear over new blocks, the Hills, the pier, the marina and your island.</span></li>
+        <li><span class="swatch">${LEGEND_ICONS.rain}</span><span><b>Rain</b> when MRR falls more than 1% in a week. HQ gains a floor per release; the train speeds up with commits.</span></li>
       </ul>`;
-    this.milestonesEl = legend.querySelector('.milestones')!;
 
     this.feedEl = el('div', { class: 'feed', 'aria-live': 'polite' });
     this.noticeEl = el('div', { class: 'notices' });
@@ -183,22 +185,16 @@ export class Hud {
 
     const week = t.snapshots[Math.max(0, i - 7)]!;
     const fmt = (key: keyof Snapshot, v: number) => (key === 'mrr' ? formatMoney(v, t.currency) : v.toLocaleString('en-US'));
-    for (const key of ['customers', 'mrr', 'releases', 'commits'] as const) {
+    for (const key of ['customers', 'users', 'mrr', 'releases', 'commits'] as const) {
       const m = this.metricValues.get(key)!;
-      const has = key === 'mrr' || key === 'customers' ? t.integrations.stripe || t.source === 'demo' : t.integrations.github || t.source === 'demo';
-      m.value.textContent = has ? fmt(key, s[key]) : '—';
-      const d = s[key] - week[key];
+      const has =
+        key === 'users' ? s.users !== undefined : key === 'mrr' || key === 'customers' ? t.integrations.stripe || t.source === 'demo' : t.integrations.github || t.source === 'demo';
+      const now = s[key] ?? 0;
+      m.value.textContent = has ? fmt(key, now) : '—';
+      const d = now - (week[key] ?? 0);
       m.delta.textContent = has && d !== 0 ? `${d > 0 ? '+' : '−'}${fmt(key, Math.abs(d))} 7d` : '';
       m.delta.className = `metric-delta ${key === 'commits' || key === 'releases' ? '' : d > 0 ? 'up' : d < 0 ? 'down' : ''}`;
     }
-  }
-
-  setPlan(districts: DistrictPlan[], residentsPerHome: number) {
-    this.milestonesEl.innerHTML = districts
-      .map((d) => `<span class="milestone ${d.unlocked ? 'done' : ''}" style="${d.unlocked ? `color:#${d.neon.toString(16).padStart(6, '0')}` : ''}" title="${escape(d.name)}">${shortMoney(d.threshold)}</span>`)
-      .join('');
-    const rph = document.querySelector('.legend .rph');
-    if (rph) rph.textContent = residentsPerHome > 1 ? `Your town is full, so each home now houses ${residentsPerHome} customers.` : '';
   }
 
   /** Shows the world's time of day; `preview` is the label when not following the local clock. */
@@ -395,10 +391,4 @@ GITHUB_TOKEN=github_pat_…     # only for private repos</pre>
     });
     this.share.showModal();
   }
-}
-
-function shortMoney(n: number): string {
-  if (n >= 1_000_000) return `$${n / 1_000_000}M`;
-  if (n >= 1000) return `$${n / 1000}k`;
-  return n <= 1 ? 'first $' : `$${n}`;
 }

@@ -58,8 +58,11 @@ describe('planWorld', () => {
     const p = plan({ customers: HOME_CAPACITY * 3 + 1 });
     expect(p.residentsPerHome).toBe(4);
     expect(p.homes.length).toBeLessThanOrEqual(HOME_CAPACITY);
-    expect(p.homes.every((h) => h.kind === 'townhouse')).toBe(true);
-    expect(plan({ customers: HOME_CAPACITY * 10 }).homes[0]!.kind).toBe('apartment');
+    expect(p.homes[0]!.kind).toBe('townhouse');
+    expect(p.homes.at(-1)!.kind).toBe('house');
+    const dense = plan({ customers: HOME_CAPACITY * 10 }).homes;
+    expect(dense[0]!.kind).toBe('apartment');
+    expect(new Set(dense.map((h) => h.kind))).toEqual(new Set(['apartment', 'townhouse', 'house']));
   });
 
   it('unlocks districts at MRR milestones and keeps them built after a dip', () => {

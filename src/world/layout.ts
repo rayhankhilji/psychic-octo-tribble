@@ -184,8 +184,15 @@ export function planWorld(s: Snapshot, ctx: PlanContext): WorldPlan {
   const customers = Math.max(0, Math.floor(s.customers));
   const residentsPerHome = customers <= HOME_CAPACITY ? 1 : Math.ceil(customers / HOME_CAPACITY);
   const homeCount = Math.ceil(customers / residentsPerHome);
-  const kind = homeKind(residentsPerHome);
   const lots = homeLots(0).length;
+  const neighbourhoodsUsed = Math.max(1, Math.ceil(homeCount / lots));
+  // Density falls off from downtown: towers of flats near HQ, houses at the edge.
+  const kindOf = (n: number): HomeKind => {
+    const f = n / neighbourhoodsUsed;
+    if (residentsPerHome <= 1) return 'house';
+    if (residentsPerHome <= 4) return f < 0.4 ? 'townhouse' : 'house';
+    return f < 0.3 ? 'apartment' : f < 0.65 ? 'townhouse' : 'house';
+  };
 
   const homes: HomePlan[] = [];
   for (let index = 0; index < homeCount; index++) {
@@ -193,6 +200,7 @@ export function planWorld(s: Snapshot, ctx: PlanContext): WorldPlan {
     const block = NEIGHBOURHOOD_BLOCKS[n]!;
     const lot = homeLots(n)[index % lots]!;
     const { x, z } = lotPosition(block, lot);
+    const kind = kindOf(n);
     homes.push({ key: `home-${index}-${kind}`, index, neighbourhood: n, x, z, rot: lot.rot, kind, seed: hash(seed, 'home', index) });
   }
 

@@ -81,7 +81,8 @@ export interface GameState {
   plots: PlotState[];
   openBlocks: string[];
   regions: Record<Region, boolean>;
-  home: { tier: number; option: string; picks: Record<number, string> };
+  /** `explicit` lists the tiers where the founder chose (the rest use the first option). */
+  home: { tier: number; option: string; picks: Record<number, string>; explicit: number[] };
   /** Actions that couldn't be applied (unaffordable, locked, no space). */
   rejected: { action: Action; reason: string }[];
 }
@@ -272,6 +273,7 @@ export function simulate(snapshots: Snapshot[], actions: Action[], upto: number,
   const score = Math.round(100 * (0.35 * sat.housing + 0.25 * sat.upkeep + 0.2 * sat.amenities + 0.2 * sat.momentum));
 
   const tier = homeTierFor(peak);
+  const explicit = Object.keys(picks).map(Number);
   for (let k = 0; k <= tier; k++) picks[k] ??= HOME_TIERS[k]!.options[0]!.id;
 
   return {
@@ -292,7 +294,7 @@ export function simulate(snapshots: Snapshot[], actions: Action[], upto: number,
     plots: [...plots.values()],
     openBlocks,
     regions: regionsAt(peak),
-    home: { tier, option: picks[tier]!, picks },
+    home: { tier, option: picks[tier]!, picks, explicit },
     rejected,
   };
 }

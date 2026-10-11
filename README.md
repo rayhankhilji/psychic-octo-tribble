@@ -1,12 +1,14 @@
 # TinyTown
 
-**Your startup, as a living world.** A little isometric city that grows with your company's real metrics. Every paying customer moves into a house, revenue milestones open new districts, every release adds a floor to your HQ, and a rough week brings rain.
+**Your startup, as a city you build.** Every real dollar of revenue becomes $10,000 to spend on your city: offices, parks, towers, a stadium, a university, planes, a rocket. Your users live there, and housing them costs money, so if your conversion rate is too low people end up homeless and the city runs down. Every extra digit of MRR moves you into a better house, from a hacker house to the Hills to your own island to the moon.
 
-It isn't a dashboard and it isn't a chatbot. It's something you've built, shown as a small world.
+**The only way to grow your city is to grow your startup.** Nothing in the game makes money, and you can't buy currency.
 
 The world is **Golden Coast**, a sunny cross between San Francisco and Los Angeles: painted-lady terraces and Spanish stucco under terracotta roofs, palms, glass towers, a red suspension bridge over the bay, a pier with a Ferris wheel, a beach, and a **TINYTOWN** sign on the hill behind it all.
 
-![A grown TinyTown at midday: neighbourhoods around a glass downtown, with the bay, bridge, pier, beach and the TINYTOWN sign on the hill](docs/images/city.png)
+![A grown TinyTown at midday: the city panel showing treasury and satisfaction, neighbourhoods around a glass downtown, the Hills neighbourhood, pier rides and the TINYTOWN sign](docs/images/city.png)
+
+![The build menu: items with prices, upkeep and MRR unlocks](docs/images/build.png)
 
 ## Day and night
 
@@ -24,28 +26,30 @@ npm install
 npm run dev          # http://localhost:5173 — the demo world replays 18 months of a fictional startup
 ```
 
-The demo replays 540 days of a made-up startup called *Nightjar*: first customer, public launch, steady growth, one bad stretch, then a skyline. Drag to pan, right-drag or <kbd>Q</kbd>/<kbd>E</kbd> to rotate, scroll to zoom, <kbd>Space</kbd> to play or pause. Hover over anything to see what it stands for.
+The demo replays 540 days of a made-up startup called *Nightjar*, including what its founder built along the way: first customer, a launch-day rush of free users that outruns revenue (tents, a dark sign, a rusting bridge), recovery, then a skyline. Jump in at any point and build your own way; your choices are saved in this browser. `/?demo&fresh` resets to the scripted founder, and `/?demo&boost=40` multiplies the demo by 40 so you can see the island, launch site and $1B-a-month projects.
 
-## How to read your city
+Drag to pan, right-drag or <kbd>Q</kbd>/<kbd>E</kbd> to rotate, scroll or <kbd>+</kbd>/<kbd>−</kbd> to zoom, <kbd>B</kbd> to build, <kbd>Space</kbd> to play or pause. Hover over anything to see what it is; click an empty plot to build on it.
 
-The world is a pure function of your numbers. The panel on the left always shows the real values behind it.
+## How the game works
 
-| You see | It means | Source |
-| --- | --- | --- |
-| A home | One paying customer. Ten homes make a neighbourhood. When all 400 lots are full, homes become townhouses and then apartments, and the legend tells you how many customers each one houses. | Stripe |
-| A new district | MRR reached a milestone: first revenue, $1k, $5k, $10k, $25k, $50k, $100k, $1M. | Stripe |
-| A district that stays dark after sunset | MRR has dropped back below that district's milestone. Districts you've earned stay built. | Stripe |
-| A fenced lot with a crane | The next milestone. Hover over it to see the target. | — |
-| HQ floors | One floor per GitHub release, plus fireworks on release day. | GitHub |
-| The beacon flaring, the train sprinting | Commits pushed. The train's cruising speed follows your last 7 days of commits. | GitHub |
-| Rain and overcast skies | MRR fell more than 1% over the trailing week. It clears once the week is flat or up. | Stripe |
-| Cars on the road | Traffic grows with your customer count. | Stripe |
+The full design, with every number, is in [docs/GAME_DESIGN.md](docs/GAME_DESIGN.md).
 
-TinyTown never shows fictional progress. Nothing in the city grows unless one of these numbers changed.
+| | |
+| --- | --- |
+| **Money** | Every real $1 of revenue is $10,000 in your treasury, paid daily. At $100k MRR your city earns $1B a month. |
+| **Build** | Offices, parks, shops, a library, theatres, towers, a stadium, a university, a venture studio, a supertall, pier rides, yachts, planes and a rocket, each unlocked at an MRR tier. HQ upgrades from a garage to a landmark tower. |
+| **Housing** | Your active users live in the city. Each needs $0.20 of MRR to be housed (1,000 users need $200 MRR). Below that, people end up in tents and the city runs down. |
+| **Upkeep and decay** | Buildings cost upkeep. When it isn't covered, the TINYTOWN sign goes dark first, then street lamps fail, the bridge rusts, the train stops and shops board up. Nothing is destroyed, and it all recovers when money comes back. |
+| **Land** | Clouds cover what you haven't unlocked. New downtown blocks open once you've built on every plot *and* MRR reaches the next gate. The Hills, pier, marina, your island and its launch site open at MRR milestones. |
+| **Your home** | Hacker House → studio ($10) → bungalow or loft ($100) → a TinyTown Hills house ($1k) → pick one of three estates ($10k) → island estate and superyacht ($100k) → a house on the moon ($1M; buy a rocket to visit). |
+| **Satisfaction** | 0–100 from housing, upkeep, amenities and MRR growth. No in-game action can raise it except growing the business. |
+| **Free infrastructure** | Roads, the train, the bridge and the airport. Planes are what you buy. |
+
+Real metrics still drive the world, as before: HQ gains a floor per GitHub release, the train speeds up with commits, and rain falls when MRR drops more than 1% in a week.
 
 <p>
-  <img src="docs/images/early.png" width="49%" alt="Day 161: HQ, the first districts and two neighbourhoods of Spanish and modern homes with pools">
-  <img src="docs/images/rain.png" width="49%" alt="An overcast, rainy afternoon during a week when MRR dropped">
+  <img src="docs/images/decay.png" width="49%" alt="Day 105 at night: thousands of users without a home, the bridge rusting and the sign dark">
+  <img src="docs/images/island.png" width="49%" alt="At $1M MRR: the island estate, superyacht, rocket on its launch pad, and the pier's Ferris wheel and coaster">
 </p>
 
 ## Connect your startup

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GeoBuilder, glowMaterial } from './geo.ts';
 import { PALETTE } from './palette.ts';
 import { palm, tree } from './buildings.ts';
+import { cloudBank as cloudPuffs } from './models.ts';
 import { hash, pick, rng } from '../world/rng.ts';
 
 /** The flat land the city sits on. Ocean on three sides, hills behind. */
@@ -9,6 +10,32 @@ export const LAND = { minX: -22, maxX: 22, minZ: -24, maxZ: 22 } as const;
 const BEACH = { x0: 22, x1: 27.5, z0: -22, z1: 22 } as const;
 const WATER_Y = -0.4;
 const HILL = { x0: -34, x1: 34, z0: -56, z1: -24 } as const;
+
+/** Fixed places for things founders own, outside the city grid. */
+export const ISLAND = { x: -13, z: 28.6, r: 3.3 } as const;
+export const LAUNCH = { x: -8.9, z: 33.4, r: 2.3 } as const;
+export const AIRPORT = { x0: 31, x1: 41, z0: -16, z1: 14 } as const;
+/** Planes park on the apron facing the runway (+x). */
+export const AIRPORT_SLOTS = [-9, -5, -1, 3].map((z) => ({ x: 34.4, z }));
+export const MARINA_SLOTS = [8, 10.6, 13.2].map((z) => ({ x: -27.6, z }));
+export const SUPERYACHT = { x: -9.2, z: 25.2 } as const;
+/** The founder's lots: one downtown (on the HQ block), one at the top of the Hills. */
+export const DOWNTOWN_HOME = { x: -1.5, z: 1.5 } as const;
+export const HILLS_HOME = { x: 12, z: -33.4 } as const;
+/** TinyTown Hills, the neighbourhood on the slope right of the sign. */
+const HILLS_HOOD = { x0: 0, x1: 22, z0: -35, z1: -24 } as const;
+
+export interface SceneryState {
+  hills: boolean;
+  island: boolean;
+  launch: boolean;
+  ferris: boolean;
+  coaster: boolean;
+  /** The TINYTOWN sign's lights are paid for. */
+  signLit: boolean;
+  lampsFailing: boolean;
+  bridgeRusting: boolean;
+}
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -42,11 +69,25 @@ export class Scenery {
   /** Emissive materials for the city to drive between day and night. */
   readonly glows: THREE.MeshBasicMaterial[] = [];
   private seed: number;
+  private coaster = new THREE.Group();
+  private wheelSet = new THREE.Group();
+  private bridgeMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.82, metalness: 0.05 });
+  private hood = new THREE.Group();
+  private hillCars: { obj: THREE.Object3D; t: number; speed: number }[] = [];
+  private hillRoad!: THREE.CatmullRomCurve3;
+  private clouds: Record<'hills' | 'island' | 'launch', THREE.Group> = { hills: new THREE.Group(), island: new THREE.Group(), launch: new THREE.Group() };
+  private islandExtras = new THREE.Group();
+  private launchPad = new THREE.Group();
+  private state: SceneryState = { hills: false, island: false, launch: false, ferris: false, coaster: false, signLit: true, lampsFailing: false, bridgeRusting: false };
+  private signFlicker = 0;
 
   constructor(seed: number) {
     this.seed = seed;
     this.normals = waterNormals();
-    this.object.add(this.ocean(), this.land(), this.hills(), this.pier(), this.bridge(), this.island(), this.coastline());
+    this.object.add(this.ocean(), this.land(), this.hills(), this.pier(), this.bridge(), this.island(), this.coastline(), this.airport());
+    this.object.add(this.hood, this.clouds.hills, this.clouds.island, this.clouds.launch, this.islandExtras, this.launchPad);
+    this.buildHood();
+    this.buildClouds();
     this.signMat = this.sign();
     this.beamMat = glowMaterial({ color: 0xfff2c0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     this.beam = new THREE.Mesh(new THREE.ConeGeometry(1.2, 9, 12, 1, true).rotateZ(Math.PI / 2).translate(-4.5, 0, 0), this.beamMat);
@@ -215,20 +256,9 @@ export class Scenery {
       const z = HILL.z0 + 4 + r() * (d - 4);
       const h = hillHeight(x, z);
       if (h > peak.h) peak = { x, z, h };
-      if (h < 0.2 || inSignArea(x, z)) continue;
+      if (h < 0.2 || inSignArea(x, z) || inHood(x, z)) continue;
       if (r() > 0.85 - h * 0.08) continue;
       tree(b, r, x, z, 1.3, h - 0.05, r() < 0.55 ? 'cypress' : r() < 0.7 ? 'round' : 'palm');
-    }
-    // Hillside villas
-    for (let i = 0; i < 18; i++) {
-      const x = -26 + r() * 52;
-      const z = LAND.minZ - 1.5 - r() * 6;
-      const h = hillHeight(x, z);
-      if (h < 0.3 || inSignArea(x, z)) continue;
-      b.box(0.7, 0.35, 0.55, x, h - 0.1, z, pick(r, [0xf8f5ee, 0xf6e7c8, 0xf3c6a2] as const));
-      b.box(0.78, 0.04, 0.63, x, h + 0.25, z, PALETTE.trim);
-      b.quad(0.5, 0.18, x, h + 0.08, z + 0.28, 'z+', [1.6, 1.05, 0.5], true);
-      b.box(0.4, 0.015, 0.3, x + 0.6, h - 0.05, z + 0.1, PALETTE.pool);
     }
     // Radio tower on the highest point, with a red warning light
     for (const [lx, lz] of [[-0.2, -0.2], [0.2, -0.2], [0, 0.2]] as const) b.cylinder(0.03, 0.05, 3.2, peak.x + lx, peak.h - 0.1, peak.z + lz, 0xd0d4dc, 4);
@@ -246,29 +276,31 @@ export class Scenery {
     const post = new THREE.MeshStandardMaterial({ color: 0x55504a, roughness: 0.9 });
     const g = new THREE.Group();
     const letters = 'TINYTOWN';
-    const height = 1.9;
-    const gap = 0.32;
+    const height = 2.6;
+    const gap = 0.42;
     const widths = [...letters].map((ch) => LETTER_WIDTH[ch]! * height);
     const total = widths.reduce((a, b) => a + b, 0) + gap * (letters.length - 1);
     const right = new THREE.Vector3(Math.SQRT1_2, 0, -Math.SQRT1_2);
     const centre = new THREE.Vector3(SIGN.x, 0, SIGN.z);
+    const centreY = hillHeight(SIGN.x, SIGN.z);
     let u = -total / 2;
     [...letters].forEach((ch, i) => {
       const w = widths[i]!;
       const p = centre.clone().addScaledVector(right, u + w / 2);
-      const y = hillHeight(p.x, p.z);
+      // Follow the slope, but only partly, so the letters read as one line.
+      const y = Math.max(hillHeight(p.x, p.z) - 0.25, hillHeight(p.x, p.z) * 0.3 + centreY * 0.7);
       const shape = letterShape(ch, height);
       const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.14, bevelEnabled: false });
       geo.translate(-w / 2, 0, 0);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
-      mesh.position.set(p.x, y - 0.15 + Math.sin(i * 1.7) * 0.12, p.z);
+      mesh.position.set(p.x, y - 0.1 + Math.sin(i * 1.7) * 0.1, p.z);
       mesh.rotation.set(-0.12, Math.PI / 4 + Math.sin(i * 2.3) * 0.04, 0, 'YXZ');
       g.add(mesh);
       for (const s of [-0.3, 0.3]) {
         const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, height * 0.9, 0.06), post);
         const q = p.clone().addScaledVector(right, s * w).add(new THREE.Vector3(-0.25, 0, -0.25));
-        leg.position.set(q.x, hillHeight(q.x, q.z) + height * 0.4, q.z);
+        leg.position.set(q.x, y + height * 0.35, q.z);
         g.add(leg);
       }
       u += w + gap;
@@ -334,7 +366,7 @@ export class Scenery {
     const support = this.add(frame);
     support.position.set(cx, 0, cz);
     support.rotation.y = Math.PI / 4;
-    g.add(support);
+    this.wheelSet.add(support);
 
     const wb = new GeoBuilder();
     const spokes = 16;
@@ -363,8 +395,33 @@ export class Scenery {
     }
     this.wheel.position.set(cx, hub + y, cz);
     this.wheel.rotation.y = Math.PI / 4;
-    g.add(this.wheel);
+    this.wheelSet.add(this.wheel);
+    this.buildCoaster(x1, z0, y);
+    g.add(this.wheelSet, this.coaster);
     return g;
+  }
+
+  /** Pier roller coaster: a looping track over the right half of the pier. */
+  private buildCoaster(x1: number, z0: number, y: number) {
+    const b = new GeoBuilder();
+    const cx = x1 - 1.0;
+    const cz = z0 + 6.6;
+    const pts: THREE.Vector3[] = [];
+    for (let k = 0; k < 20; k++) {
+      const a = (k / 20) * Math.PI * 2;
+      pts.push(new THREE.Vector3(cx + Math.cos(a) * 0.75, y + 0.7 + 0.55 * Math.sin(a * 2) + (k === 5 ? 0.9 : 0), cz + Math.sin(a) * 2.1));
+    }
+    const curve = new THREE.CatmullRomCurve3(pts, true);
+    b.transformed(new THREE.TubeGeometry(curve, 120, 0.045, 5, true), new THREE.Matrix4(), 0x2f8fd8);
+    for (let k = 0; k < 20; k += 2) {
+      const p = curve.getPointAt(k / 20);
+      b.box(0.035, p.y - y, 0.035, p.x, y + 0.05, p.z, PALETTE.trim);
+    }
+    for (let k = 0; k < 16; k++) {
+      const p = curve.getPointAt(k / 16);
+      b.blob(0.03, p.x, p.y + 0.06, p.z, [2.6, 1.6, 0.6], true);
+    }
+    this.coaster.add(this.add(b, false));
   }
 
   // ─── Suspension bridge across the bay ───────────────────────────────────
@@ -421,27 +478,188 @@ export class Scenery {
       for (let x = start - 6; x > end; x -= 2.2) b.blob(0.05, x, deckY + 0.15, z + s * (half - 0.05), PALETTE.lamp, true);
     }
     for (const tx of towers) b.blob(0.09, tx, towerTop + 0.1, z, [3, 0.3, 0.2], true);
-    return this.add(b);
+    const g = this.add(b);
+    g.traverse((o) => {
+      if (o instanceof THREE.Mesh && !(o.material instanceof THREE.MeshBasicMaterial)) {
+        o.material = this.bridgeMat;
+        o.castShadow = true;
+      }
+    });
+    return g;
   }
 
   private island(): THREE.Group {
     const r = rng(hash(this.seed, 'island'));
     const b = new GeoBuilder();
-    const x = -44;
-    const z = 18;
-    b.cylinder(2.6, 3.2, 1.0, x, WATER_Y - 0.6, z, 0x9c8a6e, 9);
-    b.cylinder(1.8, 2.5, 0.9, x + 0.3, 0.0, z - 0.2, 0x8a7a62, 8);
-    b.cylinder(1.6, 1.8, 0.1, x + 0.3, 0.9, z - 0.2, PALETTE.hillGreen, 8);
-    for (let i = 0; i < 6; i++) tree(b, r, x + (r() - 0.5) * 2.6, z + (r() - 0.5) * 2.6, 0.9, 0.95, 'cypress');
-    b.box(1.6, 0.5, 0.8, x + 0.8, 1.0, z + 0.4, 0xe9e2d0);
-    b.cylinder(0.18, 0.24, 1.3, x - 0.6, 1.0, z - 0.5, PALETTE.trim, 8);
-    b.cylinder(0.2, 0.2, 0.12, x - 0.6, 2.3, z - 0.5, 0xe85a4a, 8);
-    b.blob(0.14, x - 0.6, 2.5, z - 0.5, [3, 2.6, 1.6], true);
-    b.cylinder(0.02, 0.22, 0.2, x - 0.6, 2.62, z - 0.5, 0xe85a4a, 8);
-    this.beamCentre.set(x - 0.6, 2.5, z - 0.5);
+    const { x, z, r: rad } = ISLAND;
+    b.cylinder(rad, rad + 0.6, 1.0, x, WATER_Y - 0.6, z, 0x9c8a6e, 11);
+    b.cylinder(rad - 0.1, rad + 0.2, 0.5, x, -0.45, z, 0xd8c08a, 11);
+    b.cylinder(rad - 0.3, rad - 0.1, 0.06, x, 0.02, z, PALETTE.hillGreen, 11);
+    // Launch lobe
+    b.cylinder(LAUNCH.r, LAUNCH.r + 0.5, 1.0, LAUNCH.x, WATER_Y - 0.6, LAUNCH.z, 0x9c8a6e, 9);
+    b.cylinder(LAUNCH.r - 0.1, LAUNCH.r + 0.15, 0.5, LAUNCH.x, -0.45, LAUNCH.z, 0xbdb6a8, 9);
+    for (let i = 0; i < 7; i++) {
+      const a = r() * Math.PI * 2;
+      const d = rad - 0.6 - r() * 0.5;
+      palm(b, r, x + Math.cos(a) * d, z + Math.sin(a) * d, 0.9, 0.06);
+    }
+    // Lighthouse on the far point
+    const lx = x - rad + 0.6;
+    const lz = z + 0.9;
+    b.cylinder(0.18, 0.24, 1.3, lx, 0.06, lz, PALETTE.trim, 8);
+    b.cylinder(0.2, 0.2, 0.12, lx, 1.36, lz, 0xe85a4a, 8);
+    b.blob(0.14, lx, 1.56, lz, [3, 2.6, 1.6], true);
+    b.cylinder(0.02, 0.22, 0.2, lx, 1.68, lz, 0xe85a4a, 8);
+    this.beamCentre.set(lx, 1.56, lz);
+
+    // Launch site, revealed at $1M MRR
+    const pad = new GeoBuilder();
+    pad.cylinder(1.3, 1.3, 0.08, LAUNCH.x, 0.05, LAUNCH.z, PALETTE.concrete, 16);
+    pad.cylinder(0.5, 0.5, 0.02, LAUNCH.x, 0.13, LAUNCH.z, 0x2a2a30, 12);
+    pad.box(0.3, 3.2, 0.3, LAUNCH.x + 0.9, 0.13, LAUNCH.z - 0.5, 0xd8402e);
+    for (let k = 0; k < 6; k++) pad.box(0.32, 0.03, 0.32, LAUNCH.x + 0.9, 0.5 + k * 0.5, LAUNCH.z - 0.5, PALETTE.trim);
+    pad.box(0.6, 0.05, 0.06, LAUNCH.x + 0.6, 2.6, LAUNCH.z - 0.35, 0xd8402e);
+    pad.blob(0.06, LAUNCH.x + 0.9, 3.4, LAUNCH.z - 0.5, [3, 0.3, 0.2], true);
+    this.launchPad.add(this.add(pad));
     return this.add(b);
   }
   private beamCentre = new THREE.Vector3();
+
+  // ─── Airport: free infrastructure for every city ────────────────────────
+
+  private airport(): THREE.Group {
+    const r = rng(hash(this.seed, 'airport'));
+    const g = new THREE.Group();
+    const { x0, x1, z0, z1 } = AIRPORT;
+    const land = new THREE.Mesh(
+      new THREE.BoxGeometry(x1 - x0, 1.6, z1 - z0),
+      [0, 0, 1, 0, 0, 0].map((i) => new THREE.MeshStandardMaterial({ color: i ? PALETTE.grass : PALETTE.seawall, roughness: 1 })),
+    );
+    land.position.set((x0 + x1) / 2, -0.8, (z0 + z1) / 2);
+    land.receiveShadow = true;
+    g.add(land);
+
+    const b = new GeoBuilder();
+    // Causeway from the beach
+    b.box(BEACH.x1 - BEACH.x0 + (x0 - BEACH.x1) + 0.5, 0.3, 1.2, (BEACH.x0 + x0) / 2 + 0.2, -0.28, -6, PALETTE.concrete);
+    b.box(x0 - BEACH.x0 + 0.5, 0.02, 0.8, (BEACH.x0 + x0) / 2 + 0.2, 0.02, -6, PALETTE.road);
+    // Runway with markings
+    const rx = 38.4;
+    b.box(1.8, 0.02, z1 - z0 - 1.5, rx, 0, (z0 + z1) / 2, 0x4a4e58);
+    for (let z = z0 + 2.5; z < z1 - 2.5; z += 1.4) b.box(0.08, 0.005, 0.7, rx, 0.022, z, PALETTE.trim);
+    for (const end of [z0 + 1.2, z1 - 1.2]) for (let k = -3; k <= 3; k++) b.box(0.1, 0.005, 0.6, rx + k * 0.22, 0.022, end, PALETTE.trim);
+    // Taxiway and apron
+    b.box(0.9, 0.02, 16, 36.6, 0, -3, 0x5d616c);
+    b.box(2.4, 0.02, 15, 34.4, 0, -3, 0x6a6e78);
+    for (const s of AIRPORT_SLOTS) b.box(1.6, 0.004, 0.03, s.x, 0.022, s.z + 1.0, 0xf2c84b);
+    // Terminal, tower, hangars
+    b.box(1.6, 0.6, 4.2, 32.2, 0, 2.6, 0xe9eef2);
+    b.box(1.7, 0.06, 4.3, 32.2, 0.6, 2.6, PALETTE.trim);
+    b.windows({ w: 1.6, d: 4.2, x: 32.2, z: 2.6, y0: 0, rows: 1, rowHeight: 0.6, cols: 10, faces: ['x+', 'z+'] }, r, 0.9, PALETTE.windowCool, { w: 0.3, h: 0.36 });
+    b.cylinder(0.22, 0.28, 2.2, 32.4, 0, 6.2, PALETTE.trim, 8);
+    b.cylinder(0.5, 0.42, 0.4, 32.4, 2.2, 6.2, 0x7db3dd, 8);
+    b.cylinder(0.52, 0.52, 0.05, 32.4, 2.6, 6.2, PALETTE.trim, 8);
+    b.blob(0.06, 32.4, 2.75, 6.2, [3, 0.3, 0.2], true);
+    for (const hz of [-12.5, -9.4]) {
+      b.box(2.2, 0.9, 2.4, 32.6, 0, hz, 0xd9dde4);
+      const roof = new THREE.CylinderGeometry(1.2, 1.2, 2.4, 12, 1, false, 0, Math.PI).rotateX(Math.PI / 2).rotateY(Math.PI / 2).scale(0.92, 0.5, 1);
+      b.transformed(roof, new THREE.Matrix4().makeTranslation(32.6, 0.9, hz), 0xb9c0ca);
+    }
+    b.box(0.03, 0.6, 0.03, 40.4, 0, 9, PALETTE.steel);
+    b.box(0.3, 0.08, 0.08, 40.55, 0.55, 9, 0xf28a3a); // windsock
+    for (let z = z0 + 1; z < z1; z += 2) {
+      b.blob(0.035, rx - 1.0, 0.05, z, [3, 2.6, 1.6], true);
+      b.blob(0.035, rx + 1.0, 0.05, z, [3, 2.6, 1.6], true);
+    }
+    for (let i = 0; i < 18; i++) palm(b, r, x0 + 0.4 + r() * 0.6, z0 + 1 + r() * (z1 - z0 - 2), 1.0);
+    g.add(this.add(b));
+    return g;
+  }
+
+  // ─── TinyTown Hills ─────────────────────────────────────────────────────
+
+  /** A switchback road up the slope with villas either side; hidden until the Hills open. */
+  private buildHood() {
+    const r = rng(hash(this.seed, 'hood'));
+    const way: [number, number][] = [[3, -24.3], [19, -25.6], [20.4, -27.1], [5, -28.2], [3.6, -29.7], [19.5, -30.8], [20.6, -32.2], [14, -33.6]];
+    const pts = way.map(([x, z]) => new THREE.Vector3(x, hillHeight(x, z) + 0.04, z));
+    this.hillRoad = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+    const n = 220;
+    const pos: number[] = [];
+    const up = new THREE.Vector3(0, 1, 0);
+    for (let i = 0; i <= n; i++) {
+      const p = this.hillRoad.getPointAt(i / n);
+      const t = this.hillRoad.getTangentAt(i / n);
+      const side = new THREE.Vector3().crossVectors(t, up).normalize().multiplyScalar(0.28);
+      const l = p.clone().add(side);
+      const rr = p.clone().sub(side);
+      l.y = hillHeight(l.x, l.z) + 0.05;
+      rr.y = hillHeight(rr.x, rr.z) + 0.05;
+      pos.push(l.x, l.y, l.z, rr.x, rr.y, rr.z);
+    }
+    const idx: number[] = [];
+    for (let i = 0; i < n; i++) idx.push(i * 2, i * 2 + 2, i * 2 + 1, i * 2 + 1, i * 2 + 2, i * 2 + 3);
+    const road = new THREE.BufferGeometry();
+    road.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    road.setIndex(idx);
+    road.computeVertexNormals();
+    const roadMesh = new THREE.Mesh(road, new THREE.MeshStandardMaterial({ color: PALETTE.road, roughness: 0.6, side: THREE.DoubleSide }));
+    roadMesh.receiveShadow = true;
+    this.hood.add(roadMesh);
+
+    const b = new GeoBuilder();
+    for (let i = 1; i < 28; i++) {
+      const u = i / 28;
+      const p = this.hillRoad.getPointAt(u);
+      const t = this.hillRoad.getTangentAt(u);
+      const s = i % 2 ? 1 : -1;
+      const off = new THREE.Vector3(-t.z, 0, t.x).normalize().multiplyScalar(s * 1.05);
+      const x = p.x + off.x;
+      const z = p.z + off.z;
+      if (Math.hypot(x - HILLS_HOME.x, z - HILLS_HOME.z) < 2.2 || !inHood(x, z)) continue;
+      const h = hillHeight(x, z);
+      const wall = pick(r, [0xf8f5ee, 0xf6e7c8, 0xf3c6a2, 0xe8e2d6] as const);
+      b.box(1.1, 0.06, 0.9, x, h - 0.12, z, 0xe8e2d6);
+      b.box(0.8, 0.34, 0.55, x, h - 0.06, z, wall);
+      if (r() < 0.5) b.hip(0.8, 0.14, 0.55, x, h + 0.28, z, PALETTE.roofs[0]);
+      else b.box(0.88, 0.04, 0.63, x, h + 0.28, z, PALETTE.trim);
+      b.quad(0.5, 0.16, x, h + 0.1, z + 0.279, 'z+', [1.6, 1.05, 0.5], true);
+      b.box(0.36, 0.015, 0.22, x + 0.35, h - 0.06, z + 0.3, PALETTE.pool);
+      palm(b, r, x - 0.45, z + 0.35, 0.8, h - 0.06);
+    }
+    this.hood.add(this.add(b));
+
+    // Nice cars on the hill road
+    for (let i = 0; i < 4; i++) {
+      const car = luxuryCar(r);
+      this.hood.add(car);
+      this.hillCars.push({ obj: car, t: r(), speed: (0.018 + r() * 0.01) * (i % 2 ? 1 : -1) });
+    }
+  }
+
+  private buildClouds() {
+    const bank = (target: THREE.Group, x: number, z: number, w: number, d: number, y: number, key: string) => {
+      const { group } = cloudPuffs(x, z, w, d, hash(this.seed, key), y);
+      target.add(group);
+    };
+    bank(this.clouds.hills, (HILLS_HOOD.x0 + HILLS_HOOD.x1) / 2, (HILLS_HOOD.z0 + HILLS_HOOD.z1) / 2, 22, 10, 3.2, 'hills');
+    bank(this.clouds.island, ISLAND.x, ISLAND.z, 8, 8, 0.6, 'island');
+    bank(this.clouds.launch, LAUNCH.x, LAUNCH.z, 5, 5, 0.8, 'launch');
+  }
+
+  /** Reflect the game: what's open, what's built, what's falling apart. */
+  setState(next: SceneryState) {
+    this.state = next;
+    this.hood.visible = next.hills;
+    this.clouds.hills.visible = !next.hills;
+    this.clouds.island.visible = !next.island;
+    this.clouds.launch.visible = !next.launch;
+    this.launchPad.visible = next.launch;
+    this.wheelSet.visible = next.ferris;
+    this.coaster.visible = next.coaster;
+    this.bridgeMat.color.set(next.bridgeRusting ? 0x9a7a62 : 0xffffff);
+    this.bridgeMat.roughness = next.bridgeRusting ? 1 : 0.82;
+  }
 
   // ─── Boats ──────────────────────────────────────────────────────────────
 
@@ -449,10 +667,10 @@ export class Scenery {
     const r = rng(hash(this.seed, 'boats'));
     const loops: [number, number, number, number][] = [
       [-32, 4, 6, 4],
-      [-11, 40, 8, 3],
+      [-14, 41, 8, 3],
       [34, 0, 3, 13],
       [12, 37, 9, 3.5],
-      [-30, 30, 7, 4],
+      [-32, 30, 6, 4],
     ];
     for (const [cx, cz, rx, rz] of loops) {
       const obj = sailboat(r);
@@ -463,7 +681,7 @@ export class Scenery {
     if (glow) this.glows.push(glow);
     this.object.add(ferry);
     const a = new THREE.Vector3(-4, WATER_Y, LAND.maxZ + 15);
-    const bpt = new THREE.Vector3(-41, WATER_Y, 21.5);
+    const bpt = new THREE.Vector3(-29, WATER_Y, 18.5);
     this.boats.push({
       obj: ferry,
       path: (t) => {
@@ -497,7 +715,21 @@ export class Scenery {
       boat.obj.rotation.z = Math.sin(time * 1.3 + z) * 0.04;
     }
 
-    this.signMat.emissiveIntensity = 0.55 * night;
+    for (const car of this.hillCars) {
+      car.t = (((car.t + dt * car.speed) % 1) + 1) % 1;
+      const p = this.hillRoad.getPointAt(car.t);
+      const ahead = this.hillRoad.getPointAt(Math.min(0.999, Math.max(0.001, car.t + 0.004 * Math.sign(car.speed))));
+      const side = new THREE.Vector3(-(ahead.z - p.z), 0, ahead.x - p.x).normalize().multiplyScalar(0.12);
+      car.obj.position.set(p.x + side.x, p.y, p.z + side.z);
+      car.obj.rotation.y = Math.atan2(-(ahead.z - p.z), ahead.x - p.x);
+    }
+    for (const g of Object.values(this.clouds)) g.position.y = Math.sin(time * 0.4) * 0.08;
+
+    // The sign is the first thing cut when upkeep runs short: it sputters, then goes dark.
+    this.signFlicker = this.state.signLit ? 0 : Math.min(1, this.signFlicker + dt * 0.4);
+    const sputter = this.signFlicker > 0 && this.signFlicker < 1 && Math.random() < 0.3 ? 0.6 : 0;
+    this.signMat.emissiveIntensity = (this.state.signLit ? 0.55 : sputter) * night;
+    for (const m of this.glows) m.color.setScalar(this.state.lampsFailing ? 0.35 : 1);
     this.beamMat.opacity = 0.22 * night;
     this.beam.visible = night > 0.05;
     this.beam.position.copy(this.beamCentre);
@@ -506,6 +738,19 @@ export class Scenery {
 }
 
 // ─── Small parts ──────────────────────────────────────────────────────────
+
+/** A low sports car for the Hills, facing +x. */
+function luxuryCar(r: () => number): THREE.Group {
+  const b = new GeoBuilder();
+  const c = pick(r, [0xd8402e, 0xf2c84b, 0x1c1c24, 0xf4f4f0, 0x2f6fa8] as const);
+  b.box(0.42, 0.08, 0.2, 0, 0.04, 0, c);
+  b.box(0.2, 0.06, 0.16, -0.04, 0.12, 0, 0x2a3442);
+  for (const [x, z] of [[0.13, 0.1], [-0.13, 0.1], [0.13, -0.1], [-0.13, -0.1]] as const) b.cylinder(0.04, 0.04, 0.03, x, 0.0, z, 0x111111, 8);
+  b.box(0.01, 0.03, 0.14, 0.211, 0.07, 0, [3, 2.8, 2.2], true);
+  const { group } = b.build();
+  group.traverse((o) => (o.castShadow = true));
+  return group;
+}
 
 function beachY(x: number): number {
   const t = (x - BEACH.x0 - 1.6) / (BEACH.x1 - BEACH.x0 - 1.6);
@@ -552,13 +797,17 @@ function ferryBoat(): { group: THREE.Group; glow?: THREE.MeshBasicMaterial } {
   return built;
 }
 
-const SIGN = { x: -13, z: -28.6 } as const;
+const SIGN = { x: -17, z: -27.2 } as const;
 
 function inSignArea(x: number, z: number): boolean {
   // The sign runs along the screen-right diagonal through SIGN.
   const u = (x - SIGN.x - (z - SIGN.z)) * Math.SQRT1_2;
   const v = (x - SIGN.x + (z - SIGN.z)) * Math.SQRT1_2;
-  return Math.abs(u) < 8.5 && v > -2.2 && v < 1.6;
+  return Math.abs(u) < 9.5 && v > -2.6 && v < 1.8;
+}
+
+function inHood(x: number, z: number): boolean {
+  return x > HILLS_HOOD.x0 - 0.5 && x < HILLS_HOOD.x1 + 0.5 && z > HILLS_HOOD.z0 - 0.5 && z < HILLS_HOOD.z1;
 }
 
 const LETTER_WIDTH: Record<string, number> = { T: 0.62, I: 0.2, N: 0.62, Y: 0.64, O: 0.66, W: 0.86 };
@@ -646,7 +895,11 @@ function shallowsTexture(): THREE.Texture {
         if (hillHeight(x, z) > -0.35) ctx.rect(px(x - 0.3), pz(z - 0.3), (0.6 / span) * size, (0.6 / span) * size);
       }
     }
-    ctx.ellipse(px(-44), pz(18), (3.4 / span) * size, (3.4 / span) * size, 0, 0, Math.PI * 2);
+    ctx.rect(px(AIRPORT.x0), pz(AIRPORT.z0), px(AIRPORT.x1) - px(AIRPORT.x0), pz(AIRPORT.z1) - pz(AIRPORT.z0));
+    for (const isle of [ISLAND, LAUNCH]) {
+      ctx.moveTo(px(isle.x + isle.r + 0.6), pz(isle.z));
+      ctx.ellipse(px(isle.x), pz(isle.z), ((isle.r + 0.6) / span) * size, ((isle.r + 0.6) / span) * size, 0, 0, Math.PI * 2);
+    }
   };
   ctx.filter = 'blur(28px)';
   ctx.fillStyle = PALETTE.shallows;
