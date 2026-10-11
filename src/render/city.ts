@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { disposeGroup, GeoBuilder, GLOW, glowMaterial } from './geo.ts';
+import { disposeGroup, GeoBuilder, GLOW, glassMaterial, glowMaterial, setEnvironment } from './geo.ts';
 import { PALETTE } from './palette.ts';
-import { headquarters, home, neighbourhoodGrounds, tree, type Built, type HQ } from './buildings.ts';
+import { home, neighbourhoodGrounds, tree, type Built } from './buildings.ts';
+import { headquarters, type HQ } from './towers.ts';
 import { cloudBank, encampment, founderHome, itemModel, plane, plotMarker, rocket, yacht } from './models.ts';
 import { Fireworks, Rain, Traffic, Train, type Run } from './effects.ts';
 import { AIRPORT_SLOTS, DOWNTOWN_HOME, HILLS_HOME, ISLAND, LAUNCH, MARINA_SLOTS, SUPERYACHT, Scenery, hillHeight } from './scenery.ts';
@@ -9,7 +10,8 @@ import { BUILD_BLOCKS, HOME_TIERS, HQ_FLOOR_CAP, ITEMS } from '../game/catalog.t
 import { decayOf, type GameEvent, type GameState } from '../game/economy.ts';
 import { atmosphereAt, localHour, type Atmosphere } from '../world/daylight.ts';
 import { hash, rng } from '../world/rng.ts';
-import { BLOCK, HQ_BLOCK, PITCH, RADIUS, blockCentre, type BlockCoord, type WorldPlan } from '../world/layout.ts';
+import { BLOCK, HQ_BLOCK, PITCH, blockCentre, type BlockCoord, type WorldPlan } from '../world/layout.ts';
+import { BLOCKS, EMBARCADERO, LANDMARKS, MARKET_END, MARKET_START, WORLD, type Pt } from '../world/map.ts';
 import type { WorldEvent } from '../world/events.ts';
 
 export interface Tip {
@@ -41,8 +43,10 @@ interface Fade {
   target: number;
 }
 
-const HALF = RADIUS * PITCH + BLOCK / 2 + 1; // outer edge of the outermost road
-const SHADOW_SPAN = 42;
+/** Blocks on the street grid: every city block has its streets, built up or not. */
+const STREET_BLOCKS: BlockCoord[] = BLOCKS.filter((b) => b.use === 'city' || b.use === 'market' || b.use === 'hq').map(({ bx, bz }) => ({ bx, bz }));
+/** The F-line: vintage streetcars from the Castro down Market and along the Embarcadero to the Wharf. */
+const F_LINE: Pt[] = [MARKET_END, MARKET_START, ...EMBARCADERO.slice(EMBARCADERO.findIndex(([, z]) => z > MARKET_START[1]), EMBARCADERO.findIndex(([x]) => x < -9) + 1)];
 
 const easeOutBack = (t: number) => 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2;
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
@@ -54,8 +58,8 @@ const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 export class City {
   readonly scene = new THREE.Scene();
   readonly fireworks = new Fireworks();
-  readonly rain = new Rain(HALF + 2);
-  readonly train = new Train(HALF + 1.6);
+  readonly rain = new Rain(48);
+  readonly train = new Train(F_LINE, (x, z) => Math.max(0, hillHeight(x, z)) + 0.012);
   readonly traffic = new Traffic(46);
   /** Objects with `userData.tip` for hover tooltips. */
   readonly pickables: THREE.Object3D[] = [];
@@ -108,10 +112,9 @@ export class City {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(4096, 4096);
     const sc = this.sun.shadow.camera;
-    sc.left = sc.bottom = -SHADOW_SPAN;
-    sc.right = sc.top = SHADOW_SPAN;
     sc.near = 1;
-    sc.far = 160;
+    sc.far = 220;
+    this.setView(new THREE.Vector3(0, 0, -6), 40);
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.03;
     this.sun.target.position.set(0, 0, -6);
@@ -136,7 +139,8 @@ export class City {
     this.game = game;
     const open = BUILD_BLOCKS.filter((b) => game.openBlocks.includes(b.id));
     this.activeBlocks = [HQ_BLOCK, ...plan.neighbourhoods.map(({ bx, bz }) => ({ bx, bz })), ...open.map(({ bx, bz }) => ({ bx, bz }))];
-    this.syncRoads(this.activeBlocks);
+    this.syncRoads(STREET_BLOCKS);
+    this.syncWilds(this.activeBlocks);
     const level = game.hqLevel;
     this.syncHQ(level === 0 ? 1 : Math.min(HQ_FLOOR_CAP[level]!, plan.hqFloors - 2), level, animate);
     this.syncNeighbourhoods(plan, animate);
@@ -213,13 +217,13 @@ export class City {
   focusOf(what: 'airport' | 'marina' | 'pier' | 'hills' | 'island' | 'launchpad'): THREE.Vector3 {
     switch (what) {
       case 'airport':
-        return new THREE.Vector3(35, 0, -3);
+        return new THREE.Vector3(21.5, 0, -43);
       case 'marina':
-        return new THREE.Vector3(-25, 0, 11);
+        return new THREE.Vector3(-21.4, 0, 12.8);
       case 'pier':
-        return new THREE.Vector3(-4, 0, 29);
+        return new THREE.Vector3(-8.4, 0, 16);
       case 'hills':
-        return new THREE.Vector3(HILLS_HOME.x - 2, 4, HILLS_HOME.z + 4);
+        return new THREE.Vector3(HILLS_HOME.x, hillHeight(HILLS_HOME.x, HILLS_HOME.z), HILLS_HOME.z);
       case 'island':
         return new THREE.Vector3(ISLAND.x, 0, ISLAND.z);
       case 'launchpad':
@@ -251,7 +255,7 @@ export class City {
         if (b) this.fireworks.launch(new THREE.Vector3(blockCentre(b).x, 1.5, blockCentre(b).z), 3, 2.5);
       } else if (e.type === 'home.moved' || e.type === 'sign.lit') {
         const where = HOME_TIERS[this.game?.home.tier ?? 0]!.where;
-        const at = where === 'hills' || e.type === 'sign.lit' ? new THREE.Vector3(HILLS_HOME.x - 6, 6, HILLS_HOME.z + 2) : where === 'island' || where === 'moon' ? new THREE.Vector3(ISLAND.x, 2, ISLAND.z) : new THREE.Vector3(DOWNTOWN_HOME.x, 1.5, DOWNTOWN_HOME.z);
+        const at = e.type === 'sign.lit' ? new THREE.Vector3(LANDMARKS.sign.x, hillHeight(LANDMARKS.sign.x, LANDMARKS.sign.z) + 2, LANDMARKS.sign.z) : where === 'hills' ? new THREE.Vector3(HILLS_HOME.x, hillHeight(HILLS_HOME.x, HILLS_HOME.z) + 1, HILLS_HOME.z) : where === 'island' || where === 'moon' ? new THREE.Vector3(ISLAND.x, 2, ISLAND.z) : new THREE.Vector3(DOWNTOWN_HOME.x, 1.5, DOWNTOWN_HOME.z);
         this.fireworks.launch(at, 4, 2);
       } else if (e.type === 'region.opened') {
         const at = this.focusOf(e.region === 'launchpad' ? 'launchpad' : e.region === 'pier' ? 'pier' : e.region === 'marina' ? 'marina' : e.region === 'hills' ? 'hills' : 'island');
@@ -265,14 +269,53 @@ export class City {
     this.train.speed = this.trainStopped ? 0 : 0.008 + Math.min(0.03, commitsPerWeek * 0.0006);
   }
 
-  /** How far (in blocks) the developed city reaches from HQ; used to frame the camera. */
-  /** Extra room the overview needs for places outside the grid (the island). */
-  get framingExtra(): number {
-    return this.game?.regions.island ? 6 : 0;
+  /**
+   * The part of the world the overview should frame: the developed city,
+   * the sign on the hill, and whatever else the founder has opened up.
+   */
+  get framing(): { x0: number; x1: number; z0: number; z1: number } {
+    const box = { x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity };
+    const add = (x: number, z: number, pad = 0) => {
+      box.x0 = Math.min(box.x0, x - pad);
+      box.x1 = Math.max(box.x1, x + pad);
+      box.z0 = Math.min(box.z0, z - pad);
+      box.z1 = Math.max(box.z1, z + pad);
+    };
+    for (const b of this.activeBlocks) add(b.bx * PITCH, b.bz * PITCH, PITCH * 0.6);
+    // The waterfront and the sign are always part of the picture.
+    add(LANDMARKS.ferryBuilding.x, LANDMARKS.ferryBuilding.z, 1);
+    add(LANDMARKS.coitTower.x, LANDMARKS.coitTower.z + 3);
+    if (this.activeBlocks.length > 6) add(LANDMARKS.sign.x, LANDMARKS.sign.z, 3);
+    if (this.game?.regions.island) add(ISLAND.x, ISLAND.z, ISLAND.r + 1);
+    if (this.game?.regions.marina) add(-21, 13, 2);
+    return { x0: Math.max(WORLD.x0, box.x0), x1: Math.min(WORLD.x1, box.x1), z0: Math.max(WORLD.z0, box.z0), z1: Math.min(WORLD.z1, box.z1) };
   }
 
-  get reach(): number {
-    return Math.max(1, ...this.activeBlocks.map((b) => Math.max(Math.abs(b.bx), Math.abs(b.bz))));
+  setShadowQuality(size: number) {
+    if (this.sun.shadow.mapSize.x === size) return;
+    this.sun.shadow.mapSize.set(size, size);
+    this.sun.shadow.map?.dispose();
+    this.sun.shadow.map = null;
+  }
+
+  setPixelRatio(pr: number) {
+    this.scenery.setPixelRatio(pr);
+  }
+
+  /** Point the sun's shadow camera at what's on screen, so shadows stay crisp when zoomed in. */
+  setView(target: THREE.Vector3, halfSpan: number) {
+    const span = THREE.MathUtils.clamp(Math.ceil(halfSpan * 1.15), 10, 80);
+    const sc = this.sun.shadow.camera;
+    // Snap to whole texels so shadow edges don't crawl as the camera pans.
+    const texel = (span * 2) / this.sun.shadow.mapSize.x;
+    const snap = (v: number) => Math.round(v / (texel * 8)) * texel * 8;
+    const t = new THREE.Vector3(snap(target.x), 0, snap(target.z));
+    if (sc.right !== span) {
+      sc.left = sc.bottom = -span;
+      sc.right = sc.top = span;
+      sc.updateProjectionMatrix();
+    }
+    this.sun.target.position.copy(t);
   }
 
   private syncHQ(floors: number, level: number, animate: boolean) {
@@ -362,7 +405,6 @@ export class City {
 
     const { cells, runs } = roadNetwork(blocks);
     this.traffic.setRoads(runs);
-    this.syncWilds(blocks);
 
     const asphalt = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 0.02, 1),
@@ -430,22 +472,26 @@ export class City {
     this.roadLayer.add(asphalt, dashes, zebra, poles, heads, pools);
   }
 
-  /** Undeveloped blocks inside city limits: meadow and trees, waiting for growth. */
+  /** City blocks nobody lives on yet: a meadow with trees, waiting for growth. */
+  private wildsKey = '';
   private syncWilds(blocks: BlockCoord[]) {
+    const taken = new Set([...blocks, ...BUILD_BLOCKS].map((b) => `${b.bx},${b.bz}`));
+    const key = [...taken].sort().join(';');
+    if (key === this.wildsKey) return;
+    this.wildsKey = key;
     if (this.wilds) {
       this.scene.remove(this.wilds);
       disposeGroup(this.wilds);
     }
-    const taken = new Set([...blocks, ...BUILD_BLOCKS].map((b) => `${b.bx},${b.bz}`));
     const b = new GeoBuilder();
-    for (let bx = -RADIUS; bx <= RADIUS; bx++) {
-      for (let bz = -RADIUS; bz <= RADIUS; bz++) {
-        if (taken.has(`${bx},${bz}`)) continue;
-        const r = rng(hash(this.seed, 'wild', bx, bz));
-        const c = blockCentre({ bx, bz });
-        const n = 7 + Math.floor(r() * 6);
-        for (let i = 0; i < n; i++) tree(b, r, c.x + (r() - 0.5) * 3.6, c.z + (r() - 0.5) * 3.6, 1.1);
-      }
+    for (const { bx, bz } of BLOCKS) {
+      if (taken.has(`${bx},${bz}`) || BLOCKS.find((q) => q.bx === bx && q.bz === bz)?.use !== 'city') continue;
+      const r = rng(hash(this.seed, 'wild', bx, bz));
+      const c = blockCentre({ bx, bz });
+      b.box(BLOCK, 0.02, BLOCK, c.x, 0, c.z, PALETTE.sidewalk);
+      b.box(BLOCK - 0.3, 0.035, BLOCK - 0.3, c.x, 0, c.z, 0x8cc65e);
+      const n = 6 + Math.floor(r() * 5);
+      for (let i = 0; i < n; i++) tree(b, r, c.x + (r() - 0.5) * 3.2, c.z + (r() - 0.5) * 3.2, 1.0, 0.035, r() < 0.55 ? 'round' : r() < 0.6 ? 'cypress' : 'palm');
     }
     this.wilds = b.build().group;
     this.wilds.traverse((o) => (o.receiveShadow = true));
@@ -721,7 +767,7 @@ export class City {
     this.fireworks.update(dt);
     this.train.update(dt);
     this.traffic.update(dt);
-    this.scenery.update(dt, time, this.atmosphere.night);
+    this.scenery.update(dt, time, this.atmosphere, this.sunDir);
   }
 
   private updateLaunch(dt: number) {
@@ -752,7 +798,9 @@ export class City {
   }
 
   /** Sun, sky and lights for the current hour (local clock unless overridden). */
-  private updateSky(dt: number, _time: number) {
+  private sunDir = new THREE.Vector3(0, 1, 0);
+
+  private updateSky(dt: number, time: number) {
     const target = this.targetHour ?? localHour();
     // Ease forward along the clock so previews sweep through the day instead of cutting.
     let delta = (((target - this.hour) % 24) + 24) % 24;
@@ -761,7 +809,8 @@ export class City {
 
     const a = (this.atmosphere = atmosphereAt(this.hour, this.rain.intensity));
     const [lx, ly, lz] = a.lightDir;
-    this.sun.position.set(lx * 70, ly * 70 - 6, lz * 70).add(this.sun.target.position);
+    this.sunDir.set(lx, ly, lz).normalize();
+    this.sun.position.copy(this.sunDir).multiplyScalar(110).add(this.sun.target.position);
     this.sun.color.setRGB(...a.lightColor);
     this.sun.intensity = a.lightIntensity;
     this.hemi.color.setRGB(...a.skyColor);
@@ -769,10 +818,12 @@ export class City {
     this.hemi.intensity = a.hemiIntensity;
     const fog = this.scene.fog as THREE.Fog;
     fog.color.setRGB(...a.fog);
-    fog.near = 115 - this.rain.intensity * 12;
-    fog.far = 230 - this.rain.intensity * 50;
+    fog.near = 150 - this.rain.intensity * 25;
+    fog.far = 290 - this.rain.intensity * 70;
     (this.scene.background as THREE.Color).setRGB(...a.fog);
     GLOW.night.value = a.night;
+    GLOW.time.value = time;
+    setEnvironment(glassMaterial.envMap, 0.25 + 0.75 * (1 - a.night));
     if (this.pools) this.pools.opacity = 0.45 * a.night * (this.lampsFailing ? 0.25 : 1);
     if (this.hq) this.hq.sign.color.setScalar(1 + 1.2 * a.night);
     this.warm.intensity = 8 * a.night;
@@ -806,12 +857,11 @@ const TENT_SPOTS: { x: number; z: number; rot: number }[] = (() => {
   const add = (x0: number, x1: number, z0: number, z1: number, n: number) => {
     for (let i = 0; i < n; i++) spots.push({ x: x0 + r() * (x1 - x0), z: z0 + r() * (z1 - z0), rot: r() * Math.PI });
   };
-  add(-21.0, -20.0, -12.5, -6.5, 14);
-  add(-21.0, -20.0, -5, 16, 26);
-  add(-16, 16, 20.15, 20.95, 30);
-  add(20.15, 20.95, -16, 16, 20);
-  // Interleave clusters so a small camp starts under the bridge and spreads out.
-  return spots.sort((a, b) => Math.hypot(a.x + 20.5, a.z + 9.5) - Math.hypot(b.x + 20.5, b.z + 9.5));
+  // Under the Bay Bridge approach, then along the Embarcadero, then by Civic Center.
+  add(8.3, 9.7, -9.5, -4.5, 16);
+  add(8.3, 9.6, -20, 4, 34);
+  add(-11.8, -9.6, -21.2, -19.4, 20);
+  return spots.sort((a, b) => Math.hypot(a.x - 9, a.z + 7) - Math.hypot(b.x - 9, b.z + 7));
 })();
 
 let glowTex: THREE.Texture | null = null;

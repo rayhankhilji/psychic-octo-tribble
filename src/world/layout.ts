@@ -1,21 +1,21 @@
 import { hash } from './rng.ts';
 import type { Snapshot } from '../data/types.ts';
 
-/** Lots per block edge. Every block is 4×4 lots, ringed by one-lot-wide roads. */
-export const BLOCK = 4;
-/** Distance between block centres. */
-export const PITCH = BLOCK + 1;
-/** Blocks extend this far from the HQ block in each direction. */
-export const RADIUS = 3;
+import {
+  BLOCK,
+  BUILD_BLOCK_COORDS,
+  HQ_BLOCK,
+  NEIGHBOURHOOD_BLOCKS,
+  PITCH,
+  blockCentre,
+  type BlockCoord,
+} from './map.ts';
+
+export { BLOCK, HQ_BLOCK, NEIGHBOURHOOD_BLOCKS, PITCH, blockCentre, type BlockCoord };
 export const HOMES_PER_NEIGHBOURHOOD = 10;
 
 export type Weather = 'clear' | 'rain';
 export type HomeKind = 'house' | 'townhouse' | 'apartment';
-
-export interface BlockCoord {
-  bx: number;
-  bz: number;
-}
 
 export interface DistrictDef extends BlockCoord {
   id: string;
@@ -68,51 +68,29 @@ export interface WorldPlan {
   activeBlocks: BlockCoord[];
 }
 
+/** MRR milestones, celebrated in the feed. Placed on the downtown build blocks. */
 export const DISTRICTS: readonly DistrictDef[] = [
-  { id: 'market', name: 'Market Street', threshold: 1, tier: 0, neon: 0xffb347, bx: 1, bz: 0 },
-  { id: 'arcade', name: 'Neon Arcade', threshold: 1_000, tier: 1, neon: 0xff3fa4, bx: 0, bz: 1 },
-  { id: 'techpark', name: 'Tech Park', threshold: 5_000, tier: 2, neon: 0x3ff2ff, bx: -1, bz: 0 },
-  { id: 'midtown', name: 'Midtown', threshold: 10_000, tier: 3, neon: 0x9d7bff, bx: 0, bz: -1 },
-  { id: 'skyline', name: 'Skyline', threshold: 25_000, tier: 4, neon: 0x4fa8ff, bx: -1, bz: -1 },
-  { id: 'financial', name: 'Financial District', threshold: 50_000, tier: 5, neon: 0x5dffa0, bx: -2, bz: -1 },
-  { id: 'megacorp', name: 'Megacorp Heights', threshold: 100_000, tier: 6, neon: 0xff5f5f, bx: -1, bz: -2 },
-  { id: 'moonshot', name: 'Moonshot Spire', threshold: 1_000_000, tier: 7, neon: 0xfff27a, bx: -2, bz: -2 },
-];
+  { id: 'market', name: 'First revenue', threshold: 1, tier: 0, neon: 0xffb347 },
+  { id: 'arcade', name: '$1k MRR', threshold: 1_000, tier: 1, neon: 0xff3fa4 },
+  { id: 'techpark', name: '$5k MRR', threshold: 5_000, tier: 2, neon: 0x3ff2ff },
+  { id: 'midtown', name: '$10k MRR', threshold: 10_000, tier: 3, neon: 0x9d7bff },
+  { id: 'skyline', name: '$25k MRR', threshold: 25_000, tier: 4, neon: 0x4fa8ff },
+  { id: 'financial', name: '$50k MRR', threshold: 50_000, tier: 5, neon: 0x5dffa0 },
+  { id: 'megacorp', name: '$100k MRR', threshold: 100_000, tier: 6, neon: 0xff5f5f },
+  { id: 'moonshot', name: '$1M MRR', threshold: 1_000_000, tier: 7, neon: 0xfff27a },
+].map((d) => ({ ...BUILD_BLOCK_COORDS.find((b) => b.id === d.id)!, ...d }));
 
 const NEIGHBOURHOOD_NAMES = [
-  'Maple Court', 'Juniper Row', 'Cedar Hollow', 'Lantern Lane', 'Willow Bend', 'Foxglove Close',
-  'Harbour View', 'Orchard Rise', 'Birch Terrace', 'Copper Hill', 'Sparrow Green', 'Linden Square',
-  'Moonlit Mews', 'Thistle Park', 'Heron Walk', 'Clover Gardens', 'Aspen Yard', 'Rosewood',
-  'Pebble Crescent', 'Elm Commons', 'Larkspur', 'Bramble End', 'Saffron Row', 'Kestrel Heights',
-  'Poplar Place', 'Wren Hollow', 'Fern Gully', 'Quarry Lane', 'Driftwood', 'Hazel Court',
-  'Ivy Bridge', 'Marigold', 'Oakridge', 'Pine Hollow', 'Sorrel Close', 'Tamarind',
-  'Umber Street', 'Violet Row', 'Yarrow Fields', 'Zephyr Point',
+  'Russian Slope', 'Hayes Hollow', 'Cow Hollow', 'Lower Haight', 'Cole Valley', 'Duboce Row',
+  'Noe Terrace', 'Glen Canyon', 'Dolores Heights', 'Bernal Rise', 'Potrero Steps', 'Inner Sunset',
+  'Outer Sunset', 'Inner Richmond', 'Outer Richmond', 'Laurel Court', 'Jordan Park', 'Lake Street',
+  'Sea Cliff', 'Parkside', 'Forest Knolls', 'Miraloma', 'Castro Row', 'Mission Dolores',
+  'Valencia Corner', 'Dogpatch', 'Mission Bay', 'Sunnyside', 'Excelsior', 'Portola',
+  'Golden Gate Heights', 'Ingleside', 'Merced Manor', 'St. Francis Wood', 'West Portal',
+  'Midtown Terrace', 'Diamond Heights', 'Twin Lakes', 'Ocean View', 'Visitacion'
 ];
 
-export const HQ_BLOCK: BlockCoord = { bx: 0, bz: 0 };
-
-const sameBlock = (a: BlockCoord, b: BlockCoord) => a.bx === b.bx && a.bz === b.bz;
-
-/** Residential blocks, nearest to downtown first. */
-export const NEIGHBOURHOOD_BLOCKS: readonly BlockCoord[] = (() => {
-  const blocks: BlockCoord[] = [];
-  for (let bx = -RADIUS; bx <= RADIUS; bx++) {
-    for (let bz = -RADIUS; bz <= RADIUS; bz++) {
-      const b = { bx, bz };
-      if (sameBlock(b, HQ_BLOCK) || DISTRICTS.some((d) => sameBlock(d, b))) continue;
-      blocks.push(b);
-    }
-  }
-  // Front of the camera (+x,+z) first so early growth is in view, then outwards.
-  const angle = (b: BlockCoord) => (Math.atan2(b.bz, b.bx) - Math.PI / 4 + 4 * Math.PI) % (2 * Math.PI);
-  return blocks.sort((a, b) => Math.hypot(a.bx, a.bz) - Math.hypot(b.bx, b.bz) || angle(a) - angle(b));
-})();
-
 export const HOME_CAPACITY = NEIGHBOURHOOD_BLOCKS.length * HOMES_PER_NEIGHBOURHOOD;
-
-export function blockCentre(b: BlockCoord): { x: number; z: number } {
-  return { x: b.bx * PITCH, z: b.bz * PITCH };
-}
 
 export interface Lot {
   i: number;

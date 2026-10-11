@@ -26,7 +26,7 @@ describe('planWorld', () => {
     expect(plan({ customers: 1 }).homes).toHaveLength(1);
     expect(plan({ customers: 10 }).neighbourhoods).toHaveLength(1);
     expect(plan({ customers: 11 }).neighbourhoods).toHaveLength(2);
-    expect(plan({ customers: 11 }).neighbourhoods[1]!.name).toBe('Juniper Row');
+    expect(plan({ customers: 11 }).neighbourhoods[1]!.name).toBe('Hayes Hollow');
   });
 
   it('never moves an existing home when another customer arrives', () => {

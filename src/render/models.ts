@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { GeoBuilder, type ColorLike } from './geo.ts';
 import { PALETTE } from './palette.ts';
-import { bright, campus, deco, palm, pyramid, spire, tower, tree, warmth, type Built } from './buildings.ts';
+import { bright, palm, tree, warmth, type Built } from './buildings.ts';
+import { campus, deco, pyramid, spire, tower } from './towers.ts';
 import { pick, rng } from '../world/rng.ts';
 
 /**

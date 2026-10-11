@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { PALETTE } from './palette.ts';
 
 export type ColorLike = number | readonly [number, number, number];
@@ -10,25 +11,30 @@ const FACING_ROT: Record<Facing, number> = { 'z+': 0, 'x+': Math.PI / 2, 'z-': M
 
 const tmpColor = new THREE.Color();
 
-function prepare(g: THREE.BufferGeometry, color: ColorLike): THREE.BufferGeometry {
+/** Non-indexed, coloured, with a per-vertex `rand` used to stagger window lights. */
+function prepare(g: THREE.BufferGeometry, color: ColorLike, rand = 0): THREE.BufferGeometry {
   const geo = g.index ? g.toNonIndexed() : g;
   if (geo !== g) g.dispose();
-  geo.deleteAttribute('uv');
+  for (const name of Object.keys(geo.attributes)) if (name !== 'position' && name !== 'normal') geo.deleteAttribute(name);
+  if (!geo.attributes.normal) geo.computeVertexNormals();
   if (typeof color === 'number') tmpColor.setHex(color);
   else tmpColor.setRGB(color[0], color[1], color[2]);
   const n = geo.attributes.position!.count;
   const colors = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) colors.set([tmpColor.r, tmpColor.g, tmpColor.b], i * 3);
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('winRand', new THREE.BufferAttribute(new Float32Array(n).fill(rand), 1));
   return geo;
 }
 
 /**
  * Shared by every emissive material. `night` blends from daylight glass
- * (windows reflecting the sky) to the material's own glow colour.
+ * (windows reflecting the sky) to the material's own glow colour; each
+ * window's `rand` decides when in the dusk it switches on.
  */
 export const GLOW = {
   night: { value: 1 },
+  time: { value: 0 },
   day: { value: new THREE.Color(...PALETTE.dayGlass) },
 };
 
@@ -38,47 +44,97 @@ export function glowMaterial(params: THREE.MeshBasicMaterialParameters = { verte
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uNight = GLOW.night;
     shader.uniforms.uDay = GLOW.day;
+    shader.uniforms.uTime = GLOW.time;
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'attribute float winRand;\nvarying float vRand;\nvoid main() {\n\tvRand = winRand;')
     shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', 'uniform float uNight;\nuniform vec3 uDay;\nvoid main() {')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.rgb = mix(uDay, diffuseColor.rgb, uNight);');
+      .replace('void main() {', 'uniform float uNight;\nuniform float uTime;\nuniform vec3 uDay;\nvarying float vRand;\nvoid main() {')
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        float lit = smoothstep(vRand - 0.04, vRand + 0.04, uNight * 1.12 - 0.06);
+        float cycle = floor(uTime / 23.0 + vRand * 17.0);
+        float flick = step(0.93, fract(sin(cycle * 12.9898 + vRand * 78.233) * 43758.5453));
+        lit *= 1.0 - flick * step(0.1, vRand) * step(vRand, 1.5);
+        vec3 dayGlass = uDay * (0.78 + 0.4 * fract(vRand * 7.31));
+        diffuseColor.rgb = mix(dayGlass, diffuseColor.rgb * max(lit, 0.035), uNight);`,
+      );
   };
-  m.customProgramCacheKey = () => 'tinytown-glow';
+  m.customProgramCacheKey = () => 'tinytown-glow-3';
   return m;
 }
 
-/** Shared by every building: flat-shaded, coloured per vertex. */
-export const solidMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.82, metalness: 0.05 });
+/** Shared by every building: crisp, coloured per vertex. */
+export const solidMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.82, metalness: 0.0, envMapIntensity: 0 });
+/** Curtain walls, car paint and other shiny things: reflects the sky. */
+export const glassMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.14, metalness: 0.55, envMapIntensity: 1.25 });
+/** Smooth-shaded parts (car bodies, domes, foliage). */
+export const smoothMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.05, envMapIntensity: 0.12 });
 
 /**
- * Accumulates simple low-poly parts and merges them into (at most) two
- * meshes: a lit solid one and an emissive "glow" one for windows and neon.
- * One building = two draw calls, however detailed it is.
+ * Image-based light for the shiny things only: glass picks up a soft sky,
+ * paint gets a sheen, and matte walls keep their colour. `k` scales it with
+ * daylight.
+ */
+export function setEnvironment(tex: THREE.Texture | null, k = 1) {
+  for (const [m, base] of [[glassMaterial, 1.25], [smoothMaterial, 0.18]] as const) {
+    if (m.envMap !== tex) {
+      m.envMap = tex;
+      m.needsUpdate = true;
+    }
+    m.envMapIntensity = base * k;
+  }
+}
+
+type Bucket = 'solid' | 'glass' | 'smooth' | 'glow';
+
+/**
+ * Accumulates parts and merges them into (at most) four meshes: matte,
+ * glass, smooth and glow. One building = a handful of draw calls, however
+ * detailed it is.
  */
 export class GeoBuilder {
-  private solid: THREE.BufferGeometry[] = [];
-  private glow: THREE.BufferGeometry[] = [];
+  private parts: Record<Bucket, THREE.BufferGeometry[]> = { solid: [], glass: [], smooth: [], glow: [] };
 
-  private add(g: THREE.BufferGeometry, color: ColorLike, glow: boolean) {
-    (glow ? this.glow : this.solid).push(prepare(g, color));
+  private add(g: THREE.BufferGeometry, color: ColorLike, glow: boolean | Bucket, rand = 0) {
+    const bucket: Bucket = glow === true ? 'glow' : glow === false ? 'solid' : glow;
+    this.parts[bucket].push(prepare(g, color, rand));
   }
 
-  /** Adds an already-coloured, non-indexed geometry (see `prepare`). */
-  raw(g: THREE.BufferGeometry, glow: boolean) {
-    (glow ? this.glow : this.solid).push(g);
+  /** Adds an already-prepared geometry (see `prepare`). */
+  raw(g: THREE.BufferGeometry, glow: boolean | Bucket) {
+    const bucket: Bucket = glow === true ? 'glow' : glow === false ? 'solid' : glow;
+    if (!g.attributes.winRand) g.setAttribute('winRand', new THREE.BufferAttribute(new Float32Array(g.attributes.position!.count), 1));
+    this.parts[bucket].push(g);
   }
 
   /** Axis-aligned box resting on y. */
-  box(w: number, h: number, d: number, x: number, y: number, z: number, color: ColorLike, glow = false, rotY = 0) {
+  box(w: number, h: number, d: number, x: number, y: number, z: number, color: ColorLike, glow: boolean | Bucket = false, rotY = 0) {
     const g = new THREE.BoxGeometry(w, h, d);
     if (rotY) g.rotateY(rotY);
     g.translate(x, y + h / 2, z);
     this.add(g, color, glow);
   }
 
-  /** Any geometry, transformed by a matrix (for tilted parts like palm fronds). */
-  transformed(g: THREE.BufferGeometry, m: THREE.Matrix4, color: ColorLike, glow = false) {
+  /** Box with rounded edges, resting on y. */
+  rbox(w: number, h: number, d: number, x: number, y: number, z: number, color: ColorLike, radius = 0.03, bucket: Bucket = 'smooth', rotY = 0) {
+    const g = new RoundedBoxGeometry(w, h, d, 2, Math.min(radius, w / 2, h / 2, d / 2));
+    if (rotY) g.rotateY(rotY);
+    g.translate(x, y + h / 2, z);
+    this.add(g, color, bucket);
+  }
+
+  /** Any geometry, transformed by a matrix. */
+  transformed(g: THREE.BufferGeometry, m: THREE.Matrix4, color: ColorLike, glow: boolean | Bucket = false) {
     g.applyMatrix4(m);
     this.add(g, color, glow);
+  }
+
+  /** A profile revolved around Y (domes, columns, fuselages before rotating). */
+  lathe(points: [number, number][], x: number, y: number, z: number, color: ColorLike, segments = 16, bucket: Bucket = 'smooth') {
+    const g = new THREE.LatheGeometry(points.map(([r, h]) => new THREE.Vector2(r, h)), segments);
+    g.translate(x, y, z);
+    this.add(g, color, bucket);
   }
 
   /** Gable roof: a triangular prism with its ridge along x (or z with rotY = π/2), resting on y. */
@@ -96,37 +152,37 @@ export class GeoBuilder {
   }
 
   /** Hip roof: a four-sided pyramid frustum, resting on y. */
-  hip(w: number, h: number, d: number, x: number, y: number, z: number, color: ColorLike, overhang = 0.05) {
-    const g = new THREE.CylinderGeometry(0.18, Math.SQRT1_2, 1, 4, 1);
+  hip(w: number, h: number, d: number, x: number, y: number, z: number, color: ColorLike, overhang = 0.05, top = 0.18) {
+    const g = new THREE.CylinderGeometry(top, Math.SQRT1_2, 1, 4, 1);
     g.rotateY(Math.PI / 4);
     g.scale(w + overhang * 2, h, d + overhang * 2);
     g.translate(x, y + h / 2, z);
     this.add(g, color, false);
   }
 
-  cylinder(rTop: number, rBottom: number, h: number, x: number, y: number, z: number, color: ColorLike, segments = 8, glow = false, rotY = 0) {
+  cylinder(rTop: number, rBottom: number, h: number, x: number, y: number, z: number, color: ColorLike, segments = 8, glow: boolean | Bucket = false, rotY = 0) {
     const g = new THREE.CylinderGeometry(rTop, rBottom, h, segments);
     if (rotY) g.rotateY(rotY);
     g.translate(x, y + h / 2, z);
     this.add(g, color, glow);
   }
 
-  blob(r: number, x: number, y: number, z: number, color: ColorLike, glow = false, detail = 0) {
+  blob(r: number, x: number, y: number, z: number, color: ColorLike, glow: boolean | Bucket = false, detail = 0) {
     const g = new THREE.IcosahedronGeometry(r, detail);
     g.translate(x, y, z);
     this.add(g, color, glow);
   }
 
   /** A flat quad on the face of a box, facing outward. */
-  quad(w: number, h: number, x: number, y: number, z: number, facing: Facing, color: ColorLike, glow = true) {
+  quad(w: number, h: number, x: number, y: number, z: number, facing: Facing, color: ColorLike, glow: boolean | Bucket = true, rand = 0) {
     const g = new THREE.PlaneGeometry(w, h);
     g.rotateY(FACING_ROT[facing]);
     g.translate(x, y, z);
-    this.add(g, color, glow);
+    this.add(g, color, glow, rand);
   }
 
   /** A flat quad lying on the ground. */
-  decal(w: number, d: number, x: number, y: number, z: number, color: ColorLike, glow = false) {
+  decal(w: number, d: number, x: number, y: number, z: number, color: ColorLike, glow: boolean | Bucket = false) {
     const g = new THREE.PlaneGeometry(w, d);
     g.rotateX(-Math.PI / 2);
     g.translate(x, y, z);
@@ -134,8 +190,9 @@ export class GeoBuilder {
   }
 
   /**
-   * Grid of windows on the four faces of a box (centre x,z; base y).
-   * Unlit windows are dark glass in the solid mesh; lit ones glow.
+   * Grid of windows on faces of a box (centre x,z; base y). Every window is
+   * glass by day; at night `lit` of them light up, each at its own moment
+   * of dusk. `frame` adds a trim surround and a sill.
    */
   windows(
     o: { w: number; d: number; x: number; z: number; y0: number; rows: number; rowHeight: number; cols: number; faces?: Facing[] },
@@ -143,9 +200,10 @@ export class GeoBuilder {
     lit: number,
     light: ColorLike,
     size: { w: number; h: number } = { w: 0.12, h: 0.14 },
+    frame?: ColorLike,
   ) {
     const faces = o.faces ?? ['x+', 'x-', 'z+', 'z-'];
-    const eps = 0.004;
+    const eps = 0.006;
     for (const f of faces) {
       const span = f[0] === 'x' ? o.d : o.w;
       for (let row = 0; row < o.rows; row++) {
@@ -153,13 +211,23 @@ export class GeoBuilder {
           const u = (col + 0.5) / o.cols - 0.5;
           const y = o.y0 + (row + 0.55) * o.rowHeight;
           const along = u * span;
-          const [x, z] =
-            f === 'x+' ? [o.x + o.w / 2 + eps, o.z - along]
-            : f === 'x-' ? [o.x - o.w / 2 - eps, o.z + along]
-            : f === 'z+' ? [o.x + along, o.z + o.d / 2 + eps]
-            : [o.x - along, o.z - o.d / 2 - eps];
-          const on = r() < lit;
-          this.quad(size.w, size.h, x, y, z, f, on ? light : PALETTE.darkGlass, on);
+          const at = (out: number) =>
+            f === 'x+' ? [o.x + o.w / 2 + out, o.z - along]
+            : f === 'x-' ? [o.x - o.w / 2 - out, o.z + along]
+            : f === 'z+' ? [o.x + along, o.z + o.d / 2 + out]
+            : [o.x - along, o.z - o.d / 2 - out];
+          const [x, z] = at(eps);
+          const rand = r() < lit ? 0.12 + 0.86 * r() : 2;
+          this.quad(size.w, size.h, x!, y, z!, f, light, true, rand);
+          if (frame) {
+            const [fx, fz] = at(eps * 0.5);
+            this.quad(size.w + 0.035, size.h + 0.035, fx!, y, fz!, f, frame, false);
+            const [sx, sz] = at(0.012);
+            const g = new THREE.BoxGeometry(size.w + 0.05, 0.016, 0.03);
+            g.rotateY(FACING_ROT[f]);
+            g.translate(sx!, y - size.h / 2 - 0.012, sz!);
+            this.add(g, frame, false);
+          }
         }
       }
     }
@@ -168,30 +236,32 @@ export class GeoBuilder {
   /** Merges everything into a group. Returns the glow material so it can be dimmed. */
   build(material?: THREE.Material): { group: THREE.Group; glow?: THREE.MeshBasicMaterial } {
     const group = new THREE.Group();
-    if (this.solid.length) {
-      const mesh = new THREE.Mesh(mergeGeometries(this.solid), solidMaterial);
+    const mats: Record<Exclude<Bucket, 'glow'>, THREE.Material> = { solid: solidMaterial, glass: glassMaterial, smooth: smoothMaterial };
+    for (const bucket of ['solid', 'glass', 'smooth'] as const) {
+      if (!this.parts[bucket].length) continue;
+      const mesh = new THREE.Mesh(mergeGeometries(this.parts[bucket]), mats[bucket]);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
     }
     let glow: THREE.MeshBasicMaterial | undefined;
-    if (this.glow.length) {
+    if (this.parts.glow.length) {
       glow = (material as THREE.MeshBasicMaterial) ?? glowMaterial();
-      const mesh = new THREE.Mesh(mergeGeometries(this.glow), glow);
-      group.add(mesh);
+      group.add(new THREE.Mesh(mergeGeometries(this.parts.glow), glow));
     }
-    this.solid = [];
-    this.glow = [];
+    this.parts = { solid: [], glass: [], smooth: [], glow: [] };
     return { group, glow };
   }
 }
+
+const SHARED = new Set<THREE.Material>([solidMaterial, glassMaterial, smoothMaterial]);
 
 export function disposeGroup(obj: THREE.Object3D) {
   obj.traverse((o) => {
     if (o instanceof THREE.Mesh || o instanceof THREE.Points || o instanceof THREE.LineSegments) {
       o.geometry.dispose();
       const mats = Array.isArray(o.material) ? o.material : [o.material];
-      for (const m of mats) if (m !== solidMaterial) m.dispose();
+      for (const m of mats) if (!SHARED.has(m)) m.dispose();
     }
   });
 }

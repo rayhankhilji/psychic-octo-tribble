@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TinyTown asset showcase</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #cfe4f4; font: 12px/1.3 system-ui, sans-serif; }
+      #world { position: fixed; inset: 0; }
+      #labels { position: fixed; inset: 0; pointer-events: none; }
+      #labels span { position: absolute; transform: translate(-50%, 0); background: rgba(10, 14, 30, 0.72); color: #fff; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+    </style>
+  </head>
+  <body>
+    <div id="world"></div>
+    <div id="labels"></div>
+    <script type="module" src="/src/dev/showcase.ts"></script>
+  </body>
+</html>

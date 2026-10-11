@@ -1,16 +1,21 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { City, Pick, Tip } from './city.ts';
-import { PITCH } from '../world/layout.ts';
+import { Post, type Quality } from './post.ts';
+import { setEnvironment } from './geo.ts';
+import { WORLD } from '../world/map.ts';
 
 /** Isometric: looking down 35.26° from the horizontal. */
 const ISO_POLAR = Math.acos(1 / Math.sqrt(3));
 const VIEW = 26;
-const LIMIT = 40;
+const LIMIT = { x0: WORLD.x0 - 8, x1: WORLD.x1 + 16, z0: WORLD.z0 - 16, z1: WORLD.z1 + 8 };
+const QUALITIES: Quality[] = ['low', 'medium', 'high'];
+
+function requestedQuality(): Quality | null {
+  const q = new URLSearchParams(location.search).get('quality');
+  return q === 'low' || q === 'medium' || q === 'high' ? q : null;
+}
 
 /**
  * Renderer, camera and input. Orthographic isometric camera; drag to pan,
@@ -20,8 +25,7 @@ export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly camera: THREE.OrthographicCamera;
   readonly controls: OrbitControls;
-  private composer: EffectComposer;
-  private bloom: UnrealBloomPass;
+  private post: Post;
   private timer = new THREE.Timer();
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2(2, 2);
@@ -36,40 +40,50 @@ export class Stage {
   private lastClient = { x: 0, y: 0 };
   private host: HTMLElement;
   private city: City;
+  /** Adaptive quality: frame times are sampled for a few seconds, then quality settles. */
+  private perf: { frames: number; time: number; locked: boolean };
+  private maxPixelRatio = 2;
 
   constructor(host: HTMLElement, city: City) {
     this.host = host;
     this.city = city;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     host.appendChild(this.renderer.domElement);
 
-    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400);
+    // Image-based light so glass, paint and water pick up a soft studio sky.
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    setEnvironment(pmrem.fromScene(new RoomEnvironment(), 0.04).texture);
+    pmrem.dispose();
+
+    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 600);
     this.camera.position.set(60, 60, 60);
-    this.camera.zoom = 2.2;
+    this.camera.zoom = 1;
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.screenSpacePanning = true;
     this.controls.minPolarAngle = this.controls.maxPolarAngle = ISO_POLAR;
-    this.controls.minZoom = 0.4;
-    this.controls.maxZoom = 12;
+    this.controls.minZoom = 0.32;
+    this.controls.maxZoom = 14;
     this.controls.zoomToCursor = true;
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
     this.controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
-    this.controls.addEventListener('start', () => (this.userZoomed = true));
+    this.controls.addEventListener('start', () => {
+      this.userZoomed = true;
+      this.glide = null;
+    });
     this.controls.addEventListener('change', () => this.clampTarget());
 
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(new RenderPass(city.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.85, 0.55, 0.92);
-    this.composer.addPass(this.bloom);
-    this.composer.addPass(new OutputPass());
+    const forced = requestedQuality();
+    const quality: Quality = forced ?? (matchMedia('(pointer: coarse)').matches ? 'medium' : 'high');
+    this.perf = { frames: 0, time: 0, locked: forced !== null };
+    this.post = new Post(this.renderer, city.scene, this.camera, quality);
+    this.applyQuality(quality);
 
     const el = this.renderer.domElement;
     el.addEventListener('pointermove', (e) => {
@@ -106,6 +120,14 @@ export class Stage {
     this.resize();
   }
 
+  private applyQuality(q: Quality) {
+    this.post.setQuality(q);
+    this.maxPixelRatio = q === 'high' ? 2 : q === 'medium' ? 1.5 : 1;
+    const size = q === 'low' ? 2048 : 4096;
+    this.city.setShadowQuality(size);
+    this.resize();
+  }
+
   /** Quarter turn around the current focus. */
   rotate(dir: 1 | -1) {
     const from = this.controls.getAzimuthalAngle();
@@ -130,17 +152,21 @@ export class Stage {
   /** Back to the overview that frames the whole developed city. */
   resetView() {
     this.userZoomed = false;
-    this.controls.target.copy(this.framingTarget());
-    const d = this.camera.position.clone().sub(this.controls.target).length();
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const d = offset.length();
     const az = Math.PI / 4;
-    this.camera.position.set(Math.sin(az) * Math.sin(ISO_POLAR) * d, Math.cos(ISO_POLAR) * d, Math.cos(az) * Math.sin(ISO_POLAR) * d);
+    this.camera.position.copy(this.controls.target).add(new THREE.Vector3(Math.sin(az) * Math.sin(ISO_POLAR) * d, Math.cos(ISO_POLAR) * d, Math.cos(az) * Math.sin(ISO_POLAR) * d));
+    this.camera.lookAt(this.controls.target);
+    const { target, zoom } = this.framing();
+    this.glide = { target, zoom, t: 0, fromT: this.controls.target.clone(), fromZ: this.camera.zoom };
+    this.userZoomed = false;
   }
 
   private clampTarget() {
     const t = this.controls.target;
-    t.x = THREE.MathUtils.clamp(t.x, -LIMIT, LIMIT);
-    t.z = THREE.MathUtils.clamp(t.z, -LIMIT, LIMIT);
-    t.y = THREE.MathUtils.clamp(t.y, -2, 6);
+    t.x = THREE.MathUtils.clamp(t.x, LIMIT.x0, LIMIT.x1);
+    t.z = THREE.MathUtils.clamp(t.z, LIMIT.z0, LIMIT.z1);
+    t.y = THREE.MathUtils.clamp(t.y, -2, 8);
   }
 
   private resize() {
@@ -152,30 +178,57 @@ export class Stage {
     this.camera.top = VIEW / 2;
     this.camera.bottom = -VIEW / 2;
     this.camera.updateProjectionMatrix();
+    const pr = Math.min(window.devicePixelRatio, this.maxPixelRatio);
+    this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h);
-    this.composer.setSize(w, h);
-    this.composer.setPixelRatio(this.renderer.getPixelRatio());
+    this.post?.setSize(w, h, pr);
+    this.city.setPixelRatio(pr);
   }
 
-  /** Zoom that frames the developed city plus some coast and hills around it. */
-  private framingZoom(): number {
-    const reach = this.city.reach;
-    const side = (reach * 2 + 1) * PITCH + 5 + reach * 4.5 + this.city.framingExtra;
+  /**
+   * Target and zoom that fit the city's framing box on screen, seen from the
+   * current angle, with room for the HUD at the top and the dock at the bottom.
+   */
+  private framing(): { target: THREE.Vector3; zoom: number } {
+    const box = this.city.framing;
+    const q = this.camera.quaternion;
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+    const c = new THREE.Vector3((box.x0 + box.x1) / 2, 0, (box.z0 + box.z1) / 2);
+    let r0 = Infinity;
+    let r1 = -Infinity;
+    let u0 = Infinity;
+    let u1 = -Infinity;
+    const p = new THREE.Vector3();
+    for (const x of [box.x0, box.x1]) {
+      for (const z of [box.z0, box.z1]) {
+        for (const y of [0, 2.5]) {
+          p.set(x, y, z).sub(c);
+          const r = p.dot(right);
+          const u = p.dot(up);
+          r0 = Math.min(r0, r);
+          r1 = Math.max(r1, r);
+          u0 = Math.min(u0, u);
+          u1 = Math.max(u1, u);
+        }
+      }
+    }
     const aspect = this.host.clientWidth / Math.max(1, this.host.clientHeight);
-    // A square of side s, seen isometrically, is s·√2 wide and s·√2·sin(35.26°) tall.
-    const fitWidth = (VIEW * aspect) / (side * Math.SQRT2 * 1.02);
-    const fitHeight = VIEW / (side * 0.8165 * 1.1 + 4);
-    return THREE.MathUtils.clamp(Math.min(fitWidth, fitHeight), 0.45, 3.2);
-  }
-
-  /** Where the overview looks: drifts toward the hills as the city grows so the sign stays in shot. */
-  private framingTarget(): THREE.Vector3 {
-    const k = Math.min(1, (this.city.reach - 1) / 2);
-    return new THREE.Vector3(-6 * k, 0, -12 * k);
+    // The HUD covers roughly the top 12% and the dock the bottom 14%: centre a little high.
+    const zoom = THREE.MathUtils.clamp(Math.min((VIEW * aspect) / ((r1 - r0) * 1.04), VIEW / ((u1 - u0) * 1.3)), this.controls.minZoom, 3.2);
+    const visibleH = VIEW / zoom;
+    const target = c.clone().addScaledVector(right, (r0 + r1) / 2).addScaledVector(up, (u0 + u1) / 2 - visibleH * 0.03);
+    // Slide along the view ray back to the ground plane.
+    target.addScaledVector(fwd, -target.y / fwd.y);
+    return { target, zoom };
   }
 
   start() {
-    this.camera.zoom = this.framingZoom();
+    const { target, zoom } = this.framing();
+    this.camera.position.add(target.clone().sub(this.controls.target));
+    this.controls.target.copy(target);
+    this.camera.zoom = zoom;
     this.camera.updateProjectionMatrix();
     this.timer.connect(document);
     this.renderer.setAnimationLoop((now) => this.frame(now));
@@ -183,8 +236,10 @@ export class Stage {
 
   private frame(now: number) {
     this.timer.update(now);
-    const dt = Math.min(0.05, this.timer.getDelta());
+    const raw = this.timer.getDelta();
+    const dt = Math.min(0.05, raw);
     const time = this.timer.getElapsed();
+    this.adapt(raw);
 
     if (this.spin) {
       this.spin.t = Math.min(1, this.spin.t + dt / 0.6);
@@ -200,8 +255,8 @@ export class Stage {
 
     if (this.glide) {
       const g = this.glide;
-      g.t = Math.min(1, g.t + dt / 0.9);
-      const k = 1 - (1 - g.t) ** 3;
+      g.t = Math.min(1, g.t + dt / 1.1);
+      const k = g.t < 0.5 ? 4 * g.t ** 3 : 1 - (-2 * g.t + 2) ** 3 / 2;
       const next = g.fromT.clone().lerp(g.target, k);
       this.camera.position.add(next.clone().sub(this.controls.target));
       this.controls.target.copy(next);
@@ -209,21 +264,25 @@ export class Stage {
       this.camera.updateProjectionMatrix();
       if (g.t >= 1) this.glide = null;
     } else if (!this.userZoomed) {
-      const target = this.framingZoom();
-      this.camera.zoom += (target - this.camera.zoom) * Math.min(1, dt * 1.5);
+      const { target, zoom } = this.framing();
+      const k = Math.min(1, dt * 1.2);
+      this.camera.zoom += (zoom - this.camera.zoom) * k;
       this.camera.updateProjectionMatrix();
-      const focus = this.framingTarget();
-      const step = focus.sub(this.controls.target).multiplyScalar(Math.min(1, dt * 1.5));
+      const step = target.sub(this.controls.target).multiplyScalar(k);
       this.controls.target.add(step);
       this.camera.position.add(step);
     }
 
     this.controls.update();
+    const aspect = this.host.clientWidth / Math.max(1, this.host.clientHeight);
+    this.city.setView(this.controls.target, (Math.max(VIEW * aspect, VIEW * 1.75) / this.camera.zoom) * 0.5);
     this.city.update(dt, time);
     const a = this.city.atmosphere;
-    this.bloom.strength = a.bloom;
-    this.bloom.threshold = 0.92 + (1 - a.night) * 0.25;
     this.renderer.toneMappingExposure = a.exposure;
+    // The miniature look is strongest at the overview and fades as you zoom in close.
+    const tilt = THREE.MathUtils.clamp(1.25 - this.camera.zoom * 0.28, 0.25, 1);
+    const evening = Math.max(0, 1 - Math.abs(a.hour - 18.6) / 1.6);
+    this.post.update(time, { bloom: a.bloom, night: a.night, tilt, focusY: 0.47, warmth: evening });
     this.onFrame(dt);
 
     if (this.pointerDirty) {
@@ -236,12 +295,27 @@ export class Stage {
       this.onHover((o?.userData.tip as Tip) ?? null, this.lastClient.x, this.lastClient.y);
     }
 
-    this.composer.render(dt);
+    this.post.render(dt);
+  }
+
+  /** Steps quality down if the first few seconds run slow; never steps up mid-session. */
+  private adapt(raw: number) {
+    const p = this.perf;
+    if (p.locked || document.hidden || raw > 0.5) return;
+    p.frames++;
+    p.time += raw;
+    if (p.frames < 90) return;
+    const avg = p.time / p.frames;
+    p.frames = 0;
+    p.time = 0;
+    const i = QUALITIES.indexOf(this.post.quality);
+    if (avg > 1 / 32 && i > 0) this.applyQuality(QUALITIES[i - 1]!);
+    else p.locked = true;
   }
 
   /** Renders a fresh frame and copies it onto a 2D canvas (for sharing). */
   capture(): HTMLCanvasElement {
-    this.composer.render(0);
+    this.post.render(0);
     const src = this.renderer.domElement;
     const out = document.createElement('canvas');
     out.width = src.width;

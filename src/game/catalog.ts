@@ -1,3 +1,5 @@
+import { BUILD_BLOCK_COORDS } from '../world/map.ts';
+
 /**
  * Everything a founder can buy, the house ladder and the land. Prices are
  * in game dollars: $10,000 for every real dollar of revenue.
@@ -143,17 +145,19 @@ export interface BuildBlock {
   gate: number;
 }
 
-/** Build blocks, in the order they open. Each has four plots. */
-export const BUILD_BLOCKS: readonly BuildBlock[] = [
-  { id: 'market', name: 'Market Street', bx: 1, bz: 0, gate: 0 },
-  { id: 'arcade', name: 'Sunset Row', bx: 0, bz: 1, gate: 0 },
-  { id: 'techpark', name: 'Tech Park', bx: -1, bz: 0, gate: 100 },
-  { id: 'midtown', name: 'Midtown', bx: 0, bz: -1, gate: 1_000 },
-  { id: 'skyline', name: 'Skyline', bx: -1, bz: -1, gate: 5_000 },
-  { id: 'financial', name: 'Financial District', bx: -2, bz: -1, gate: 10_000 },
-  { id: 'megacorp', name: 'Megacorp Heights', bx: -1, bz: -2, gate: 25_000 },
-  { id: 'moonshot', name: 'Moonshot Square', bx: -2, bz: -2, gate: 100_000 },
-];
+const GATES: Record<string, number> = {
+  market: 0,
+  arcade: 0,
+  techpark: 100,
+  midtown: 1_000,
+  skyline: 5_000,
+  financial: 10_000,
+  megacorp: 25_000,
+  moonshot: 100_000,
+};
+
+/** Downtown build blocks, in the order they open. Each has four plots. */
+export const BUILD_BLOCKS: readonly BuildBlock[] = BUILD_BLOCK_COORDS.map((b) => ({ ...b, gate: GATES[b.id] ?? 0 }));
 
 /** Plot offsets within a block (2×2 lots each). */
 export const QUADRANTS = [

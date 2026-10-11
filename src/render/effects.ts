@@ -152,74 +152,104 @@ export class Fireworks {
   }
 }
 
-// ─── Elevated train: loops the town; its speed tracks shipping velocity ───
+// ─── The F-line: vintage streetcars; their speed tracks shipping velocity ──
+
+const LIVERIES: [number, number][] = [
+  [0x2f6a4f, 0xefe6cc], // Muni green and cream
+  [0xe0742c, 0xf3ead2], // Milan orange
+  [0xf2c84b, 0xf8f5ee], // Philadelphia yellow
+  [0x7a2f3a, 0xeadfc4], // maroon
+];
+
+/** Resample a polyline into evenly spaced points so a spline through it stays straight on the straights. */
+export function densify(path: readonly (readonly [number, number])[], step: number): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    const [ax, az] = path[i]!;
+    const [bx, bz] = path[i + 1]!;
+    const n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / step));
+    for (let k = 0; k < n; k++) out.push([ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n]);
+  }
+  out.push([...path.at(-1)!]);
+  return out;
+}
 
 export class Train {
   readonly object = new THREE.Group();
   private curve: THREE.CatmullRomCurve3;
-  private cars: THREE.Group[] = [];
-  private t = 0;
+  private length: number;
+  private cars: { group: THREE.Group; d: number; dir: 1 | -1; wait: number }[] = [];
+  /** Share of the line per second (kept for the old loop's units). */
   speed = 0.02;
   private boost = 0;
 
-  constructor(half: number, height = 1.1) {
-    const c = half;
-    const k = 1.6; // corner rounding
-    const pts: THREE.Vector3[] = [];
-    for (const [x, z] of [[c, c - k], [c, -c + k], [c - k, -c], [-c + k, -c], [-c, -c + k], [-c, c - k], [-c + k, c], [c - k, c]] as const) {
-      pts.push(new THREE.Vector3(x, height, z));
-    }
-    this.curve = new THREE.CatmullRomCurve3(pts, true, 'centripetal');
-
-    // Track: a beam on pillars
-    const beam = new THREE.TubeGeometry(this.curve, 240, 0.09, 4, true);
-    const track = new THREE.Mesh(beam, new THREE.MeshStandardMaterial({ color: 0xc9c6bd, roughness: 0.6, flatShading: true }));
-    track.castShadow = true;
-    track.position.y = -0.06;
-    this.object.add(track);
-    const pillars = new GeoBuilder();
-    const length = this.curve.getLength();
-    for (let d = 0; d < length; d += 2.4) {
-      const p = this.curve.getPointAt(d / length);
-      pillars.box(0.12, height - 0.12, 0.12, p.x, 0, p.z, 0xb9b5ab);
-    }
-    this.object.add(pillars.build().group);
-
-    for (let i = 0; i < 4; i++) this.cars.push(this.car(i === 0));
-    this.object.add(...this.cars);
+  constructor(path: readonly (readonly [number, number])[], height: (x: number, z: number) => number = () => 0) {
+    const pts = densify(path, 1).map(([x, z]) => new THREE.Vector3(x, height(x, z), z));
+    this.curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+    this.length = this.curve.getLength();
+    LIVERIES.slice(0, 3).forEach(([body, band], i) => {
+      const group = this.car(body, band);
+      this.cars.push({ group, d: (this.length * (i + 0.3)) / 3, dir: i % 2 ? -1 : 1, wait: 0 });
+      this.object.add(group);
+    });
   }
 
-  private car(lead: boolean): THREE.Group {
+  /** A PCC streetcar: rounded ends, two-tone livery, trolley pole, along +x. */
+  private car(body: number, band: number): THREE.Group {
     const b = new GeoBuilder();
-    b.box(0.9, 0.26, 0.3, 0, 0.02, 0, 0xf6f4ee);
-    b.box(0.92, 0.04, 0.32, 0, 0.0, 0, 0x3a3d48);
-    b.box(0.91, 0.05, 0.31, 0, 0.05, 0, 0xd8402e);
-    b.box(0.9, 0.03, 0.31, 0, 0.26, 0, 0xd8402e);
-    for (const side of [1, -1]) {
-      for (let w = 0; w < 4; w++) b.quad(0.14, 0.08, -0.33 + w * 0.22, 0.12, side * 0.155, side > 0 ? 'z+' : 'z-', PALETTE.windowWarm);
+    const L = 0.86;
+    const W = 0.24;
+    b.rbox(L, 0.12, W, 0, 0.05, 0, body, 0.05);
+    b.rbox(L - 0.01, 0.13, W - 0.01, 0, 0.16, 0, band, 0.05);
+    b.rbox(L - 0.06, 0.04, W - 0.04, 0, 0.29, 0, 0xd8d3c6, 0.02);
+    b.box(L + 0.004, 0.012, W + 0.004, 0, 0.17, 0, body);
+    for (const side of [1, -1] as const) {
+      for (let w = 0; w < 7; w++) b.quad(0.085, 0.07, -0.3 + w * 0.1, 0.215, side * (W / 2 + 0.002), side > 0 ? 'z+' : 'z-', PALETTE.windowWarm, true, 0.15 + w * 0.1);
     }
-    if (lead) b.quad(0.18, 0.06, 0.455, 0.1, 0, 'x+', [3, 3, 2.6]);
+    for (const end of [1, -1] as const) {
+      b.quad(0.14, 0.07, end * (L / 2 + 0.002), 0.215, 0, end > 0 ? 'x+' : 'x-', [0.5, 0.65, 0.8], true, 0.3);
+      b.blob(0.018, end * (L / 2 + 0.005), 0.1, 0, end > 0 ? [3, 2.8, 2.2] : [2.6, 0.25, 0.15], true);
+      for (const s of [-1, 1]) b.cylinder(0.035, 0.035, 0.02, end * 0.27, 0.02, s * 0.09, 0x2a2a2e, 8, false);
+    }
+    b.cylinder(0.006, 0.006, 0.36, 0, 0, 0, 0x2a2a2e, 4);
+    const pole = new THREE.CylinderGeometry(0.006, 0.006, 0.42, 4).rotateZ(-1.05).translate(-0.18, 0.43, 0);
+    b.transformed(pole, new THREE.Matrix4(), 0x2a2a2e);
     const { group } = b.build();
-    group.traverse((o) => (o.castShadow = true));
+    group.traverse((o) => {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    });
     return group;
   }
 
-  /** A deploy just happened: the train sprints a lap. */
+  /** A deploy just happened: the streetcars hurry. */
   pulse() {
     this.boost = 2.5;
   }
 
   update(dt: number) {
     this.boost = Math.max(0, this.boost - dt);
-    this.t = (this.t + dt * this.speed * (1 + this.boost * 1.5)) % 1;
-    const len = this.curve.getLength();
-    this.cars.forEach((car, i) => {
-      const u = (this.t - (i * 0.98) / len + 1) % 1;
+    const v = this.speed * 40 * (1 + this.boost * 1.5);
+    for (const car of this.cars) {
+      if (car.wait > 0) {
+        car.wait -= dt;
+      } else {
+        car.d += car.dir * v * dt;
+        if (car.d >= this.length || car.d <= 0) {
+          // End of the line: a short layover, then back the other way.
+          car.d = THREE.MathUtils.clamp(car.d, 0, this.length);
+          car.dir = car.dir > 0 ? -1 : 1;
+          car.wait = 2.5;
+        }
+      }
+      const u = car.d / this.length;
       const p = this.curve.getPointAt(u);
-      const ahead = this.curve.getPointAt((u + 0.002) % 1);
-      car.position.copy(p);
-      car.rotation.y = Math.atan2(-(ahead.z - p.z), ahead.x - p.x);
-    });
+      const t = this.curve.getTangentAt(u);
+      if (car.dir < 0) t.negate();
+      // Keep right: each direction has its own track.
+      car.group.position.set(p.x + t.z * 0.36, p.y + 0.02, p.z - t.x * 0.36);
+      car.group.rotation.y = Math.atan2(-t.z, t.x);
+    }
   }
 }
 

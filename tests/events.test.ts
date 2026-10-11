@@ -24,8 +24,8 @@ describe('diffMoments', () => {
 
   it('dims a district when MRR falls below its milestone, and relights it', () => {
     const m = momentsOf(timeline([{ mrr: 1_100 }, { mrr: 900 }, { mrr: 1_050 }]));
-    expect(diffMoments(m[0]!, m[1]!)).toContainEqual({ type: 'district.dimmed', id: 'arcade', name: 'Neon Arcade' });
-    expect(diffMoments(m[1]!, m[2]!)).toContainEqual({ type: 'district.relit', id: 'arcade', name: 'Neon Arcade' });
+    expect(diffMoments(m[0]!, m[1]!)).toContainEqual({ type: 'district.dimmed', id: 'arcade', name: '$1k MRR' });
+    expect(diffMoments(m[1]!, m[2]!)).toContainEqual({ type: 'district.relit', id: 'arcade', name: '$1k MRR' });
   });
 
   it('quotes the real number behind each visual', () => {
