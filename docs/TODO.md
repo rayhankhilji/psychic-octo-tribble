@@ -21,7 +21,6 @@ The four agents' work is committed. Items each one reported as unfinished are li
 
 - [ ] Towers, HQ, items, founder homes, vehicles: _see "Agent leftovers" below._
 - [ ] Traffic and pedestrians: _see "Agent leftovers" below._
-- [ ] UI and branding: _see "Agent leftovers" below._
 - [ ] **Perf pass on a real GPU.** Measure draw calls and triangles with `tools/perf.mjs` at day 540, `quality=high`. Target a few hundred draw calls. If over budget, batch or instance more: tents, trees in parks, district items.
 - [ ] **Bundle size.** The production chunk is over 1 MB. Split out the showcase-only code and lazy-load `ui/thumbnails.ts` and the post-processing passes if that helps first paint.
 
@@ -74,3 +73,15 @@ The order agreed with the owner: the game loop first (done), then hosting.
 ## Agent leftovers
 
 _Filled in from each agent's final report at handoff._
+
+### UI and branding (UI agent's report)
+
+Done: design system (Bricolage Grotesque + Geist, sand/ink/Golden Gate orange/Bay blue tokens, automatic night theme), logo mark, favicon, OG image, boot screen, HUD, clock arc, dock chart, toasts, build drawer and bottom sheet with 3D thumbnails, home ladder, connect/share dialogs, postcard share image, mobile layout.
+
+- [ ] **Watch the motion in a real browser.** Headless SwiftShader never runs CSS transitions, so these have never been seen live: count-up numbers, toast and drawer entrances, the boot-screen build-up.
+- [ ] Night share-card screenshot after the resolution fix (the step timed out). The share card also always uses day colours; consider a night variant.
+- [ ] Thumbnails take seconds each in SwiftShader. Measure on a real GPU, and dispose the second WebGL context (`ui/thumbnails.ts`) after prewarming.
+- [ ] Left rail on short screens (< ~800px tall): it scrolls with no visible hint when the city card and both alerts overflow.
+- [ ] Speed control cycles 1× → 3× → ½× through one button. A segmented control would need `onSpeed(index)` in `main.ts`.
+- [ ] Accessibility of the 3D canvas: plot picking is mouse/touch only, with no keyboard or screen-reader path.
+- [ ] The connect dialog shows "TinyTown Pro · $12/month or $99/year". This matches the owner's pricing, but there's no billing behind it yet (P4).
