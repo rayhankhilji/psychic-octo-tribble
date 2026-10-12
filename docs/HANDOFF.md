@@ -101,14 +101,16 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
   - Edwardian, brick and deco flats with fire escapes, corner shops and roof decks (`apartment`);
   - six tree kinds;
   - block grounds with sidewalks, street trees, lamps, mid-block gardens and pocket parks.
-- **Downtown and buyables** (`towers.ts`, `models.ts`): towers in several SF styles, a Transamerica-style pyramid, a Salesforce-style spire, every catalogue item, HQ levels, founder homes, planes, yachts, the rocket and the airliner. *Finishing pass in progress at handoff; see TODO.*
-- **Traffic** (`traffic.ts`):
+- **Downtown and buyables** (`towers.ts`, `models.ts`): towers in several SF styles, a Transamerica-style pyramid, a Salesforce-style spire, every catalogue item, HQ levels, founder homes, planes, yachts, the rocket and the airliner. Finished; leftovers in TODO.
+- **Traffic** (`traffic.ts`, 41 draw calls, about 0.7 ms per frame):
   - instanced car models (sedan, hatchback, SUV, pickup, yellow cab, van, Muni bus, sports car, EV);
   - a lane graph with turns and all-way stops;
   - streams across both bridges;
   - pedestrians and joggers;
-  - head, tail and brake lights.
-  - *Finishing pass in progress at handoff.*
+  - head, tail and brake lights;
+  - 49 all-way stops and 5 signalised Market crossings with a green wave;
+  - Bay Bridge westbound on the upper deck, eastbound on the lower.
+  - Finished; leftovers in TODO.
 - **Life** (`life.ts`): ferries (Sausalito, Oakland), a container ship, sailboats, airliners on a keyframed cycle at the airport, cable cars, kites, gulls, Karl the Fog, cloud shadows, and wakes.
 - **Effects** (`effects.ts`): rain that follows the camera, F-line streetcar, fireworks (peony, ring, palm, willow).
 - **Look** (`post.ts`, `stage.ts`):
@@ -128,7 +130,7 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
   - home ladder dialog;
   - share card;
   - mobile layout.
-  - *Finishing pass in progress at handoff.*
+  - Finished; leftovers in TODO.
 - **Game** (`src/game/*`): pure `simulate()` economy, catalogue, house ladder, regions, demo script, browser saves.
 - **Data and server** (`src/data/*`, `server/*`): Stripe subscriptions → daily MRR history, GitHub releases and commits, demo data. A Node server keeps keys server-side, with 60 s caching and static-file safety.
 - **Dev tools:** the `showcase.html` asset showcase (`src/dev/*`), `tools/shot.mjs`, `tools/perf.mjs`, and a cloud SessionStart hook (`.claude/`).
