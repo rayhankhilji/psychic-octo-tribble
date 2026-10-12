@@ -19,7 +19,6 @@ Every task follows the visual bar in `CLAUDE.md`: screenshot it, day and night, 
 
 The four agents' work is committed. Items each one reported as unfinished are listed here.
 
-- [ ] Towers, HQ, items, founder homes, vehicles: _see "Agent leftovers" below._
 - [ ] Traffic and pedestrians: _see "Agent leftovers" below._
 - [ ] **Perf pass on a real GPU.** Measure draw calls and triangles with `tools/perf.mjs` at day 540, `quality=high`. Target a few hundred draw calls. If over budget, batch or instance more: tents, trees in parks, district items.
 - [ ] **Bundle size.** The production chunk is over 1 MB. Split out the showcase-only code and lazy-load `ui/thumbnails.ts` and the post-processing passes if that helps first paint.
@@ -85,3 +84,25 @@ Done: design system (Bricolage Grotesque + Geist, sand/ink/Golden Gate orange/Ba
 - [ ] Speed control cycles 1× → 3× → ½× through one button. A segmented control would need `onSpeed(index)` in `main.ts`.
 - [ ] Accessibility of the 3D canvas: plot picking is mouse/touch only, with no keyboard or screen-reader path.
 - [ ] The connect dialog shows "TinyTown Pro · $12/month or $99/year". This matches the owner's pricing, but there's no billing behind it yet (P4).
+
+### Towers, HQ, items, founder homes, vehicles (models agent's report)
+
+Done: shared `Kit` in `towers.ts` with three extra lit layers (window glass tinted by day and lit at night, neon with chase/blink/shimmer `FX`, LED screens), plus facade, signage and pixel-font helpers. Four seeded tower styles (555 California, Millennium, 181 Fremont, deco), the Transamerica pyramid, the Salesforce-style spire with the transit-centre park, HQ levels 0–4 with a rooftop sign and street plaque, every plot and block item, all nine founder homes, the vehicles and `airliner()`, and cloud bank, plot marker and encampment. Close-ups: `/showcase.html?set=tt-one&what=item:stadium` (also `home:villa`, `plane:jet`, `hq:3`, `airliner`).
+
+- [ ] **Use the shared `airliner()` in `life.ts`.** `life.ts` still builds its own private airliner (around line 298) because it needs strobe and beacon materials. The shared `models.ts` `airliner(seed)` (A320-class, faces +x, five fictional liveries) puts its nav lights in the neon layer instead. Switch over and drive the blinking through the neon `FX`.
+- [ ] **Trim over-budget models:**
+
+  | Model | Triangles | Target |
+  |---|---|---|
+  | Supertall | 11.6k | ~8k |
+  | HQ level 2 | 11.8k | ~8k (fewer terrace bushes, leaner wings) |
+  | HQ level 4 | 9.0k | ~8k |
+  | Amusement park | 9.8k | ~5k |
+  | Shops | 5.9k | ~5k |
+- [ ] Rocket: stronger Starship grid fins and chines; the stainless reads close to white.
+- [ ] Day yacht: flare the hull more (slightly boxy).
+- [ ] Concorde: refine the wing planform.
+- [ ] Ballpark: soften the dark left-field bleachers.
+- [ ] Hacker house and studio: more rooftop detail.
+- [ ] Encampment: close-up review (handle with dignity).
+- [ ] Check founder homes and block items from the back (`az=225`).
