@@ -851,7 +851,7 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .treasury-value {
@@ -898,17 +898,17 @@ code {
 
 .vitals {
   display: grid;
-  grid-template-columns: 62px 1fr;
+  grid-template-columns: 56px 1fr;
   align-items: center;
   gap: 14px;
-  padding: 12px 0;
+  padding: 10px 0;
   border-top: 1px solid var(--line);
 }
 
 .ring {
   position: relative;
-  width: 62px;
-  height: 62px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   cursor: help;
 }
@@ -954,7 +954,7 @@ code {
 
 .parts {
   display: grid;
-  gap: 4px;
+  gap: 3px;
 }
 
 .ring-label {
@@ -1089,7 +1089,7 @@ code {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 10px;
-  padding: 10px;
+  padding: 9px 10px;
   border-radius: var(--r-md);
   background: var(--warn-soft);
   border: 1px solid color-mix(in srgb, var(--warn) 22%, transparent);
@@ -1166,6 +1166,10 @@ code {
     opacity: 0;
     transform: translateY(-4px);
   }
+}
+
+.city.alarmed .fine {
+  display: none;
 }
 
 .fine {
@@ -1454,8 +1458,8 @@ code {
 }
 
 .feed .toast:nth-child(n + 3) {
-  opacity: 0.82;
-  transform: scale(0.975);
+  opacity: 0.92;
+  transform: scale(0.98);
 }
 
 .toast.out {
@@ -1820,6 +1824,10 @@ code {
 
 .dialog[open] {
   animation: dialog-in var(--dur-4) var(--ease-spring);
+}
+
+.dialog:focus {
+  outline: none;
 }
 
 .dialog::backdrop {
@@ -2674,6 +2682,7 @@ code {
   flex: 1;
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
 }
 
 .rung {
@@ -3284,7 +3293,8 @@ code {
     animation: fade-in var(--dur-3);
   }
 
-  .placing kbd {
+  .placing kbd,
+  :root.placing-mode .help {
     display: none;
   }
 

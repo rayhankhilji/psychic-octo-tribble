@@ -268,9 +268,11 @@ function trim(p: Parts, s: Spec, o: { front: number; rear: number; plateY: numbe
   p.box('detail', 0.016, 0.014, bw, o.rear + 0.006, s.clear + 0.008, 0, o.bumper ?? TRIM);
   p.box('detail', 0.004, 0.011, 0.034, o.front + 0.001, o.plateY, 0, PLATE);
   p.box('detail', 0.004, 0.011, 0.034, o.rear - 0.001, o.plateY, 0, PLATE);
+  // Door mirrors hang off the greenhouse (or the cab of a van) just above the belt.
+  const mz = (s.cabin ? s.cabinW / 2 : s.W / 2) + 0.005;
   for (const side of [1, -1]) {
-    p.box('paint', 0.012, 0.009, 0.014, o.mirrorX, o.mirrorY, side * (s.W / 2 + 0.004), 0xffffff);
-    p.box('detail', 0.004, 0.006, 0.01, o.mirrorX - 0.006, o.mirrorY, side * (s.W / 2 + 0.006), TRIM);
+    p.box('paint', 0.012, 0.009, 0.016, o.mirrorX, o.mirrorY, side * mz, 0xffffff);
+    p.box('detail', 0.003, 0.006, 0.011, o.mirrorX - 0.0065, o.mirrorY, side * (mz + 0.002), TRIM);
   }
 }
 

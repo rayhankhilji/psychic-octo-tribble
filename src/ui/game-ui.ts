@@ -182,7 +182,7 @@ export class GameUI {
     root.append(this.drawer);
 
     // ── Your home ──────────────────────────────────────────────────────
-    this.homeDialog = el('dialog', { class: 'dialog home-dialog', 'aria-labelledby': 'home-title' });
+    this.homeDialog = el('dialog', { class: 'dialog home-dialog', 'aria-labelledby': 'home-title', tabindex: '-1', autofocus: '' });
     this.homeDialog.addEventListener('click', (e) => {
       if (e.target === this.homeDialog) return this.homeDialog.close();
       const btn = (e.target as HTMLElement).closest('button');
@@ -290,7 +290,8 @@ export class GameUI {
         : pop
           ? `All <b class="num">${pop.toLocaleString('en-US')}</b> housed`
           : 'Waiting for residents';
-    const headroom = g.unhoused > 0 ? `Need $${(need - Math.floor(g.mrr)).toLocaleString('en-US')} more MRR` : `Room for ${compact(Math.max(0, capacity - pop))} more`;
+    const short = need - Math.floor(g.mrr);
+    const headroom = g.unhoused > 0 ? (short > 0 ? `Need $${short.toLocaleString('en-US')} more MRR` : 'Homes failing: upkeep is short') : `Room for ${compact(Math.max(0, capacity - pop))} more`;
     setHtml(
       this.housing,
       `<div class="housing-row"><span class="housing-label">${ICON.home}Housing</span><span class="housing-status">${status}</span></div>
@@ -308,12 +309,13 @@ export class GameUI {
     if (worst) {
       alerts += `<div class="alert" data-tone="${g.maintenance < 60 ? 'bad' : 'warn'}">
         <span class="tile">${ICON[worst.icon]}</span>
-        <div><b>${worst.title}</b><span>Upkeep is ${Math.round(g.maintenance)}% covered. Grow revenue or build less; repairs are automatic.</span>
+        <div><b>${worst.title}</b><span>Upkeep ${Math.round(g.maintenance)}% covered. Repairs start as soon as it's paid.</span>
         <ol class="pips" aria-label="Decay stages">${DECAY_STAGES.map((s) => `<li class="${decay[s.key] ? 'on' : ''}" data-tip="${s.title} below ${s.at}% upkeep">${ICON[s.icon]}</li>`).join('')}</ol></div>
       </div>`;
     }
     if (g.unhoused > 0) {
-      alerts += `<div class="alert" data-tone="bad"><span class="tile">${ICON.tent}</span><div><b>${g.unhoused.toLocaleString('en-US')} people in tents</b><span>${pop.toLocaleString('en-US')} users need $${need.toLocaleString('en-US')} MRR to be housed. You're at $${Math.round(g.mrr).toLocaleString('en-US')}.</span></div></div>`;
+      const why = short > 0 ? `${pop.toLocaleString('en-US')} users need $${need.toLocaleString('en-US')} MRR; you're at $${Math.round(g.mrr).toLocaleString('en-US')}.` : 'Housing fails when upkeep drops below 35%.';
+      alerts += `<div class="alert" data-tone="bad"><span class="tile">${ICON.tent}</span><div><b>${g.unhoused.toLocaleString('en-US')} people in tents</b><span>${why}</span></div></div>`;
     }
     setHtml(this.alerts, alerts);
     this.card.classList.toggle('alarmed', !!alerts);
@@ -495,7 +497,7 @@ export class GameUI {
       const from = cur.mrr;
       const pct = Math.max(0, Math.min(100, ((g.peakMrr - from) / (next.mrr - from)) * 100));
       nextHtml = `<div class="home-next">
-        <div><small>Next move</small><b>${escape(next.options.map((o) => o.name).join(' or '))}</b><span class="num">at ${shortMrr(next.mrr)} MRR · peak so far $${Math.round(g.peakMrr).toLocaleString('en-US')}</span></div>
+        <div><small>Next move</small><b>${escape(next.options.length > 1 ? `${next.options[0]!.name} + ${next.options.length - 1} more to choose from` : next.options[0]!.name)}</b><span class="num">at ${shortMrr(next.mrr)} MRR · peak so far $${Math.round(g.peakMrr).toLocaleString('en-US')}</span></div>
         <div class="progress" data-tone="brand"><i><b style="width:${pct.toFixed(1)}%"></b></i><span class="num">${Math.round(pct)}%</span></div>
       </div>`;
     } else {

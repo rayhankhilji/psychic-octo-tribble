@@ -5,6 +5,7 @@ import { home, neighbourhoodGrounds, tree, type Built } from './buildings.ts';
 import { headquarters, type HQ } from './towers.ts';
 import { cloudBank, encampment, founderHome, itemModel, plane, plotMarker, rocket, yacht } from './models.ts';
 import { Fireworks, Rain, Train } from './effects.ts';
+import { Moon } from './moon.ts';
 import { Traffic } from './traffic.ts';
 import { Life, SHADOW_ONLY_LAYER } from './life.ts';
 import { Construction } from './construction.ts';
@@ -66,7 +67,9 @@ const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 export class City {
   readonly scene = new THREE.Scene();
   readonly fireworks = new Fireworks();
-  readonly rain = new Rain(48);
+  readonly rain = new Rain(24);
+  readonly moon = new Moon();
+  private camera: THREE.OrthographicCamera | null = null;
   readonly train = new Train(F_LINE, (x, z) => Math.max(0, hillHeight(x, z)) + 0.012);
   readonly traffic = new Traffic();
   /** Objects with `userData.tip` for hover tooltips. */
@@ -148,7 +151,7 @@ export class City {
       glowMaterial({ color: new THREE.Color(3, 1.6, 0.4), transparent: true, opacity: 0.9 }),
     );
     this.flame.visible = false;
-    this.scene.add(this.scenery.object, this.roadLayer, this.fireworks.object, this.rain.object, this.train.object, this.traffic.object, this.highlights);
+    this.scene.add(this.scenery.object, this.roadLayer, this.fireworks.object, this.rain.object, this.moon.object, this.train.object, this.traffic.object, this.highlights);
   }
 
   // ─── Reconciliation ─────────────────────────────────────────────────────
@@ -327,8 +330,12 @@ export class City {
   }
 
   /** Point the sun's shadow camera at what's on screen, so shadows stay crisp when zoomed in. */
-  setView(target: THREE.Vector3, halfSpan: number, cameraDistance = 104) {
+  setView(target: THREE.Vector3, halfSpan: number, cameraDistance = 104, camera?: THREE.OrthographicCamera) {
     this.cameraDistance = cameraDistance;
+    if (camera) this.camera = camera;
+    // Rain only falls around what's on screen, sized to the view so it reads the same at any zoom.
+    this.rain.object.position.set(target.x, 0, target.z);
+    this.rain.object.scale.setScalar(THREE.MathUtils.clamp(halfSpan / 22, 0.3, 2.4));
     const span = THREE.MathUtils.clamp(Math.ceil(halfSpan * 1.05), 10, 90);
     const sc = this.sun.shadow.camera;
     // Snap to whole texels so shadow edges don't crawl as the camera pans.
@@ -829,6 +836,9 @@ export class City {
     this.updateLaunch(dt);
     for (const h of this.highlights.children) (h as THREE.Mesh).scale.y = 1 + 0.12 * Math.sin(time * 4);
     this.rain.update(dt);
+    this.moon.home = (this.game?.home.tier ?? 0) >= 6;
+    // The iso view has no sky, so the moon only rises for rocket flights, as their destination.
+    if (this.camera) this.moon.update(dt, this.camera, 0, !!this.launch && this.launch.t > 2 && this.launch.t < 11);
     this.fireworks.update(dt);
     this.train.update(dt);
     this.traffic.update(dt);

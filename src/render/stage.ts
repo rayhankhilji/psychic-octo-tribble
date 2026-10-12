@@ -291,7 +291,7 @@ export class Stage {
     this.controls.update();
     const aspect = this.host.clientWidth / Math.max(1, this.host.clientHeight);
     // Ground visible on screen: the frame's width, and its height stretched by the iso tilt.
-    this.city.setView(this.controls.target, Math.hypot(VIEW * aspect, VIEW * 1.75) / this.camera.zoom / 2, DISTANCE);
+    this.city.setView(this.controls.target, Math.hypot(VIEW * aspect, VIEW * 1.75) / this.camera.zoom / 2, DISTANCE, this.camera);
     this.city.update(dt, time);
     const a = this.city.atmosphere;
     this.renderer.toneMappingExposure = a.exposure;

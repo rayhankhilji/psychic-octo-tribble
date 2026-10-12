@@ -37,7 +37,9 @@ export function hideBoot(minVisibleMs = 900) {
     b.classList.add('done');
     document.documentElement.classList.add('booted');
     const remove = () => b.remove();
-    b.addEventListener('transitionend', remove, { once: true });
+    // Only the overlay's own fade counts (children's transforms bubble up too).
+    b.addEventListener('transitionend', (e) => e.target === b && e.propertyName === 'opacity' && remove());
+    // Belt and braces: never leave the boot screen up if transitions don't run.
     window.setTimeout(remove, 1200);
   }, wait);
 }

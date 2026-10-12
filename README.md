@@ -4,7 +4,7 @@
 
 **The only way to grow your city is to grow your startup.** Nothing in the game makes money, and you can't buy currency.
 
-The world is **Golden Coast**, a sunny cross between San Francisco and Los Angeles: painted-lady terraces and Spanish stucco under terracotta roofs, palms, glass towers, a red suspension bridge over the bay, a pier with a Ferris wheel, a beach, and a **TINYTOWN** sign on the hill behind it all.
+The world is a toy-sized **San Francisco Bay**, laid out like the real thing: downtown and the Financial District on the north-east corner of the peninsula, Market Street cutting diagonally to Civic Center and City Hall's gold dome, the Embarcadero and its piers, the Marina, the Presidio's forest and the Golden Gate to the north-west, Golden Gate Park and the Sunset running out to Ocean Beach, the Bay Bridge to Treasure Island and Oakland, and SFO down the peninsula. Painted ladies, Sunset stucco row houses and Edwardian flats fill the neighbourhoods; a Transamerica pyramid and a Salesforce-style spire rise as you grow. The city is alive: cars, Muni buses and cabs on a real street grid, people on the sidewalks, F-line streetcars and cable cars, ferries and sailboats on the bay, airliners landing at SFO, gulls, kites and the Karl the Fog rolling in. A **TINYTOWN** sign sits on the hill above it all.
 
 ![A grown TinyTown at midday: the city panel showing treasury and satisfaction, neighbourhoods around a glass downtown, the Hills neighbourhood, pier rides and the TINYTOWN sign](docs/images/city.png)
 
@@ -96,7 +96,8 @@ Stripe / GitHub ──► server/        fetch + cache (60s), keys stay here
 ```
 
 - **Deterministic.** The same numbers always produce the same city, seeded by your startup's name. Growth only ever adds to it, so customer #12's house never moves when #13 arrives.
-- **Cheap to render.** However detailed a building is, it's merged into at most two meshes: one lit, one emissive. Roads, lamps and cars are instanced. A fully grown city, shadows and bloom included, takes under 900 draw calls a frame. Bloom picks up only the windows and neon.
+- **Cheap to render.** However detailed a building is, it's merged into a handful of meshes by material (matte, glass, smooth, lights). Every home in the city shares one `BatchedMesh` per material, and cars, people, gulls, lamps and trees are instanced, so a fully grown city draws in a few hundred calls. Quality adapts to the device (`?quality=low|medium|high` to force it).
+- **Miniature look.** A post pipeline renders the city like a model you could pick up: ambient occlusion for contact shadows, bloom only on lights after dark, a tilt-shift blur at the top and bottom of the frame, and a warm filmic grade.
 - **Reconciled, not rebuilt.** A new day diffs the plan and touches only what changed: one customer costs one small house.
 - **No backend dependencies.** The server is plain Node (≥ 22.18, which runs TypeScript directly) plus `fetch`.
 
@@ -109,7 +110,7 @@ npm run typecheck
 
 From [the product thesis](docs/PRODUCT.md), in priority order:
 
-1. **Ship one world exquisitely.** More hand-made detail in Golden Coast, sound, and celebration moments people want to record.
+1. **Ship one world exquisitely.** More hand-made detail in the Bay, sound, and celebration moments people want to record.
 2. **Public world page.** An opt-in URL for your city, with metrics hidden by default.
 3. **Growth recap video.** Export the replay as a 15-second clip for posting.
 4. **PostHog** (active users become people on the streets) and **Supabase** (signups).

@@ -39,16 +39,16 @@ interface Key {
 
 // Golden Coast: bright Californian days, long golden evenings, moonlit nights.
 const KEYS: Key[] = [
-  { h: 0, light: '#8fa6ff', intensity: 0.9, sky: '#3a4a86', ground: '#1a1830', hemi: 1.1, fog: '#121a38', night: 1, bloom: 0.7, exposure: 1.15 },
-  { h: 5.2, light: '#8fa6ff', intensity: 0.9, sky: '#3a4a86', ground: '#1a1830', hemi: 1.1, fog: '#141c3c', night: 1, bloom: 0.7, exposure: 1.15 },
+  { h: 0, light: '#8fa6ff', intensity: 0.6, sky: '#34447e', ground: '#16152a', hemi: 0.8, fog: '#121a38', night: 1, bloom: 0.7, exposure: 1.15 },
+  { h: 5.2, light: '#8fa6ff', intensity: 0.6, sky: '#34447e', ground: '#16152a', hemi: 0.8, fog: '#141c3c', night: 1, bloom: 0.7, exposure: 1.15 },
   { h: 6.3, light: '#ff9a6a', intensity: 1.0, sky: '#e7a6a0', ground: '#4a3a4a', hemi: 1.0, fog: '#e4a79a', night: 0.6, bloom: 0.55, exposure: 1.05 },
   { h: 7.6, light: '#ffe2bf', intensity: 2.4, sky: '#bfdcff', ground: '#6f8a58', hemi: 1.35, fog: '#cfe4f4', night: 0, bloom: 0.18, exposure: 1.0 },
   { h: 12.5, light: '#fff6e6', intensity: 3.0, sky: '#cde6ff', ground: '#7a9a5e', hemi: 1.5, fog: '#d6ebf7', night: 0, bloom: 0.15, exposure: 1.0 },
   { h: 16.6, light: '#ffe6bd', intensity: 2.7, sky: '#cfe0f5', ground: '#7a9058', hemi: 1.4, fog: '#dde6ee', night: 0, bloom: 0.18, exposure: 1.0 },
   { h: 18.4, light: '#ff8a3a', intensity: 2.6, sky: '#ffa877', ground: '#6a4038', hemi: 0.95, fog: '#f2a77c', night: 0.45, bloom: 0.5, exposure: 1.02 },
   { h: 19.5, light: '#e8707a', intensity: 0.9, sky: '#8a72b0', ground: '#2e2440', hemi: 1.0, fog: '#6a5486', night: 0.8, bloom: 0.75, exposure: 1.08 },
-  { h: 20.6, light: '#8fa6ff', intensity: 0.9, sky: '#3a4a86', ground: '#1a1830', hemi: 1.1, fog: '#121a38', night: 1, bloom: 0.7, exposure: 1.15 },
-  { h: 24, light: '#8fa6ff', intensity: 0.9, sky: '#3a4a86', ground: '#1a1830', hemi: 1.1, fog: '#121a38', night: 1, bloom: 0.7, exposure: 1.15 },
+  { h: 20.6, light: '#8fa6ff', intensity: 0.6, sky: '#34447e', ground: '#16152a', hemi: 0.8, fog: '#121a38', night: 1, bloom: 0.7, exposure: 1.15 },
+  { h: 24, light: '#8fa6ff', intensity: 0.6, sky: '#34447e', ground: '#16152a', hemi: 0.8, fog: '#121a38', night: 1, bloom: 0.7, exposure: 1.15 },
 ];
 
 const SUNRISE = 6.1;

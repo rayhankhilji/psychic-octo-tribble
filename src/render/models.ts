@@ -1423,6 +1423,11 @@ function hackerHouse(b: Kit, r: () => number, museum: boolean) {
   cornice(b, 0, top, front, 0, 1, W, trim);
   b.box(W + 0.04, 0.03, D + 0.02, 0, top, zc, trim);
   b.gable(D, 0.24, W, 0, top + 0.03, zc, 0x6a6560, 0.03, Math.PI / 2);
+  // Gable end: fish-scale shingles in an accent colour, an attic window
+  const tri = new THREE.Shape([new THREE.Vector2(-W / 2, 0), new THREE.Vector2(W / 2, 0), new THREE.Vector2(0, 0.23)]);
+  put(b, new THREE.ExtrudeGeometry(tri, { depth: 0.01, bevelEnabled: false }), 0, top + 0.03, front + 0.022, shade(pick(r, PALETTE.victorian), 0.8));
+  for (let k = 0; k < 3; k++) wall(b, 'solid', 0, top + 0.06 + k * 0.045, front + 0.034, 0, 1, W * (0.85 - k * 0.22), 0.006, trim);
+  punch(b, r, 0, top + 0.11, front + 0.03, 0, 1, 0.07, 0.07, trim, [1.6, 1.3, 0.8], TINT.sky, 0.9);
   // Blue tarp over a leak
   put(b, new THREE.BoxGeometry(0.18, 0.004, 0.2), 0.12, top + 0.15, zc - 0.05, 0x2f6fd8, 'solid', 0, 0, -0.75);
   // Antenna and a satellite dish
@@ -1451,8 +1456,9 @@ function hackerHouse(b: Kit, r: () => number, museum: boolean) {
   for (let k = 0; k <= 9; k++) b.box(0.012, 0.08, 0.012, -0.45 + k * 0.1, 0.03, 0.46, 0xc8bca0);
   b.box(0.96, 0.01, 0.01, 0, 0.09, 0.46, 0xc8bca0);
   // A hand-lettered banner
-  b.box(0.3, 0.06, 0.004, -0.1, 0.03 + base + fh * 2 - 0.08, front + 0.075, 0xf4ecd8);
-  pixelText(b, 'solid', 'HACK', -0.1, 0.03 + base + fh * 2 - 0.08, front + 0.078, 0, 1, 0.009, 0xd8402e);
+  b.box(0.2, 0.05, 0.004, 0.16, 0.03 + base + 0.04, front + 0.125, 0xf4ecd8);
+  pixelText(b, 'solid', 'HACK', 0.16, 0.03 + base + 0.04, front + 0.128, 0, 1, 0.008, 0xd8402e);
+  for (const sx of [0.07, 0.25]) b.box(0.008, 0.07, 0.008, sx, 0.03 + base, front + 0.125, 0x8a6a4a);
   if (museum) {
     // It's a museum now: a brass plaque, velvet ropes and a spotlight
     b.box(0.03, 0.12, 0.03, 0.34, 0.03, 0.4, 0x3a3f4a);
@@ -1651,6 +1657,20 @@ function plinth(b: GeoBuilder, pts: readonly XZ[], top: number, depth: number, c
   prism(b, pts, top - depth, depth, color);
 }
 
+/** Detail for a flat modern roof seen from above: gravel field, skylights, solar, a vent. */
+function modernRoof(b: GeoBuilder, x: number, y: number, z: number, w: number, d: number, solar = true) {
+  b.box(w - 0.08, 0.006, d - 0.08, x, y, z, 0xd2cbbd);
+  const n = Math.max(1, Math.round(w / 0.35));
+  for (let k = 0; k < n; k++) {
+    const sx = x - w / 2 + (k + 0.5) * (w / n);
+    b.box(0.09, 0.02, 0.09, sx, y, z - d * 0.22, 0x9fc0d4, 'glass');
+  }
+  if (solar) {
+    for (let k = 0; k < Math.max(1, Math.round(w / 0.25)); k++) put(b, new THREE.BoxGeometry(0.18, 0.008, 0.12), x - w / 2 + 0.15 + k * 0.22, y + 0.03, z + d * 0.2, 0x23345a, 'glass', 0, -0.3);
+  }
+  b.box(0.06, 0.04, 0.06, x + w * 0.35, y, z - d * 0.35, 0x9aa3ad);
+}
+
 function hillsModern(b: Kit, r: () => number) {
   const stone = 0xb8ab98;
   const white = 0xf6f4ee;
@@ -1671,12 +1691,15 @@ function hillsModern(b: Kit, r: () => number) {
   b.box(0.12, ph + 0.06, 0.2, px - 0.2, y0, pz - 0.12, stone); // stone fireplace wall
   b.box(pw + 0.3, 0.035, pd + 0.26, px + 0.05, y0 + ph, pz + 0.04, white);
   b.box(pw + 0.3, 0.012, pd + 0.26, px + 0.05, y0 + ph - 0.012, pz + 0.04, wood);
+  modernRoof(b, px + 0.05, y0 + ph + 0.035, pz + 0.04, pw + 0.2, pd + 0.16);
   // Cantilevered living room shooting out over the slope, on steel
   const cx = px + 0.62;
   const cz = pz + 0.48;
   prism(b, rectPts(0.5, 0.6, cx, cz), y0, ph * 0.9, 0x3a4656, 'glass');
   facade(b, r, rectPts(0.5, 0.6, cx, cz), y0, null, y0 + ph * 0.9, { floors: 1, bay: 0.14, winH: 0.94, winW: 0.94, lit: 0.9, light: [2.2, 1.5, 0.8], tint: TINT.sky, fins: { color: 0x2a2f38, depth: 0.01, width: 0.01 } });
   b.box(0.6, 0.03, 0.72, cx + 0.03, y0 + ph * 0.9, cz + 0.03, white);
+  b.box(0.6, 0.008, 0.72, cx + 0.03, y0 + ph * 0.9 - 0.008, cz + 0.03, wood);
+  modernRoof(b, cx + 0.03, y0 + ph * 0.9 + 0.03, cz + 0.03, 0.5, 0.62, false);
   b.box(0.52, 0.05, 0.62, cx, y0 - 0.05, cz, white);
   for (const s of [-1, 1]) beam(b, cx + s * 0.2, y0 - 0.05, cz + 0.25, cx + s * 0.2, -0.5, cz - 0.1, 0.022, 0x2a2f38);
   // Pool on the terrace, deck, loungers, an umbrella
@@ -1697,7 +1720,7 @@ function hillsModern(b: Kit, r: () => number) {
   for (const [ax, az] of [[-0.85, 0.45], [-0.75, 0.52], [-0.88, 0.3], [0.75, -0.62]] as const) agave(b, ax, 0.052, az);
   bush(b, r, -0.72, 0.18, -0.6, 0.1, 0x8aa08a);
   b.cylinder(0.012, 0.018, 0.12, -0.72, 0.052, -0.6, PALETTE.trunk, 5);
-  palm(b, r, 0.72, 0.4, 0.8, 0.052);
+  palm(b, r, 0.84, 0.52, 0.62, 0.052);
   // Path lights
   for (let k = 0; k < 4; k++) quadBlob(neonOf(b), -0.85 + k * 0.12, 0.07, 0.55, 0.008, LAMP);
 }
@@ -1790,6 +1813,9 @@ function cliffside(b: Kit, r: () => number) {
   prism(b, up, uy, 0.28, glass, 'glass');
   facade(b, r, up, uy, null, uy + 0.28, { floors: 1, bay: 0.15, winH: 0.94, winW: 0.94, lit: 0.9, light, tint: TINT.sky, fins: { color: 0x2a2f38, depth: 0.01, width: 0.01 } });
   b.box(0.78, 0.035, 1.23, 0.1, uy + 0.28, -0.1, white);
+  b.box(0.7, 0.006, 0.55, 0.1, uy + 0.315, -0.4, 0xd2cbbd);
+  for (let k = 0; k < 3; k++) put(b, new THREE.BoxGeometry(0.18, 0.008, 0.12), -0.1 + k * 0.2, uy + 0.34, -0.45, 0x23345a, 'glass', 0, -0.3);
+  for (let k = 0; k < 2; k++) put(b, new THREE.BoxGeometry(0.12, 0.012, 0.045), -0.15 + k * 0.08, uy + 0.33, 0.12, 0xf4f1ea, 'solid', Math.PI / 2, 0, 0.2);
   b.box(0.72, 0.035, 1.17, 0.1, uy - 0.035, -0.1, white);
   // Infinity-edge pool on the cantilever's roof, a glass balustrade
   pool(b, 0.1, uy + 0.315, 0.12, 0.5, 0.5);
@@ -1880,6 +1906,7 @@ function islandEstate(b: Kit, r: () => number) {
   prism(b, up, y0 + 0.335, 0.27, 0x3a4656, 'glass');
   facade(b, r, up, y0 + 0.335, null, y0 + 0.605, { floors: 1, bay: 0.15, winH: 0.94, winW: 0.94, lit: 0.9, light, tint: TINT.sky, fins: { color: 0x2a2f38, depth: 0.01, width: 0.01 } });
   b.box(1.3, 0.035, 0.85, 0.2, y0 + 0.605, -0.55, white);
+  modernRoof(b, 0.2, y0 + 0.64, -0.55, 1.2, 0.75);
   b.box(0.14, 0.7, 0.8, -0.55, y0, -0.55, stone);
   for (let k = 0; k < 6; k++) b.box(0.145, 0.005, 0.805, -0.55, y0 + 0.1 + k * 0.1, -0.55, shade(stone, 0.9));
   // Terrace: infinity pool with a glowing edge, cabanas, loungers
@@ -1906,7 +1933,7 @@ function islandEstate(b: Kit, r: () => number) {
   }
   helicopter(b, hx + 0.05, 0.077, hz - 0.02, pick(r, [0x1c2a3a, 0xf4f1ea, 0xd8402e] as const), 0.6);
   // Garden: palms, lawn paths, a beach cabana, lights
-  for (const [px, pz] of [[-1.15, 0.85], [-1.15, -0.95], [1.15, -0.95], [0.2, 0.95], [-0.5, 0.9], [1.15, 0.0]] as const) palm(b, r, px, pz, 1.1, 0.04);
+  for (const [px, pz] of [[-1.15, 0.85], [-1.15, -0.95], [1.15, -0.95], [0.2, 0.95], [-0.5, 0.9], [1.15, 0.0]] as const) palm(b, r, px, pz, 0.78, 0.04);
   b.box(0.1, 0.006, 0.7, -0.85, 0.04, 0.6, 0xe8dcc0);
   for (let k = 0; k < 5; k++) quadBlob(neonOf(b), -0.92, 0.06, 0.3 + k * 0.14, 0.008, LAMP);
   for (let k = 0; k < 6; k++) bush(b, r, -1.2 + k * 0.08, 0.08, -0.4 + (k % 2) * 0.1, 0.06);

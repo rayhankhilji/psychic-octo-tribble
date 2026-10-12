@@ -252,9 +252,9 @@ export class Hud {
     // ── Floating bits ──────────────────────────────────────────────────
     this.tip = el('div', { class: 'tip', role: 'tooltip', hidden: '' }, '<div class="tip-title"></div><div class="tip-detail"></div>');
     this.uitip = el('div', { class: 'uitip', role: 'tooltip', hidden: '' });
-    this.connect = el('dialog', { class: 'dialog connect-dialog', 'aria-labelledby': 'connect-title' });
+    this.connect = el('dialog', { class: 'dialog connect-dialog', 'aria-labelledby': 'connect-title', tabindex: '-1', autofocus: '' });
     this.connect.addEventListener('click', (e) => e.target === this.connect && this.connect.close());
-    this.share = el('dialog', { class: 'dialog share-dialog', 'aria-labelledby': 'share-title' });
+    this.share = el('dialog', { class: 'dialog share-dialog', 'aria-labelledby': 'share-title', tabindex: '-1', autofocus: '' });
     this.share.addEventListener('click', (e) => e.target === this.share && this.share.close());
 
     const lower = el('div', { class: 'lower' });

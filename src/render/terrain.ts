@@ -89,7 +89,8 @@ export class Terrain {
     u.uSunDir!.value.copy(sunDir);
     u.uSunColor!.value.setRGB(...a.lightColor).multiplyScalar(Math.min(1.6, a.lightIntensity * 0.5));
     u.uSky!.value.setRGB(...a.skyColor);
-    u.uLight!.value = 0.32 + 0.68 * Math.min(1, a.hemiIntensity / 1.5) * (1 - a.night * 0.55);
+    // Deep navy after dark, so the city lights and their reflections carry the night.
+    u.uLight!.value = 0.14 + 0.86 * Math.min(1, a.hemiIntensity / 1.5) * (1 - a.night * 0.72);
     u.uNight!.value = a.night;
   }
 }

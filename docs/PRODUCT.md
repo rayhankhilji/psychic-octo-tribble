@@ -20,7 +20,7 @@ The commercial hypothesis is simple, and it's untested: enough founders value th
 
 | | v0 (this repo) | Next |
 | --- | --- | --- |
-| World | One art direction, *Golden Coast*: a sunny San Francisco–Los Angeles hybrid with a bay, bridge, pier, beach and a TINYTOWN sign on the hill, on a day/night cycle that follows the viewer's local clock | More hand-made detail before any second theme |
+| World | One art direction: a toy-sized San Francisco Bay laid out like the real one (downtown, Market Street, the Embarcadero, the Golden Gate and Bay Bridge, SFO) with a TINYTOWN sign on the hill, on a day/night cycle that follows the viewer's local clock | More hand-made detail before any second theme |
 | Integrations | Stripe (customers, MRR, full history), GitHub (releases, commits) | PostHog (active users), Supabase (signups) |
 | Events | First customer, every join and churn, MRR milestones, releases, pushes, rough weeks | Founder-defined milestones ("first enterprise deal") |
 | Social | Snapshot PNG, metrics hidden by default | Public world page, 15-second growth recap video |
