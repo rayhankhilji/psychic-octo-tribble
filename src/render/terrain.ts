@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SEA, coastDistance, isBeach, terrainHeight } from '../world/map.ts';
+import { HILLS_HOOD, SEA, coastDistance, isBeach, terrainHeight } from '../world/map.ts';
 import type { Atmosphere } from '../world/daylight.ts';
 
 /** Area the terrain mesh covers; beyond it, open water. */
@@ -9,6 +9,9 @@ const DEPTH = { x0: -110, z0: -120, w: 230, d: 215 } as const;
 
 const GRASS = new THREE.Color(0x7fbf55);
 const PARK = new THREE.Color(0x6aae47);
+/** TinyTown Hills ground: dry golden grass and sage chaparral. */
+const HILLS_GOLD = new THREE.Color(0xc4b06e);
+const HILLS_SAGE = new THREE.Color(0x9ea56a);
 const GOLD = new THREE.Color(0xcdb46a);
 const DRY = new THREE.Color(0xb39457);
 const ROCK = new THREE.Color(0x9b8e7c);
@@ -70,6 +73,9 @@ export class Terrain {
         c.copy(Math.abs(h) < 0.05 ? PARK : GRASS);
         c.lerp(GOLD, Math.min(1, Math.max(0, (h - 1.2) / 6 + (noise - 0.5) * 0.7)));
         if (h > 6) c.lerp(DRY, 0.35);
+        // TinyTown Hills: golden dry grass and sage, like the hills above LA, softening at the edges.
+        const hood = Math.min(x - HILLS_HOOD.x0, HILLS_HOOD.x1 - x, z - HILLS_HOOD.z0, HILLS_HOOD.z1 - z);
+        if (hood > -1.5) c.lerp(noise > 0.5 ? HILLS_GOLD : HILLS_SAGE, 0.65 * Math.min(1, (hood + 1.5) / 2.5));
         c.lerp(ROCK, Math.min(1, Math.max(0, (slope - 0.75) * 1.4)));
         c.offsetHSL(0, 0, (noise - 0.5) * 0.05);
       }

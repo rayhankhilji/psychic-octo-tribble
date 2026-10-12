@@ -97,6 +97,8 @@ export class Scenery {
   private wheelSet = new THREE.Group();
   private coaster = new THREE.Group();
   private hood = new THREE.Group();
+  /** Level terraces for the Hills houses: centre, top and which way they face (downhill). */
+  private hillPads: { x: number; z: number; y: number; rot: number }[] = [];
   private clouds: Record<'hills' | 'island' | 'launch', THREE.Group> = { hills: new THREE.Group(), island: new THREE.Group(), launch: new THREE.Group() };
   private launchPad = new THREE.Group();
   private beam: THREE.Mesh;
@@ -785,51 +787,116 @@ export class Scenery {
 
   // ─── TinyTown Hills ─────────────────────────────────────────────────────
 
+  /**
+   * TinyTown Hills: Twin Peaks Boulevard winding up through chaparral, with
+   * houses on terraces cut into the slope, each facing downhill to the view.
+   */
   private buildHood() {
     const r = rng(hash(this.seed, 'hood'));
     const b = new GeoBuilder();
     const curve = this.hillRoad;
-    // The road surface itself, following the slope
-    const n = 260;
-    const pos: number[] = [];
-    for (let i = 0; i <= n; i++) {
-      const p = curve.getPointAt(i / n);
-      const t = curve.getTangentAt(i / n);
-      const side = new THREE.Vector3(-t.z, 0, t.x).normalize().multiplyScalar(0.32);
-      for (const s of [1, -1]) {
-        const x = p.x + side.x * s;
-        const z = p.z + side.z * s;
-        pos.push(x, terrainHeight(x, z) + 0.05, z);
+    const length = curve.getLength();
+    const road: Pt[] = [];
+    for (let i = 0; i <= 220; i++) {
+      const p = curve.getPointAt(i / 220);
+      road.push([p.x, p.z]);
+    }
+    const roadDistance = (x: number, z: number) => Math.min(...road.map(([rx, rz]) => Math.hypot(rx - x, rz - z)));
+
+    // The boulevard: asphalt with concrete curbs and a dashed centre line, draped on the hill.
+    ribbon(b, road, 0.62, 0xcfc8b8, 0.035);
+    ribbon(b, road, 0.5, PALETTE.road, 0.045, 0, true);
+
+    // A low stone wall on the downhill edge, and lamps on the uphill side.
+    const tmp = new THREE.Vector3();
+    for (let i = 0; i < 200; i++) {
+      const u = i / 200;
+      const p = curve.getPointAt(u);
+      curve.getTangentAt(u, tmp);
+      const nx = -tmp.z;
+      const nz = tmp.x;
+      const left = terrainHeight(p.x + nx * 0.6, p.z + nz * 0.6);
+      const right = terrainHeight(p.x - nx * 0.6, p.z - nz * 0.6);
+      const down = left < right ? 1 : -1;
+      if (Math.abs(left - right) > 0.12 && i % 2 === 0) {
+        const wx = p.x + nx * down * 0.33;
+        const wz = p.z + nz * down * 0.33;
+        b.box(0.05, 0.07, length / 200 * 2.05, wx, terrainHeight(wx, wz) + 0.02, wz, 0xb9ad98, false, Math.atan2(tmp.x, tmp.z));
+      }
+      if (i % 9 === 4) {
+        const lx = p.x - nx * down * 0.34;
+        const lz = p.z - nz * down * 0.34;
+        const ly = terrainHeight(lx, lz);
+        b.cylinder(0.008, 0.012, 0.32, lx, ly, lz, 0x3a4048, 5);
+        b.blob(0.022, lx, ly + 0.33, lz, LAMP, true);
+      }
+      // Hollywood palms along the boulevard
+      if (i % 13 === 6) {
+        const px = p.x + nx * down * 0.42;
+        const pz = p.z + nz * down * 0.42;
+        if (!inSign(px, pz)) palm(b, r, px, pz, 1.05, terrainHeight(px, pz) - 0.03);
       }
     }
-    const idx: number[] = [];
-    for (let i = 0; i < n; i++) idx.push(i * 2, i * 2 + 2, i * 2 + 1, i * 2 + 1, i * 2 + 2, i * 2 + 3);
-    const road = new THREE.BufferGeometry();
-    road.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    road.setIndex(idx);
-    road.computeVertexNormals();
-    b.transformed(road, new THREE.Matrix4(), PALETTE.road);
-    // Villas on terraces either side of the switchbacks
-    for (let i = 1; i < 34; i++) {
-      const u = i / 34;
+
+    // Terraces: level pads cut into the slope on stone plinths, each with a driveway down to the road.
+    this.hillPads = [];
+    for (let d = 1.4; d < length - 0.6; d += 1.2) {
+      const u = d / length;
       const p = curve.getPointAt(u);
-      const t = curve.getTangentAt(u);
-      const s = i % 2 ? 1 : -1;
-      const off = new THREE.Vector3(-t.z, 0, t.x).normalize().multiplyScalar(s * 1.0);
-      const x = p.x + off.x;
-      const z = p.z + off.z;
-      if (Math.hypot(x - HILLS_HOME.x, z - HILLS_HOME.z) < 2.2 || !inHood(x, z) || inSign(x, z)) continue;
-      const near = [...Array(n).keys()].some((k) => curve.getPointAt(k / n).distanceTo(new THREE.Vector3(x, curve.getPointAt(k / n).y, z)) < 0.6);
-      if (near) continue;
-      villa(b, r, x, z, terrainHeight(x, z));
+      curve.getTangentAt(u, tmp);
+      for (const side of [1, -1]) {
+        const nx = -tmp.z * side;
+        const nz = tmp.x * side;
+        const x = p.x + nx * 1.05;
+        const z = p.z + nz * 1.05;
+        if (!inHood(x, z) || Math.hypot(x - HILLS_HOME.x, z - HILLS_HOME.z) < 2.3) continue;
+        if (roadDistance(x, z) < 0.85 || this.hillPads.some((q) => Math.hypot(q.x - x, q.z - z) < 1.3)) continue;
+        const e = 0.4;
+        const gx = terrainHeight(x + e, z) - terrainHeight(x - e, z);
+        const gz = terrainHeight(x, z + e) - terrainHeight(x, z - e);
+        // Face downhill (towards the city and the camera); level with the uphill edge.
+        const rot = Math.hypot(gx, gz) > 0.01 ? Math.atan2(-gx, -gz) : Math.PI / 4;
+        // Cut and fill, as real hillside lots are: the pad sits at the slope's mean height,
+        // dug in at the back, with a stone retaining wall showing only on the downhill side.
+        const corners = [[-0.55, -0.47], [0.55, -0.47], [-0.55, 0.47], [0.55, 0.47]].map(([cx, cz]) => terrainHeight(x + cx!, z + cz!));
+        const top = corners.reduce((a, c) => a + c, 0) / corners.length + 0.03;
+        const low = Math.min(...corners);
+        b.box(1.1, Math.max(0.05, top - low + 0.04), 0.95, x, low - 0.04, z, pick(r, [0xb9ad98, 0xc4b8a2, 0xab9f8a] as const), false, rot);
+        b.box(1.06, 0.012, 0.91, x, top, z, 0xd9d2c2, false, rot);
+        ribbon(b, [[p.x + nx * 0.25, p.z + nz * 0.25], [x - nx * 0.5, z - nz * 0.5]], 0.15, 0xc8c0b0, 0.04);
+        this.hillPads.push({ x, z, y: top + 0.012, rot });
+      }
     }
-    for (let i = 0; i < 30; i++) {
-      const x = HILLS_HOOD.x0 + r() * (HILLS_HOOD.x1 - HILLS_HOOD.x0);
-      const z = HILLS_HOOD.z0 + r() * (HILLS_HOOD.z1 - HILLS_HOOD.z0);
-      if (inSign(x, z)) continue;
-      palm(b, r, x, z, 1.0, terrainHeight(x, z) - 0.04);
+
+    // Chaparral, eucalyptus and cypress on every slope the road and houses leave free.
+    for (let gx = HILLS_HOOD.x0; gx < HILLS_HOOD.x1; gx += 0.42) {
+      for (let gz = HILLS_HOOD.z0; gz < HILLS_HOOD.z1; gz += 0.42) {
+        const x = gx + (r() - 0.5) * 0.36;
+        const z = gz + (r() - 0.5) * 0.36;
+        if (!inHood(x, z) || roadDistance(x, z) < 0.42 || Math.hypot(x - HILLS_HOME.x, z - HILLS_HOME.z) < 2.0) continue;
+        if (this.hillPads.some((q) => Math.hypot(q.x - x, q.z - z) < 0.72)) continue;
+        const y = terrainHeight(x, z);
+        const k = r();
+        if (k < 0.07) eucalyptus(b, r, x, z, y - 0.03, r() < 0.5);
+        else if (k < 0.14) tree(b, r, x, z, 0.9, y - 0.03, r() < 0.6 ? 'cypress' : 'round');
+        else if (k < 0.78) {
+          // A clump of sage, toyon and manzanita
+          for (let c = 0; c < 3 + Math.floor(r() * 3); c++) {
+            const cx = x + (r() - 0.5) * 0.3;
+            const cz = z + (r() - 0.5) * 0.3;
+            const s = 0.06 + r() * 0.07;
+            b.transformed(new THREE.IcosahedronGeometry(s, 0).scale(1.2, 0.75, 1.1), new THREE.Matrix4().makeTranslation(cx, terrainHeight(cx, cz) + s * 0.5, cz), pick(r, [0x7f9a5a, 0x6f8a52, 0x8fa468, 0x5e7a48, 0xa3a46a] as const), 'smooth');
+          }
+        }
+      }
     }
+    this.placeHillHouses(b, r);
     this.hood.add(this.add(b, { title: 'TinyTown Hills', detail: 'Opens at $1k MRR, when you move into your first Hills house.' }));
+  }
+
+  /** A house on every terrace. */
+  private placeHillHouses(b: GeoBuilder, r: () => number) {
+    for (const pad of this.hillPads) villa(b, r, pad.x, pad.z, pad.y + 0.15);
   }
 
   private buildClouds() {
