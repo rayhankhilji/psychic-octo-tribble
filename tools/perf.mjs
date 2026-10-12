@@ -1,6 +1,7 @@
-// Draw calls and triangles for the end-state city (dev builds expose window.__stage).
+// Draw calls and triangles for the end-state city (window.__stage: dev server, or any build with &debug).
 //
 //   node tools/perf.mjs "http://localhost:5173/?demo&fresh&time=13:00&quality=high" [--top=30]
+//   node tools/perf.mjs "http://localhost:5220/?demo&fresh&time=13:00&quality=high&debug"   (frozen preview)
 //
 // Prints totals for one render (shadow pass included), then the objects that
 // cost the most draw calls, so a perf pass can go after the biggest wins.
@@ -17,7 +18,7 @@ await scrubTo(page, 'end');
 await page.waitForTimeout(10000);
 const info = await page.evaluate((top) => {
   const s = window.__stage;
-  if (!s) return { error: 'window.__stage missing: run against the dev server (import.meta.env.DEV)' };
+  if (!s) return { error: 'window.__stage missing: use the dev server, or add &debug to the URL' };
   const scene = s.city.scene;
   // Name an object by what the game calls it: its tooltip, its name, or its type.
   const label = (o) => o.userData?.tip?.title ?? (o.name || o.type);

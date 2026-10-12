@@ -78,16 +78,17 @@ export class City {
   private name: string;
   private seed: number;
   private homes = new Map<string, THREE.Object3D>();
-  /** Every home in a few draw calls. */
+  /** Every home and every neighbourhood's grounds, in a few draw calls. */
   private homeBatch = new Batch();
-  private grounds = new Map<number, THREE.Group>();
+  /** Batch proxies for the neighbourhood grounds, by neighbourhood index. */
+  private grounds = new Map<number, THREE.Object3D>();
   private hq: (HQ & { floors: number; level: number }) | null = null;
   private game: GameState | null = null;
-  private builds = new Map<string, { group: THREE.Group; fade?: Fade; lit: boolean }>();
+  private builds = new Map<string, { group: THREE.Object3D; fade?: Fade; lit: boolean }>();
   private markers = new Map<string, THREE.Group>();
   private bases = new Map<string, THREE.Group>();
   private blockClouds = new Map<string, THREE.Group>();
-  private homesOfFounder = new Map<string, THREE.Group>();
+  private homesOfFounder = new Map<string, THREE.Object3D>();
   private tents: { count: number; group: THREE.Group } | null = null;
   private highlights = new THREE.Group();
   private rocketObj: THREE.Group | null = null;
@@ -108,6 +109,8 @@ export class City {
   private life: Life;
   /** Building sites in progress, keyed by the building going up. */
   private sites = new Map<THREE.Object3D, Construction>();
+  /** Bought things drawn through the batch: their proxy → batch key. */
+  private batched = new Map<THREE.Object3D, string>();
   private wilds: THREE.Group | null = null;
   private pools: THREE.MeshBasicMaterial | null = null;
   private plan: WorldPlan | null = null;
@@ -144,7 +147,7 @@ export class City {
     this.life = new Life(seed);
     this.scene.add(this.life.object);
     this.scene.add(this.homeBatch.object);
-    this.pickables.push(...this.homeBatch.object.children);
+    this.pickables.push(this.homeBatch.object);
     sc.layers.enable(SHADOW_ONLY_LAYER);
     this.flame = new THREE.Mesh(
       new THREE.ConeGeometry(0.2, 1.2, 10).rotateX(Math.PI).translate(0, -0.5, 0),
@@ -226,7 +229,7 @@ export class City {
 
   /** Objects you can click: plots and placement highlights first. */
   get clickables(): THREE.Object3D[] {
-    return [...this.highlights.children, ...this.markers.values(), ...this.pickables];
+    return [...this.highlights.children, ...this.markers.values(), ...this.pickables, ...this.scenery.pickables];
   }
 
   /** Fly the rocket up out of sight and back. Calls `done` when it has landed. */
@@ -379,18 +382,27 @@ export class City {
 
   private syncNeighbourhoods(plan: WorldPlan, animate: boolean) {
     const wanted = new Set(plan.neighbourhoods.map((n) => n.index));
-    for (const [n, g] of this.grounds) {
-      if (!wanted.has(n)) {
-        this.grounds.delete(n);
-        this.remove(g, animate);
-      }
+    for (const [n, proxy] of this.grounds) {
+      if (wanted.has(n)) continue;
+      this.grounds.delete(n);
+      const key = `nb:${n}`;
+      const done = () => this.homeBatch.remove(key);
+      this.anims = this.anims.filter((a) => a.obj !== proxy);
+      // Grounds are built in world space around the origin, so they only ever scale in y.
+      if (animate) this.anims.push({ obj: proxy, t: 0, dur: 0.45, delay: 0, grow: false, axis: 'y', from: 1, done, batchKey: key });
+      else done();
     }
     for (const n of plan.neighbourhoods) {
       if (this.grounds.has(n.index)) continue;
-      const { group } = neighbourhoodGrounds(n.bx, n.bz, n.index, hash(this.seed, 'nb', n.index));
-      group.userData.tip = { title: n.name, detail: `Neighbourhood ${n.index + 1} · ten homes` } satisfies Tip;
-      this.add(group, animate, 'y', 0.6);
-      this.grounds.set(n.index, group);
+      const key = `nb:${n.index}`;
+      const tip = { title: n.name, detail: `Neighbourhood ${n.index + 1} · ten homes` } satisfies Tip;
+      const proxy = this.homeBatch.add(key, neighbourhoodGrounds(n.bx, n.bz, n.index, hash(this.seed, 'nb', n.index)), tip);
+      this.grounds.set(n.index, proxy);
+      if (animate) {
+        proxy.scale.y = 0.0001;
+        this.homeBatch.touch(key);
+        this.anims.push({ obj: proxy, t: 0, dur: 0.6, delay: 0, grow: true, axis: 'y', from: 0, batchKey: key });
+      }
     }
   }
 
@@ -625,11 +637,9 @@ export class City {
       if (this.builds.has(key)) continue;
       const item = ITEMS.get(w.item)!;
       const built = itemModel(item.model, w.x, w.z, hash(this.seed, key));
-      built.group.userData.tip = { title: item.name, detail: `${item.blurb} · upkeep ${short(item.price * item.upkeep)}/mo` } satisfies Tip;
-      this.add(built.group, false, 'y', 1.1);
-      if (animate) this.construct(built.group, item.placement.kind === 'plot' && item.placement.size === 4 ? 3.4 : 2.6);
-      const fade = this.track(built, animate ? 0 : 1, 1);
-      this.builds.set(key, { group: built.group, fade, lit: true });
+      const { proxy, box, fade } = this.place(key, built, { title: item.name, detail: `${item.blurb} · upkeep ${short(item.price * item.upkeep)}/mo` }, animate ? 0 : 1);
+      if (animate) this.construct(proxy, item.placement.kind === 'plot' && item.placement.size === 4 ? 3.4 : 2.6, box);
+      this.builds.set(key, { group: proxy, fade, lit: true });
       if (animate) this.fireworks.launch(new THREE.Vector3(w.x, 1.5, w.z), 1, 0.5);
     }
   }
@@ -670,16 +680,15 @@ export class City {
     for (const [key, w] of wanted) {
       const have = this.homesOfFounder.get(key);
       if (have) {
-        have.userData.tip = { title: w.title, detail: w.detail } satisfies Tip;
+        this.homeBatch.setTip(this.batched.get(have)!, { title: w.title, detail: w.detail } satisfies Tip);
         continue;
       }
       const built = founderHome(w.option, hash(this.seed, key), w.museum);
       built.group.position.set(w.x, w.y, w.z);
       built.group.rotation.y = w.rot;
-      built.group.userData.tip = { title: w.title, detail: w.detail } satisfies Tip;
-      this.add(built.group, animate, 'xyz', 0.9);
-      this.track(built, animate ? 0 : 1, 1);
-      this.homesOfFounder.set(key, built.group);
+      const { proxy } = this.place(`founder|${key}`, built, { title: w.title, detail: w.detail }, animate ? 0 : 1);
+      this.grow(proxy, animate, 'xyz', 0.9);
+      this.homesOfFounder.set(key, proxy);
     }
   }
 
@@ -715,11 +724,18 @@ export class City {
       const v = make();
       v.group.position.copy(v.at);
       v.group.rotation.y = v.rot;
-      v.group.userData.tip = { title: v.title, detail: v.detail } satisfies Tip;
-      this.add(v.group, animate, 'xyz', 0.8);
-      const fade = this.track(v, animate ? 0 : 1, 1);
-      this.builds.set(key, { group: v.group, fade, lit: true });
-      if (key.startsWith('site:launch')) this.rocketObj = v.group;
+      const tip = { title: v.title, detail: v.detail } satisfies Tip;
+      if (key.startsWith('site:launch')) {
+        // The rocket flies, flame and all, so it stays a real object.
+        v.group.userData.tip = tip;
+        this.add(v.group, animate, 'xyz', 0.8);
+        this.builds.set(key, { group: v.group, fade: this.track(v, animate ? 0 : 1, 1), lit: true });
+        this.rocketObj = v.group;
+        continue;
+      }
+      const { proxy, fade } = this.place(key, v, tip, animate ? 0 : 1);
+      this.grow(proxy, animate, 'xyz', 0.8);
+      this.builds.set(key, { group: proxy, fade, lit: true });
     }
   }
 
@@ -750,16 +766,51 @@ export class City {
   private add(obj: THREE.Object3D, animate: boolean, axis: 'xyz' | 'y', dur: number, delay = 0) {
     this.scene.add(obj);
     this.pickables.push(obj);
+    this.grow(obj, animate, axis, dur, delay);
+  }
+
+  /** Pop an object in from nothing. */
+  private grow(obj: THREE.Object3D, animate: boolean, axis: 'xyz' | 'y', dur: number, delay = 0) {
     if (!animate) return;
     if (axis === 'xyz') obj.scale.setScalar(0.0001);
     else obj.scale.y = 0.0001;
+    this.touchBatched(obj);
     this.anims.push({ obj, t: 0, dur, delay, grow: true, axis, from: 0 });
   }
 
+  /**
+   * Draws a bought model through the shared batch (a few draw calls for the
+   * whole city). Returns its proxy, already in the scene and pickable, its
+   * world box for building sites, and a fade for its lights.
+   */
+  private place(key: string, built: Built, tip: Tip, level: number): { proxy: THREE.Object3D; box: THREE.Box3; fade?: Fade } {
+    const box = new THREE.Box3().setFromObject(built.group);
+    const hasLights = !!built.glow;
+    const batchKey = `b:${key}`;
+    const proxy = this.homeBatch.add(batchKey, built, tip);
+    this.batched.set(proxy, batchKey);
+    // Parts that couldn't be merged ride on the proxy, so it lives in the scene.
+    this.scene.add(proxy);
+    this.pickables.push(proxy);
+    let fade: Fade | undefined;
+    if (hasLights) {
+      fade = { apply: (l) => this.homeBatch.setGlow(batchKey, l), level, target: 1 };
+      fade.apply!(level);
+      this.fades.add(fade);
+    }
+    return { proxy, box, fade };
+  }
+
+  /** A batched model's proxy moved: copy it to the batch. */
+  private touchBatched(obj: THREE.Object3D) {
+    const key = this.batched.get(obj);
+    if (key) this.homeBatch.touch(key);
+  }
+
   /** Raise a building behind scaffolding, with a crane and dust. */
-  private construct(obj: THREE.Object3D, duration: number) {
+  private construct(obj: THREE.Object3D, duration: number, box?: THREE.Box3) {
     this.sites.get(obj)?.dispose();
-    const site = new Construction(obj, duration);
+    const site = new Construction(obj, duration, box);
     this.scene.add(site.object);
     this.sites.set(obj, site);
   }
@@ -773,9 +824,15 @@ export class City {
     const i = this.pickables.indexOf(obj);
     if (i >= 0) this.pickables.splice(i, 1);
     this.anims = this.anims.filter((a) => a.obj !== obj);
+    const key = this.batched.get(obj);
     const done = () => {
-      this.scene.remove(obj);
-      disposeGroup(obj);
+      if (key) {
+        this.homeBatch.remove(key);
+        this.batched.delete(obj);
+      } else {
+        this.scene.remove(obj);
+        disposeGroup(obj);
+      }
     };
     if (animate) this.anims.push({ obj, t: 0, dur: 0.45, delay, grow: false, axis: 'xyz', from: 1, done });
     else done();
@@ -801,10 +858,10 @@ export class City {
       if (a.axis === 'xyz') a.obj.scale.setScalar(s);
       else a.obj.scale.y = s;
       if (a.batchKey) this.homeBatch.touch(a.batchKey);
+      else this.touchBatched(a.obj);
       if (a.t >= 1) a.done?.();
     }
     this.anims = this.anims.filter((a) => a.t < 1);
-    this.homeBatch.update();
 
     for (const f of this.fades) {
       if (Math.abs(f.level - f.target) < 0.001) {
@@ -827,10 +884,14 @@ export class City {
     }
 
     for (const [obj, site] of this.sites) {
-      if (site.update(dt)) continue;
+      const going = site.update(dt);
+      this.touchBatched(obj);
+      if (going) continue;
       site.dispose();
       this.sites.delete(obj);
     }
+    // After the animations and building sites have moved their proxies.
+    this.homeBatch.update();
 
     this.updateSky(dt, time);
     this.updateLaunch(dt);

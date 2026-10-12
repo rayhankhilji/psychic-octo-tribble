@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GeoBuilder, glowMaterial, type ColorLike } from './geo.ts';
 import { densify } from './effects.ts';
+import { Batch } from './batch.ts';
 import { LANDMARKS, RUNWAY, SEA, type Pt } from '../world/map.ts';
 import { hash, pick, rng } from '../world/rng.ts';
 import type { Atmosphere } from '../world/daylight.ts';
@@ -37,15 +38,27 @@ interface Mover {
   update(dt: number, time: number): void;
 }
 
+/** A model drawn through the batch: `obj` is its proxy, `key` its batch entry. */
+interface Batched {
+  obj: THREE.Object3D;
+  key: string;
+}
+
 export class Life {
   readonly object = new THREE.Group();
   private movers: Mover[] = [];
   private fog: { sprite: THREE.Sprite; base: THREE.Vector3; speed: number; phase: number; mat: THREE.SpriteMaterial }[] = [];
   private shadows: { obj: THREE.Object3D; speed: number }[] = [];
   private gulls: Gulls;
+  /** Every boat, airliner, cable car and kite in a few draw calls. */
+  private batch = new Batch(64, 80_000);
+  private batched: Batched[] = [];
+  private fogTint = new THREE.Color();
+  private white = new THREE.Color(1, 1, 1);
 
   constructor(seed: number) {
     const r = rng(hash(seed, 'life'));
+    this.object.add(this.batch.object);
     // Ferries back and forth; the Oakland one ducks under the Bay Bridge.
     this.ferry(FERRY_SAUSALITO, 0.55, 0.1, 0x2f6a4f);
     this.ferry(FERRY_OAKLAND, 0.6, 0.55, 0x2a5a8a);
@@ -295,7 +308,7 @@ export class Life {
   }
 
   /** A narrow-body airliner along +x, ~2.4 long, with its own strobe and beacon. */
-  private airliner(seed: number): { obj: THREE.Group; strobe: THREE.MeshBasicMaterial; beacon: THREE.MeshBasicMaterial } {
+  private airliner(seed: number): { obj: THREE.Object3D; strobe: THREE.MeshBasicMaterial; beacon: THREE.MeshBasicMaterial } {
     const r = rng(seed);
     const livery = pick(r, [0x1f4e9a, 0xc8302a, 0x2a7a6a, 0x5a2a8a] as const);
     const b = new GeoBuilder();
@@ -342,10 +355,8 @@ export class Life {
       b.cylinder(0.035, 0.035, 0.03, gx, 0.02, gz, 0x1c1c20, 8);
     }
     b.blob(0.02, 0.9, 0.3, 0, NAV_WHITE, true);
-    const { group } = b.build();
-    group.traverse((o) => {
-      o.castShadow = true;
-    });
+    // The body is batched; the blinking lights ride on its proxy.
+    const group = this.built(b);
     const strobe = glowMaterial({ color: new THREE.Color(3, 3, 3) });
     const beacon = glowMaterial({ color: new THREE.Color(3, 0.2, 0.15) });
     for (const [x, yy, z, m] of [[-0.5, 0.42, 1.21, strobe], [-0.5, 0.42, -1.21, strobe], [-1.22, 1.03, 0, strobe], [0, 0.58, 0, beacon], [0, 0.26, 0, beacon]] as const) {
@@ -399,7 +410,7 @@ export class Life {
   }
 
   /** Powell Street cable car along +x: open benches at the ends, closed cabin in the middle. */
-  private cableCar(): THREE.Group {
+  private cableCar(): THREE.Object3D {
     const b = new GeoBuilder();
     const L = 0.6;
     b.box(L, 0.05, 0.22, 0, 0.03, 0, 0x6b2a22);
@@ -435,12 +446,10 @@ export class Life {
       const az = 9.4 + r() * 0.5;
       const b = new GeoBuilder();
       const diamond = new THREE.Shape([new THREE.Vector2(0, 0.16), new THREE.Vector2(0.09, 0), new THREE.Vector2(0, -0.2), new THREE.Vector2(-0.09, 0)]);
-      b.transformed(new THREE.ShapeGeometry(diamond), new THREE.Matrix4(), colours[i % colours.length]!, 'smooth');
+      // Both faces of the sail, so it reads from any side without a double-sided material.
+      for (const turn of [0, Math.PI]) b.transformed(new THREE.ShapeGeometry(diamond), new THREE.Matrix4().makeRotationY(turn), colours[i % colours.length]!, 'smooth');
       for (let k = 0; k < 5; k++) b.box(0.03, 0.02, 0.005, Math.sin(k) * 0.02, -0.24 - k * 0.06, 0, colours[(i + 2) % colours.length]!);
       const kite = this.built(b);
-      kite.traverse((o) => {
-        if (o instanceof THREE.Mesh) (o.material as THREE.Material).side = THREE.DoubleSide;
-      });
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0xf8f8f8, transparent: true, opacity: 0.6 }));
       this.object.add(kite, line);
       const base = new THREE.Vector3(ax, 0.05, az);
@@ -496,19 +505,21 @@ export class Life {
     }
   }
 
-  private built(b: GeoBuilder): THREE.Group {
-    const { group } = b.build();
-    group.traverse((o) => {
-      if (o instanceof THREE.Mesh) {
-        o.castShadow = true;
-        o.receiveShadow = true;
-      }
-    });
-    return group;
+  /** Adds a model to the batch and returns its proxy: move the proxy, and the batch follows each frame. */
+  private built(b: GeoBuilder): THREE.Object3D {
+    const key = `life:${this.batched.length}`;
+    const obj = this.batch.add(key, b.build(), null);
+    this.batched.push({ obj, key });
+    return obj;
   }
 
   update(dt: number, time: number, a: Atmosphere) {
     for (const m of this.movers) m.update(dt, time);
+    for (const { obj, key } of this.batched) {
+      this.batch.setVisible(key, obj.visible);
+      this.batch.touch(key);
+    }
+    this.batch.update();
     for (const w of this.movers) w.wake?.setLight(a);
     this.gulls.update(dt, time);
 
@@ -516,7 +527,7 @@ export class Life {
     const morning = Math.max(0, 1 - Math.abs(a.hour - 7.5) / 3.2);
     const evening = Math.max(0, 1 - Math.abs(a.hour - 19.5) / 3);
     const density = 0.25 + 0.75 * Math.max(morning, evening);
-    const tint = new THREE.Color(...a.fog).lerp(new THREE.Color(1, 1, 1), 0.55 - a.night * 0.4);
+    const tint = this.fogTint.setRGB(...a.fog).lerp(this.white, 0.55 - a.night * 0.4);
     for (const f of this.fog) {
       const x = f.base.x + ((time * f.speed + f.phase) % 30);
       // The tongue through the Gate advances and retreats with the density.

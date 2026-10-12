@@ -115,7 +115,8 @@ export class Stage {
       if (e.key === 'e' || e.key === 'E') this.rotate(1);
     });
 
-    if (import.meta.env.DEV) (window as unknown as { __stage: Stage }).__stage = this;
+    // Dev tools (tools/perf.mjs) reach the stage here; `?debug` exposes it in a build too.
+    if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) (window as unknown as { __stage: Stage }).__stage = this;
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
   }

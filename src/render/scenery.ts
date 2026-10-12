@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { GeoBuilder, glowMaterial, smoothMaterial, solidMaterial, type ColorLike } from './geo.ts';
+import { GeoBuilder, smoothMaterial, solidMaterial, type ColorLike } from './geo.ts';
 import { PALETTE } from './palette.ts';
 import { palm, tree } from './buildings.ts';
 import { cloudBank } from './models.ts';
+import { Batch } from './batch.ts';
 import {
   bayBridge,
   cityHall,
@@ -87,21 +88,35 @@ export class Scenery {
   readonly terrain = new Terrain();
   private seed: number;
   private wheel = new THREE.Group();
+  private wheelFrame: THREE.Object3D | null = null;
+  /** The gondolas: one instanced mesh per material, one instance per cabin. */
+  private gondolas: THREE.InstancedMesh[] = [];
+  private gondolaAngles: number[] = [];
+  private wheelRadius = 1;
+  private tmpMatrix = new THREE.Matrix4();
   private wheelSet = new THREE.Group();
   private coaster = new THREE.Group();
   private hood = new THREE.Group();
   private clouds: Record<'hills' | 'island' | 'launch', THREE.Group> = { hills: new THREE.Group(), island: new THREE.Group(), launch: new THREE.Group() };
   private launchPad = new THREE.Group();
   private beam: THREE.Mesh;
-  private beamMat: THREE.MeshBasicMaterial;
+  private beamMat: THREE.ShaderMaterial;
   private beamCentre = new THREE.Vector3();
   private sign: Sign;
   private bay: BayBridge;
   private mill: Windmill;
   private rustSolid = solidMaterial.clone();
   private rustSmooth = smoothMaterial.clone();
-  private kites: { obj: THREE.Object3D; base: THREE.Vector3; phase: number }[] = [];
-  private seaLions: THREE.Object3D[] = [];
+  /** Sea lions on their docks: one instanced mesh, each rocking on its own. */
+  private seaLions: { mesh: THREE.InstancedMesh; at: { x: number; y: number; z: number; yaw: number }[] } | null = null;
+  private lionEuler = new THREE.Euler();
+  private lionQuat = new THREE.Quaternion();
+  private lionPos = new THREE.Vector3();
+  private lionScale = new THREE.Vector3(1, 1, 1);
+  /** Everything that never moves (static landmarks, roads, parks, the marina…) in a few draw calls. */
+  private batch = new Batch(64, 300_000);
+  private batchKeys: string[] = [];
+  private lampsDimmed = false;
   private flags: THREE.Object3D[] = [];
   /** The Hills road, for the cars that drive it. */
   readonly hillRoad: THREE.CatmullRomCurve3;
@@ -125,22 +140,42 @@ export class Scenery {
     this.sign = sign();
     this.mill = windmill();
     const civic = blockCentre(CIVIC_BLOCK);
-    const landmarks = [gg, this.bay.group, cityHall(civic.x, civic.z), ferryBuilding(), coitTower(), palaceOfFineArts(), sutroTower(), this.mill.group, conservatory(-16.5, -14.6), cliffHouse(), this.sign.group];
-    for (const l of landmarks) {
+    // Landmarks with moving or custom-lit parts stay objects of their own; the rest are batched.
+    for (const l of [gg, this.bay.group, this.mill.group, this.sign.group]) {
       this.object.add(l);
       this.pickables.push(l);
       this.collectGlows(l);
     }
     this.glows.push(this.sign.floodlights);
-
-    this.object.add(this.roads(), this.marketPlazas(), this.parks(), this.waterfront(), this.marina(), this.airport(), this.island(), this.suburbs());
+    this.object.add(this.batch.object);
+    this.pickables.push(this.batch.object);
+    for (const l of [cityHall(civic.x, civic.z), ferryBuilding(), coitTower(), palaceOfFineArts(), sutroTower(), conservatory(-16.5, -14.6), cliffHouse()]) this.fix(l);
+    for (const part of [this.roads(), this.marketPlazas(), this.parks(), this.marina(), this.airport(), this.island(), this.suburbs()]) this.fix(part);
+    this.object.add(this.waterfront());
     this.object.add(this.hood, this.clouds.hills, this.clouds.island, this.clouds.launch, this.launchPad);
     this.buildHood();
     this.buildClouds();
 
-    this.beamMat = glowMaterial({ color: 0xfff2c0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-    this.beam = new THREE.Mesh(new THREE.ConeGeometry(1.2, 9, 12, 1, true).rotateZ(Math.PI / 2).translate(-4.5, 0, 0), this.beamMat);
+    this.beamMat = lighthouseBeamMaterial();
+    // Narrow at the lamp, widening out to sea along +x.
+    this.beam = new THREE.Mesh(new THREE.CylinderGeometry(BEAM.spread, 0.05, BEAM.length, 20, 1, true).rotateZ(-Math.PI / 2).translate(BEAM.length / 2, 0, 0), this.beamMat);
+    this.beam.renderOrder = 3;
     this.object.add(this.beam);
+  }
+
+  /** Moves a static model into the batch (its tooltip comes too). */
+  private fix(group: THREE.Group) {
+    const i = this.pickables.indexOf(group);
+    if (i >= 0) this.pickables.splice(i, 1);
+    const key = `s:${this.batchKeys.length}`;
+    const proxy = this.batch.add(key, { group }, group.userData.tip);
+    this.batchKeys.push(key);
+    // Anything that couldn't merge rides on the proxy.
+    if (proxy.children.length) {
+      this.object.add(proxy);
+      this.pickables.push(proxy);
+      this.collectGlows(proxy);
+    }
   }
 
   private collectGlows(g: THREE.Object3D) {
@@ -406,14 +441,14 @@ export class Scenery {
 
     // Sea lions: little brown blobs that occasionally shuffle
     const lionMat = new THREE.MeshStandardMaterial({ color: 0x6b4a32, roughness: 0.6 });
-    for (let k = 0; k < 14; k++) {
-      const lion = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.16, 3, 6).rotateZ(Math.PI / 2), lionMat);
-      lion.position.set(x0 - 1.4 + r() * 0.8, SEA + 0.18, z0 + 3.8 + Math.floor(k / 4) * 0.85 + r() * 0.3);
-      lion.rotation.y = r() * Math.PI;
-      lion.castShadow = true;
-      g.add(lion);
-      this.seaLions.push(lion);
-    }
+    const lions = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.06, 0.16, 3, 6).rotateZ(Math.PI / 2), lionMat, 14);
+    lions.castShadow = true;
+    const at: { x: number; y: number; z: number; yaw: number }[] = [];
+    for (let k = 0; k < 14; k++) at.push({ x: x0 - 1.4 + r() * 0.8, y: SEA + 0.18, z: z0 + 3.8 + Math.floor(k / 4) * 0.85 + r() * 0.3, yaw: r() * Math.PI });
+    this.seaLions = { mesh: lions, at };
+    this.rockLions(0);
+    lions.computeBoundingSphere();
+    g.add(lions);
 
     // The Ferris wheel and the roller coaster: bought in-game
     this.buildWheel(x0, x1, z1, y);
@@ -459,24 +494,59 @@ export class Scenery {
       wb.blob(0.03, Math.cos(a) * radius * 0.55, Math.sin(a) * radius * 0.55, 0.08, colour, true);
     }
     wb.cylinder(0.12, 0.12, 0.2, 0, -0.1, 0, 0xcfcfcf, 12);
-    this.wheel.add(this.add(wb));
-    for (let k = 0; k < spokes; k += 2) {
-      const gb = new GeoBuilder();
-      const c = pick(r, [0xe85a4a, 0xf2c84b, 0x3aa3c8, 0x5ac46a, 0xb97ad8] as const);
-      gb.rbox(0.22, 0.2, 0.2, 0, -0.22, 0, c, 0.04);
-      gb.box(0.24, 0.03, 0.22, 0, -0.03, 0, PALETTE.trim);
-      gb.box(0.01, 0.2, 0.01, 0, -0.03, 0, 0x777777);
-      gb.quad(0.14, 0.08, 0, -0.1, 0.101, 'z+', [1.8, 1.4, 0.8], true, 0.3);
-      const gondola = this.add(gb);
-      gondola.userData.angle = (k / spokes) * Math.PI * 2;
-      gondola.userData.radius = radius;
-      this.wheel.add(gondola);
+    this.wheelFrame = this.add(wb);
+    this.wheel.add(this.wheelFrame);
+    // The gondolas only orbit (they hang level), so one cabin is drawn many times.
+    // The cabin body is white and takes each gondola's paint as its instance colour.
+    const gb = new GeoBuilder();
+    gb.rbox(0.22, 0.2, 0.2, 0, -0.22, 0, 0xffffff, 0.04);
+    gb.box(0.24, 0.03, 0.22, 0, -0.03, 0, PALETTE.trim);
+    gb.box(0.01, 0.2, 0.01, 0, -0.03, 0, 0x777777);
+    gb.quad(0.14, 0.08, 0, -0.1, 0.101, 'z+', [1.8, 1.4, 0.8], true, 0.3);
+    const cabin = gb.build();
+    if (cabin.glow) this.glows.push(cabin.glow);
+    for (let k = 0; k < spokes; k += 2) this.gondolaAngles.push((k / spokes) * Math.PI * 2);
+    this.wheelRadius = radius;
+    const paint = new THREE.Color();
+    for (const part of cabin.group.children as THREE.Mesh[]) {
+      const inst = new THREE.InstancedMesh(part.geometry, part.material, this.gondolaAngles.length);
+      inst.castShadow = inst.receiveShadow = part.material !== cabin.glow;
+      if (part.material === smoothMaterial) {
+        for (let i = 0; i < this.gondolaAngles.length; i++) inst.setColorAt(i, paint.setHex(pick(r, [0xe85a4a, 0xf2c84b, 0x3aa3c8, 0x5ac46a, 0xb97ad8] as const)));
+      }
+      this.gondolas.push(inst);
+      this.wheel.add(inst);
     }
+    this.placeGondolas(0);
+    for (const g of this.gondolas) g.computeBoundingSphere();
     this.wheel.position.set(cx, hub + y, cz);
     this.wheel.rotation.y = Math.PI / 4;
     this.wheelSet.add(this.wheel);
     this.wheelSet.userData.tip = { title: 'Ferris wheel', detail: 'Yours. Lights up after dark.' };
     this.pickables.push(this.wheelSet);
+  }
+
+  /** Each sea lion rocks on its dock. */
+  private rockLions(time: number) {
+    const l = this.seaLions;
+    if (!l) return;
+    const m = this.tmpMatrix;
+    l.at.forEach((a, i) => {
+      this.lionQuat.setFromEuler(this.lionEuler.set(0, a.yaw, Math.sin(time * 0.8 + i * 1.7) * 0.15));
+      l.mesh.setMatrixAt(i, m.compose(this.lionPos.set(a.x, a.y, a.z), this.lionQuat, this.lionScale));
+    });
+    l.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Hang each gondola from its point on the turning rim. */
+  private placeGondolas(turn: number) {
+    const m = this.tmpMatrix;
+    for (let i = 0; i < this.gondolaAngles.length; i++) {
+      const a = this.gondolaAngles[i]! + turn;
+      m.makeTranslation(Math.cos(a) * this.wheelRadius, Math.sin(a) * this.wheelRadius, 0);
+      for (const g of this.gondolas) g.setMatrixAt(i, m);
+    }
+    for (const g of this.gondolas) g.instanceMatrix.needsUpdate = true;
   }
 
   private buildCoaster(x1: number, z0: number, y: number) {
@@ -777,16 +847,12 @@ export class Scenery {
     this.terrain.update(time, a, sunDir);
     const night = a.night;
     const turn = time * 0.12;
-    for (const child of this.wheel.children) {
-      if (child.userData.angle === undefined) child.rotation.z = turn;
-      else {
-        const ang = child.userData.angle + turn;
-        child.position.set(Math.cos(ang) * child.userData.radius, Math.sin(ang) * child.userData.radius, 0);
-      }
+    if (this.wheelSet.visible) {
+      if (this.wheelFrame) this.wheelFrame.rotation.z = turn;
+      this.placeGondolas(turn);
     }
     this.mill.sails.rotation.z -= dt * 0.6;
-    for (const [i, lion] of this.seaLions.entries()) lion.rotation.z = Math.sin(time * 0.8 + i * 1.7) * 0.15;
-    for (const k of this.kites) k.obj.position.set(k.base.x + Math.sin(time * 0.7 + k.phase) * 0.3, k.base.y + Math.sin(time * 1.3 + k.phase) * 0.2, k.base.z);
+    this.rockLions(time);
     void this.flags;
 
     // The sign is the first thing cut when upkeep runs short: it sputters, then goes dark.
@@ -796,11 +862,16 @@ export class Scenery {
     this.sign.material.emissiveIntensity = 0.65 * night * this.signFade * sputter;
     this.sign.floodlights.color.setScalar(2.4 * this.signFade * sputter);
     for (const m of this.glows) if (m !== this.sign.floodlights) m.color.setScalar(this.state.lampsFailing ? 0.35 : 1);
+    if (this.lampsDimmed !== this.state.lampsFailing) {
+      this.lampsDimmed = this.state.lampsFailing;
+      for (const key of this.batchKeys) this.batch.setGlow(key, this.lampsDimmed ? 0.35 : 1);
+    }
     this.bay.lights.uniforms.uTime!.value = time;
     this.bay.lights.uniforms.uNight!.value = night * (this.state.lampsFailing ? 0.3 : 1);
 
-    this.beamMat.opacity = 0.2 * night;
-    this.beam.visible = night > 0.05;
+    // The lighthouse only shines once the island is yours.
+    this.beamMat.uniforms.uLevel!.value = 0.55 * night * (this.state.lampsFailing ? 0.3 : 1);
+    this.beam.visible = night > 0.05 && this.state.island;
     this.beam.position.copy(this.beamCentre);
     this.beam.rotation.y = time * 0.8;
   }
@@ -812,6 +883,41 @@ export class Scenery {
 }
 
 // ─── Small parts ──────────────────────────────────────────────────────────
+
+const BEAM = { length: 7, spread: 0.75 };
+
+/**
+ * A soft lighthouse beam: brightest at the lamp, fading out along its length
+ * and toward its silhouette, so it reads as light in the air, not a solid cone.
+ */
+function lighthouseBeamMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: { uLevel: { value: 0 }, uColor: { value: new THREE.Color(1.0, 0.9, 0.66) } },
+    vertexShader: `
+      varying float vAlong;
+      varying vec3 vNormal;
+      void main() {
+        vAlong = position.x / ${BEAM.length.toFixed(1)};
+        vNormal = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      uniform float uLevel;
+      uniform vec3 uColor;
+      varying float vAlong;
+      varying vec3 vNormal;
+      void main() {
+        // The iso camera is orthographic: it always looks down view-space -z.
+        float face = pow(abs(normalize(vNormal).z), 1.4);
+        float fall = pow(1.0 - clamp(vAlong, 0.0, 1.0), 2.2);
+        gl_FragColor = vec4(uColor * uLevel * face * fall, 1.0);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+}
 
 /** A flat strip along a polyline, draped on the terrain (or at `lift` above 0 in the flat city). */
 function ribbon(b: GeoBuilder, path: readonly Pt[], width: number, color: ColorLike, lift: number, offset = 0, edgeLines = false) {
