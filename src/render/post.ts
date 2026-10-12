@@ -26,6 +26,11 @@ class SolidAO extends GTAOPass {
     for (const o of this.hidden) o.visible = true;
     this.hidden.length = 0;
   }
+
+  /** AO is soft by nature: half resolution looks the same and costs a quarter of the fill. */
+  override setSize(width: number, height: number) {
+    super.setSize(Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2)));
+  }
 }
 
 /**
@@ -66,6 +71,13 @@ export class Post {
     this.quality = q;
     this.ao.enabled = q === 'high';
     this.grade.uniforms.uTiltSamples!.value = q === 'low' ? 0 : 1;
+    // Multisampling is the costliest part of the scene pass on big screens.
+    const samples = q === 'high' ? 4 : q === 'medium' ? 2 : 0;
+    for (const t of [this.composer.renderTarget1, this.composer.renderTarget2]) {
+      if (t.samples === samples) continue;
+      t.samples = samples;
+      t.dispose();
+    }
   }
 
   setSize(w: number, h: number, pixelRatio: number) {

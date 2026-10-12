@@ -161,12 +161,15 @@ export function planWorld(s: Snapshot, ctx: PlanContext): WorldPlan {
   const seed = ctx.seed ?? 1;
   const customers = Math.max(0, Math.floor(s.customers));
   const residentsPerHome = customers <= HOME_CAPACITY ? 1 : Math.ceil(customers / HOME_CAPACITY);
-  const homeCount = Math.ceil(customers / residentsPerHome);
+  // Once every lot has a home, growth shows as density (residents per home), never as fewer homes.
+  const homeCount = Math.min(customers, HOME_CAPACITY);
   const lots = homeLots(0).length;
-  const neighbourhoodsUsed = Math.max(1, Math.ceil(homeCount / lots));
-  // Density falls off from downtown: towers of flats near HQ, houses at the edge.
+  const neighbourhoodCount = NEIGHBOURHOOD_BLOCKS.length;
+  // Density falls off from downtown: towers of flats near HQ, houses at the edge. It depends only on
+  // the neighbourhood's place in the order and the density tier, so a home's kind (and its model)
+  // changes only when the whole city steps up a tier, not every time a neighbourhood opens.
   const kindOf = (n: number): HomeKind => {
-    const f = n / neighbourhoodsUsed;
+    const f = n / neighbourhoodCount;
     if (residentsPerHome <= 1) return 'house';
     if (residentsPerHome <= 4) return f < 0.4 ? 'townhouse' : 'house';
     return f < 0.3 ? 'apartment' : f < 0.65 ? 'townhouse' : 'house';

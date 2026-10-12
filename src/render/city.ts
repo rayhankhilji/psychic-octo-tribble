@@ -79,6 +79,16 @@ export class City {
   private name: string;
   private seed: number;
   private homes = new Map<string, THREE.Object3D>();
+  /** Homes waiting to be built, a few per frame. */
+  private pendingHomes = new Map<string, { h: WorldPlan['homes'][number]; tip: Tip; animate: boolean }>();
+  /** Which lot each built home stands on, and which home stands on each lot. */
+  private lotOf = new Map<string, number>();
+  private homeOnLot = new Map<number, string>();
+  private homesReady = false;
+  /** Expensive builds waiting their turn, keyed so a newer request replaces an older one. */
+  private jobs = new Map<string, () => void>();
+  private worldReady = false;
+  private tentTarget = -1;
   /** Every home and every neighbourhood's grounds, in a few draw calls. */
   private homeBatch = new Batch();
   /** Batch proxies for the neighbourhood grounds, by neighbourhood index. */
@@ -211,6 +221,25 @@ export class City {
     // plan.traffic tops out at 46; the lane graph is happy with up to ~120 cars.
     this.traffic.setCount(Math.round(plan.traffic * 2.6));
     this.traffic.setBlocks(this.activeBlocks);
+    // The first world is built whole, behind the loading screen; later changes spread over frames.
+    if (!this.worldReady) {
+      this.runJobs(Infinity);
+      this.worldReady = true;
+    } else if (!animate) this.runJobs(16);
+  }
+
+  private defer(key: string, job: () => void) {
+    this.jobs.delete(key);
+    this.jobs.set(key, job);
+  }
+
+  private runJobs(budgetMs: number) {
+    const t0 = performance.now();
+    for (const [key, job] of this.jobs) {
+      if (performance.now() - t0 > budgetMs) break;
+      this.jobs.delete(key);
+      job();
+    }
   }
 
   private activeBlocks: BlockCoord[] = [HQ_BLOCK];
@@ -277,8 +306,9 @@ export class City {
         this.beaconLevel = Math.max(this.beaconLevel, 1.6);
         this.train.pulse();
       } else if (e.type === 'customers.joined' && e.total === 1) {
-        const first = this.homes.values().next().value;
-        if (first) this.fireworks.launch(first.position.clone().setY(1), 1, 0);
+        // The first home may still be queued for building: aim at its lot.
+        const first = this.plan?.homes[0];
+        if (first) this.fireworks.launch(new THREE.Vector3(first.x, 1, first.z), 1, 0);
       } else if (e.type === 'customers.joined' && CUSTOMER_MILESTONES.some((m) => e.total >= m && e.total - e.count < m)) {
         this.show(new THREE.Vector3(1, 0.5, -2), 1);
       } else if (e.type === 'district.unlocked') {
@@ -413,6 +443,7 @@ export class City {
 
   private syncNeighbourhoods(plan: WorldPlan, animate: boolean) {
     const wanted = new Set(plan.neighbourhoods.map((n) => n.index));
+    for (const key of this.jobs.keys()) if (key.startsWith('nb:') && !wanted.has(Number(key.slice(3)))) this.jobs.delete(key);
     for (const [n, proxy] of this.grounds) {
       if (wanted.has(n)) continue;
       this.grounds.delete(n);
@@ -424,58 +455,69 @@ export class City {
       else done();
     }
     for (const n of plan.neighbourhoods) {
-      if (this.grounds.has(n.index)) continue;
       const key = `nb:${n.index}`;
-      const tip = { title: n.name, detail: `Neighbourhood ${n.index + 1} · ten homes` } satisfies Tip;
-      const proxy = this.homeBatch.add(key, neighbourhoodGrounds(n.bx, n.bz, n.index, hash(this.seed, 'nb', n.index)), tip);
-      this.grounds.set(n.index, proxy);
-      if (animate) {
-        proxy.scale.y = 0.0001;
-        this.homeBatch.touch(key);
-        this.anims.push({ obj: proxy, t: 0, dur: 0.6, delay: 0, grow: true, axis: 'y', from: 0, batchKey: key });
-      }
+      if (this.grounds.has(n.index) || this.jobs.has(key)) continue;
+      this.defer(key, () => {
+        const tip = { title: n.name, detail: `Neighbourhood ${n.index + 1} · ten homes` } satisfies Tip;
+        const proxy = this.homeBatch.add(key, neighbourhoodGrounds(n.bx, n.bz, n.index, hash(this.seed, 'nb', n.index)), tip);
+        this.grounds.set(n.index, proxy);
+        if (animate) {
+          proxy.scale.y = 0.0001;
+          this.homeBatch.touch(key);
+          this.anims.push({ obj: proxy, t: 0, dur: 0.6, delay: 0, grow: true, axis: 'y', from: 0, batchKey: key });
+        }
+      });
     }
   }
 
   private syncHomes(plan: WorldPlan, animate: boolean) {
     const wanted = new Map(plan.homes.map((h) => [h.key, h]));
+    const lots = new Set(plan.homes.map((h) => h.index));
+    for (const key of this.pendingHomes.keys()) if (!wanted.has(key)) this.pendingHomes.delete(key);
     let i = 0;
-    for (const [key, proxy] of this.homes) {
+    for (const key of this.homes.keys()) {
       if (wanted.has(key)) continue;
-      this.homes.delete(key);
-      const fade = this.homeFades.get(key);
-      if (fade) {
-        fade.target = 0;
-        this.homeFades.delete(key);
-      }
-      // Lights go out first, then the house is packed away.
-      const done = () => {
-        this.homeBatch.remove(key);
-        if (fade) this.fades.delete(fade);
-      };
-      this.anims = this.anims.filter((a) => a.obj !== proxy);
-      if (animate) this.anims.push({ obj: proxy, t: 0, dur: 0.45, delay: 0.5 + (i++ % 20) * 0.04, grow: false, axis: 'xyz', from: 1, done, batchKey: key });
-      else done();
+      // A home being replaced on its lot stays until its successor is built (see buildHomes).
+      if (lots.has(this.lotOf.get(key)!)) continue;
+      this.removeHome(key, animate, i++);
     }
     const rph = plan.residentsPerHome;
-    let stagger = 0;
     for (const h of plan.homes) {
-      if (this.homes.has(h.key)) continue;
-      const built = home(h.kind, h.seed);
-      built.group.position.set(h.x, 0, h.z);
-      built.group.rotation.y = h.rot;
+      if (this.homes.has(h.key) || this.pendingHomes.has(h.key)) continue;
       const tip = {
         title: rph === 1 ? 'A home' : `Home of ${rph.toLocaleString('en-US')} residents`,
         detail: `${neighbourhoodLabel(plan, h.neighbourhood)} · your users live here while MRR covers $0.20 each`,
       } satisfies Tip;
+      this.pendingHomes.set(h.key, { h, tip, animate });
+    }
+    // The first world is built at once (behind the loading screen); after that, a few homes per frame.
+    if (!this.homesReady) {
+      this.buildHomes(Infinity);
+      this.homesReady = true;
+    } else if (!animate) this.buildHomes(24);
+  }
+
+  /** Builds queued homes until `budgetMs` is spent, so growth never freezes a frame. */
+  private buildHomes(budgetMs: number) {
+    const t0 = performance.now();
+    let stagger = 0;
+    for (const [key, { h, tip, animate }] of this.pendingHomes) {
+      if (performance.now() - t0 > budgetMs) break;
+      this.pendingHomes.delete(key);
+      const old = this.homeOnLot.get(h.index);
+      if (old !== undefined && old !== key) this.removeHome(old, animate, 0);
+      const built = home(h.kind, h.seed);
+      built.group.position.set(h.x, 0, h.z);
+      built.group.rotation.y = h.rot;
       const hasGlow = !!built.glow;
-      const key = h.key;
       const proxy = this.homeBatch.add(key, built, tip);
       this.homes.set(key, proxy);
+      this.lotOf.set(key, h.index);
+      this.homeOnLot.set(h.index, key);
       if (animate) {
         proxy.scale.setScalar(0.0001);
         this.homeBatch.touch(key);
-        this.anims.push({ obj: proxy, t: 0, dur: 0.7, delay: Math.min(stagger++ * 0.06, 1.2), grow: true, axis: 'xyz', from: 0, batchKey: key });
+        this.anims.push({ obj: proxy, t: 0, dur: 0.7, delay: Math.min(stagger++ * 0.06, 0.6), grow: true, axis: 'xyz', from: 0, batchKey: key });
       }
       if (hasGlow) {
         const fade: Fade = { apply: (level) => this.homeBatch.setGlow(key, level), level: animate ? 0 : 1, target: 1 };
@@ -484,6 +526,28 @@ export class City {
         this.homeFades.set(key, fade);
       }
     }
+  }
+
+  /** Lights go out first, then the house is packed away. */
+  private removeHome(key: string, animate: boolean, order: number) {
+    const proxy = this.homes.get(key);
+    if (!proxy) return;
+    this.homes.delete(key);
+    const lot = this.lotOf.get(key);
+    this.lotOf.delete(key);
+    if (lot !== undefined && this.homeOnLot.get(lot) === key) this.homeOnLot.delete(lot);
+    const fade = this.homeFades.get(key);
+    if (fade) {
+      fade.target = 0;
+      this.homeFades.delete(key);
+    }
+    const done = () => {
+      this.homeBatch.remove(key);
+      if (fade) this.fades.delete(fade);
+    };
+    this.anims = this.anims.filter((a) => a.obj !== proxy);
+    if (animate) this.anims.push({ obj: proxy, t: 0, dur: 0.45, delay: 0.5 + (order % 20) * 0.04, grow: false, axis: 'xyz', from: 1, done, batchKey: key });
+    else done();
   }
 
   private syncRoads(blocks: BlockCoord[]) {
@@ -571,6 +635,10 @@ export class City {
     const key = [...taken].sort().join(';');
     if (key === this.wildsKey) return;
     this.wildsKey = key;
+    this.defer('wilds', () => this.buildWilds(taken));
+  }
+
+  private buildWilds(taken: Set<string>) {
     if (this.wilds) {
       this.scene.remove(this.wilds);
       disposeGroup(this.wilds);
@@ -794,10 +862,13 @@ export class City {
   /** Tents for the people your city can't house. More people, more tents (up to a point). */
   private syncTents(unhoused: number) {
     const count = unhoused <= 0 ? 0 : Math.min(TENT_SPOTS.length, Math.max(2, Math.round(Math.sqrt(unhoused) * 1.4)));
-    if (this.tents?.count === count) {
-      if (this.tents) this.tents.group.userData.tip = tentTip(unhoused);
-      return;
-    }
+    if (this.tents) this.tents.group.userData.tip = tentTip(unhoused);
+    if (count === this.tentTarget) return;
+    this.tentTarget = count;
+    this.defer('tents', () => this.buildTents(count, unhoused));
+  }
+
+  private buildTents(count: number, unhoused: number) {
     if (this.tents) {
       this.scene.remove(this.tents.group);
       const i = this.pickables.indexOf(this.tents.group);
@@ -899,6 +970,9 @@ export class City {
   }
 
   update(dt: number, time: number) {
+    // A few milliseconds of building per frame, so growth never stutters.
+    if (this.jobs.size) this.runJobs(3);
+    if (this.pendingHomes.size) this.buildHomes(4);
     for (const a of this.anims) {
       if (a.delay > 0) {
         a.delay -= dt;

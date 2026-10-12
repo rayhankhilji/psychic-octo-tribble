@@ -42,8 +42,8 @@ export class Stage {
   private lastClient = { x: 0, y: 0 };
   private host: HTMLElement;
   private city: City;
-  /** Adaptive quality: frame times are sampled for a few seconds, then quality settles. */
-  private perf: { frames: number; time: number; locked: boolean };
+  /** Adaptive quality: frame times are sampled in windows for the whole session. */
+  private perf: { frames: number; time: number; locked: boolean; calm: number; stepsDown: number; stepsUp: number };
   private maxPixelRatio = 2;
 
   constructor(host: HTMLElement, city: City) {
@@ -83,7 +83,7 @@ export class Stage {
 
     const forced = requestedQuality();
     const quality: Quality = forced ?? (matchMedia('(pointer: coarse)').matches ? 'medium' : 'high');
-    this.perf = { frames: 0, time: 0, locked: forced !== null };
+    this.perf = { frames: 0, time: 0, locked: forced !== null, calm: 0, stepsDown: 0, stepsUp: 0 };
     this.post = new Post(this.renderer, city.scene, this.camera, quality);
     this.applyQuality(quality);
 
@@ -123,8 +123,9 @@ export class Stage {
 
   private applyQuality(q: Quality) {
     this.post.setQuality(q);
-    this.maxPixelRatio = q === 'high' ? 2 : q === 'medium' ? 1.5 : 1;
-    const size = q === 'low' ? 2048 : 4096;
+    // Retina screens at full density cost 4× the pixels; past 1.5 the tilt-shift and MSAA hide the difference.
+    this.maxPixelRatio = q === 'high' ? 1.5 : q === 'medium' ? 1.25 : 1;
+    const size = q === 'high' ? 4096 : q === 'medium' ? 2048 : 1536;
     this.city.setShadowQuality(size);
     this.resize();
   }
@@ -328,19 +329,37 @@ export class Stage {
     return o ? { tip: o.userData.tip as Tip | undefined, plot: o.userData.plot as string | undefined } : null;
   }
 
-  /** Steps quality down if the first few seconds run slow; never steps up mid-session. */
+  /**
+   * Keeps the frame rate smooth for the whole session: steps quality down
+   * when frames run long (under ~48 fps), and back up after a long spell of
+   * headroom. If it ever steps up and then has to step down again, it stays
+   * at the lower level rather than flickering between the two.
+   */
   private adapt(raw: number) {
     const p = this.perf;
     if (p.locked || document.hidden || raw > 0.5) return;
     p.frames++;
     p.time += raw;
-    if (p.frames < 90) return;
+    if (p.frames < 60) return;
     const avg = p.time / p.frames;
     p.frames = 0;
     p.time = 0;
     const i = QUALITIES.indexOf(this.post.quality);
-    if (avg > 1 / 32 && i > 0) this.applyQuality(QUALITIES[i - 1]!);
-    else p.locked = true;
+    if (avg > 1 / 48) {
+      p.calm = 0;
+      if (i > 0) {
+        this.applyQuality(QUALITIES[i - 1]!);
+        p.stepsDown++;
+        if (p.stepsUp > 0) p.locked = true;
+      }
+    } else if (avg < 1 / 100 && i < QUALITIES.length - 1 && p.stepsDown > 0) {
+      // Roughly ten seconds of easy frames before trying the next level up.
+      if (++p.calm >= 10) {
+        p.calm = 0;
+        p.stepsUp++;
+        this.applyQuality(QUALITIES[i + 1]!);
+      }
+    } else p.calm = 0;
   }
 
   /** Renders a fresh frame and copies it onto a 2D canvas (for sharing). */

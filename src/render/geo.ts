@@ -21,7 +21,13 @@ function prepare(g: THREE.BufferGeometry, color: ColorLike, rand = 0): THREE.Buf
   else tmpColor.setRGB(color[0], color[1], color[2]);
   const n = geo.attributes.position!.count;
   const colors = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) colors.set([tmpColor.r, tmpColor.g, tmpColor.b], i * 3);
+  // Plain writes: this runs for every vertex of every model, so no per-vertex arrays.
+  const { r: cr, g: cg, b: cb } = tmpColor;
+  for (let i = 0; i < n * 3; i += 3) {
+    colors[i] = cr;
+    colors[i + 1] = cg;
+    colors[i + 2] = cb;
+  }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.setAttribute('winRand', new THREE.BufferAttribute(new Float32Array(n).fill(rand), 1));
   return geo;

@@ -35,6 +35,30 @@ describe('planWorld', () => {
     expect(after.slice(0, before.length)).toEqual(before);
   });
 
+  it('never loses homes as the population grows past the land', () => {
+    let prev = 0;
+    for (let c = HOME_CAPACITY - 5; c < HOME_CAPACITY * 6; c += 7) {
+      const n = plan({ customers: c }).homes.length;
+      expect(n).toBeGreaterThanOrEqual(prev);
+      prev = n;
+    }
+    expect(prev).toBe(HOME_CAPACITY);
+  });
+
+  it('only rebuilds homes when the whole city steps up a density tier', () => {
+    // Home keys carry the kind, so a changed key means a rebuilt model.
+    const keysAt = (c: number) => new Set(plan({ customers: c }).homes.map((h) => h.key));
+    let changes = 0;
+    let prev = keysAt(1);
+    for (let c = 2; c < HOME_CAPACITY * 8; c += 3) {
+      const now = keysAt(c);
+      if ([...prev].some((k) => !now.has(k))) changes++;
+      prev = now;
+    }
+    // Two steps: houses → some townhouses (2+ residents), then → some apartments (5+).
+    expect(changes).toBe(2);
+  });
+
   it('is deterministic', () => {
     expect(plan({ customers: 123, mrr: 4000, releases: 5 })).toEqual(plan({ customers: 123, mrr: 4000, releases: 5 }));
   });
