@@ -11,6 +11,8 @@ const ISO_POLAR = Math.acos(1 / Math.sqrt(3));
 const VIEW = 26;
 const LIMIT = { x0: WORLD.x0 - 8, x1: WORLD.x1 + 16, z0: WORLD.z0 - 16, z1: WORLD.z1 + 8 };
 const QUALITIES: Quality[] = ['low', 'medium', 'high'];
+/** How far the camera sits from what it looks at. Far enough that nothing is ever behind the near plane. */
+const DISTANCE = 240;
 
 function requestedQuality(): Quality | null {
   const q = new URLSearchParams(location.search).get('quality');
@@ -59,8 +61,8 @@ export class Stage {
     setEnvironment(pmrem.fromScene(new RoomEnvironment(), 0.04).texture);
     pmrem.dispose();
 
-    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 600);
-    this.camera.position.set(60, 60, 60);
+    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, DISTANCE * 2.6);
+    this.camera.position.setScalar(DISTANCE / Math.sqrt(3));
     this.camera.zoom = 1;
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -105,10 +107,7 @@ export class Stage {
       const rect = el.getBoundingClientRect();
       const p = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
       this.raycaster.setFromCamera(p, this.camera);
-      const hit = this.raycaster.intersectObjects(this.city.clickables, true)[0];
-      let o: THREE.Object3D | null = hit?.object ?? null;
-      while (o && !o.userData.tip && !o.userData.plot) o = o.parent;
-      this.onPick(o ? { tip: o.userData.tip as Tip | undefined, plot: o.userData.plot as string | undefined } : null);
+      this.onPick(this.pickAt());
     });
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
@@ -116,6 +115,7 @@ export class Stage {
       if (e.key === 'e' || e.key === 'E') this.rotate(1);
     });
 
+    if (import.meta.env.DEV) (window as unknown as { __stage: Stage }).__stage = this;
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
   }
@@ -214,18 +214,33 @@ export class Stage {
         }
       }
     }
-    const aspect = this.host.clientWidth / Math.max(1, this.host.clientHeight);
+    const w = this.host.clientWidth;
+    const aspect = w / Math.max(1, this.host.clientHeight);
+    // On wide screens the stats panels cover the left edge: frame the city in what's left.
+    const inset = w > 900 ? Math.min(320, w * 0.24) : 0;
+    const usable = (w - inset) / w;
     // The HUD covers roughly the top 12% and the dock the bottom 14%: centre a little high.
-    const zoom = THREE.MathUtils.clamp(Math.min((VIEW * aspect) / ((r1 - r0) * 1.04), VIEW / ((u1 - u0) * 1.3)), this.controls.minZoom, 3.2);
+    const zoom = THREE.MathUtils.clamp(Math.min((VIEW * aspect * usable) / ((r1 - r0) * 1.04), VIEW / ((u1 - u0) * 1.3)), this.controls.minZoom, 3.2);
     const visibleH = VIEW / zoom;
-    const target = c.clone().addScaledVector(right, (r0 + r1) / 2).addScaledVector(up, (u0 + u1) / 2 - visibleH * 0.03);
+    const visibleW = (VIEW * aspect) / zoom;
+    const target = c
+      .clone()
+      .addScaledVector(right, (r0 + r1) / 2 - (visibleW * inset) / w / 2)
+      .addScaledVector(up, (u0 + u1) / 2 - visibleH * 0.03);
     // Slide along the view ray back to the ground plane.
     target.addScaledVector(fwd, -target.y / fwd.y);
     return { target, zoom };
   }
 
   start() {
-    const { target, zoom } = this.framing();
+    let { target, zoom } = this.framing();
+    // `?view=x,z,zoom` pins the camera (handy for screenshots and links).
+    const view = new URLSearchParams(location.search).get('view')?.split(',').map(Number);
+    if (view && view.length >= 2 && view.every(Number.isFinite)) {
+      target = new THREE.Vector3(view[0], 0, view[1]);
+      zoom = view[2] ?? 2.4;
+      this.userZoomed = true;
+    }
     this.camera.position.add(target.clone().sub(this.controls.target));
     this.controls.target.copy(target);
     this.camera.zoom = zoom;
@@ -275,7 +290,8 @@ export class Stage {
 
     this.controls.update();
     const aspect = this.host.clientWidth / Math.max(1, this.host.clientHeight);
-    this.city.setView(this.controls.target, (Math.max(VIEW * aspect, VIEW * 1.75) / this.camera.zoom) * 0.5);
+    // Ground visible on screen: the frame's width, and its height stretched by the iso tilt.
+    this.city.setView(this.controls.target, Math.hypot(VIEW * aspect, VIEW * 1.75) / this.camera.zoom / 2, DISTANCE);
     this.city.update(dt, time);
     const a = this.city.atmosphere;
     this.renderer.toneMappingExposure = a.exposure;
@@ -288,14 +304,27 @@ export class Stage {
     if (this.pointerDirty) {
       this.pointerDirty = false;
       this.raycaster.setFromCamera(this.pointer, this.camera);
-      const hit = this.raycaster.intersectObjects(this.city.clickables, true)[0];
-      let o: THREE.Object3D | null = hit?.object ?? null;
-      while (o && !o.userData.tip) o = o.parent;
-      this.renderer.domElement.style.cursor = o?.userData.plot ? 'pointer' : '';
-      this.onHover((o?.userData.tip as Tip) ?? null, this.lastClient.x, this.lastClient.y);
+      const pick = this.pickAt();
+      this.renderer.domElement.style.cursor = pick?.plot ? 'pointer' : '';
+      this.onHover(pick?.tip ?? null, this.lastClient.x, this.lastClient.y);
     }
 
     this.post.render(dt);
+  }
+
+  /** What the raycaster (already aimed) hits: a plot, or something with a tooltip. */
+  private pickAt(): Pick | null {
+    const hit = this.raycaster.intersectObjects(this.city.clickables, true)[0];
+    if (!hit) return null;
+    // Batched models (homes) keep their tooltips per instance.
+    const batch = hit.object.userData.batch as { tipAt(mesh: THREE.Object3D, id: number): unknown } | undefined;
+    if (batch && hit.batchId !== undefined) {
+      const tip = batch.tipAt(hit.object, hit.batchId) as Tip | undefined;
+      return tip ? { tip } : null;
+    }
+    let o: THREE.Object3D | null = hit.object;
+    while (o && !o.userData.tip && !o.userData.plot) o = o.parent;
+    return o ? { tip: o.userData.tip as Tip | undefined, plot: o.userData.plot as string | undefined } : null;
   }
 
   /** Steps quality down if the first few seconds run slow; never steps up mid-session. */

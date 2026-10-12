@@ -181,6 +181,14 @@ export class GeoBuilder {
     this.add(g, color, glow, rand);
   }
 
+  /** A vertical quad facing any direction: `rotY` turns its +z normal (for façades that aren't axis-aligned). */
+  panel(w: number, h: number, x: number, y: number, z: number, rotY: number, color: ColorLike, glow: boolean | Bucket = true, rand = 0) {
+    const g = new THREE.PlaneGeometry(w, h);
+    g.rotateY(rotY);
+    g.translate(x, y, z);
+    this.add(g, color, glow, rand);
+  }
+
   /** A flat quad lying on the ground. */
   decal(w: number, d: number, x: number, y: number, z: number, color: ColorLike, glow: boolean | Bucket = false) {
     const g = new THREE.PlaneGeometry(w, d);

@@ -74,10 +74,10 @@ const [lx, ly, lz] = a.lightDir;
 sun.position.set(lx, ly, lz).normalize().multiplyScalar(120).add(centre);
 
 const VIEW = 26;
-const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -300, 600);
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 700);
 const polar = Math.acos(1 / Math.sqrt(3));
 const az = Number(params.get('az') ?? 45) * (Math.PI / 180);
-camera.position.copy(centre).add(new THREE.Vector3(Math.sin(az) * Math.sin(polar), Math.cos(polar), Math.cos(az) * Math.sin(polar)).multiplyScalar(100));
+camera.position.copy(centre).add(new THREE.Vector3(Math.sin(az) * Math.sin(polar), Math.cos(polar), Math.cos(az) * Math.sin(polar)).multiplyScalar(260));
 camera.zoom = Number(params.get('zoom') ?? VIEW / (extent * 1.1));
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.copy(centre);

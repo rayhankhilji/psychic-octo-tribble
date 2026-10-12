@@ -1,0 +1,64 @@
+/**
+ * One icon family: 20×20 grid, 1.6 stroke, round caps and joins, drawn
+ * in `currentColor` so they follow the text colour of their surface.
+ */
+
+const s = (body: string, extra = '') =>
+  `<svg class="ico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${extra}>${body}</svg>`;
+
+export const ICON = {
+  play: s('<path d="M6.5 4.2v11.6a.6.6 0 0 0 .9.5l9.2-5.8a.6.6 0 0 0 0-1L7.4 3.7a.6.6 0 0 0-.9.5Z" fill="currentColor" stroke="none"/>'),
+  pause: s('<rect x="5" y="4" width="3.4" height="12" rx="1" fill="currentColor" stroke="none"/><rect x="11.6" y="4" width="3.4" height="12" rx="1" fill="currentColor" stroke="none"/>'),
+  replay: s('<path d="M4.2 10a5.8 5.8 0 1 0 1.9-4.3"/><path d="M4 3.2v3.4h3.4"/>'),
+  rotate: s('<path d="M3.5 10.5c0 2.2 2.9 4 6.5 4s6.5-1.8 6.5-4-2.9-4-6.5-4"/><path d="m8 4.5 2 2-2 2"/>'),
+  recenter: s('<circle cx="10" cy="10" r="2.2"/><path d="M10 2.8v2.4M10 14.8v2.4M2.8 10h2.4M14.8 10h2.4"/><circle cx="10" cy="10" r="5.6" stroke-opacity=".45"/>'),
+  plus: s('<path d="M10 4.5v11M4.5 10h11"/>'),
+  minus: s('<path d="M4.5 10h11"/>'),
+  close: s('<path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/>'),
+  share: s('<path d="M10 12.5V3.5M6.5 7 10 3.5 13.5 7"/><path d="M4.5 10.5v4.2c0 .7.6 1.3 1.3 1.3h8.4c.7 0 1.3-.6 1.3-1.3v-4.2"/>'),
+  plug: s('<path d="M7.5 3v3.2M12.5 3v3.2"/><path d="M5.5 6.2h9v2.6a4.5 4.5 0 0 1-9 0Z"/><path d="M10 13.3V17"/>'),
+  build: s('<path d="M3 16.5h14"/><path d="M5 16.5V9l4-3 4 3v7.5"/><path d="M8 16.5v-3.5h2v3.5"/><path d="M13 11h3v5.5"/><path d="M9 6V3.5h4.5"/>'),
+  home: s('<path d="M3.5 9 10 3.8 16.5 9"/><path d="M5.2 7.8v7.7c0 .5.4.9.9.9h7.8c.5 0 .9-.4.9-.9V7.8"/><path d="M8.3 16.4v-4.2h3.4v4.2"/>'),
+  help: s('<circle cx="10" cy="10" r="7"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2v.5"/><circle cx="10" cy="14" r=".4" fill="currentColor"/>'),
+  chevron: s('<path d="m6 8 4 4 4-4"/>'),
+  chevronRight: s('<path d="m8 5.5 4.5 4.5L8 14.5"/>'),
+  lock: s('<rect x="4.5" y="9" width="11" height="8" rx="2"/><path d="M7 9V6.8a3 3 0 0 1 6 0V9"/>'),
+  check: s('<path d="m4.5 10.5 3.5 3.5 7.5-8"/>'),
+  speed: s('<path d="M3.6 14a7 7 0 1 1 12.8 0"/><path d="m10 11 3.2-3.6"/><circle cx="10" cy="11.3" r="1" fill="currentColor"/>'),
+  pin: s('<path d="M10 17s5.5-4.6 5.5-9a5.5 5.5 0 0 0-11 0c0 4.4 5.5 9 5.5 9Z"/><circle cx="10" cy="8" r="2"/>'),
+  rocket: s('<path d="M11.8 3.2c2.6-.6 4.6-.4 5 0 .4.4.6 2.4 0 5-.6 2.4-3 5-6 6.6l-4.6-4.6c1.6-3 4.2-5.4 5.6-7Z"/><circle cx="13" cy="7" r="1.3"/><path d="M6.2 10.2 3.5 9.7l2.3-2.6 3.2.2M9.8 13.8l.5 2.7 2.6-2.3-.2-3.2"/><path d="M5 15c-.8.8-1.2 2-1.2 2s1.2-.4 2-1.2"/>'),
+  sparkle: s('<path d="M10 3c.4 3.3 1.7 4.6 5 5-3.3.4-4.6 1.7-5 5-.4-3.3-1.7-4.6-5-5 3.3-.4 4.6-1.7 5-5Z"/><path d="M15.5 13.5c.2 1.3.7 1.8 2 2-1.3.2-1.8.7-2 2-.2-1.3-.7-1.8-2-2 1.3-.2 1.8-.7 2-2Z"/>'),
+  coin: s('<circle cx="10" cy="10" r="6.8"/><path d="M12.2 7.6c-.4-.7-1.2-1.1-2.2-1.1-1.3 0-2.2.7-2.2 1.7 0 2.3 4.6 1.2 4.6 3.6 0 1-1 1.8-2.4 1.8-1 0-1.9-.4-2.3-1.2M10 5v1.5M10 13.6V15"/>'),
+  user: s('<circle cx="9" cy="7" r="3"/><path d="M3.5 16.5c.6-2.8 2.8-4.4 5.5-4.4 1.1 0 2.1.3 3 .8"/><path d="M15 11.5v5M12.5 14h5"/>'),
+  userMinus: s('<circle cx="9" cy="7" r="3"/><path d="M3.5 16.5c.6-2.8 2.8-4.4 5.5-4.4 1.1 0 2.1.3 3 .8"/><path d="M12.5 14h5"/>'),
+  users: s('<circle cx="7.5" cy="7.5" r="2.6"/><path d="M2.8 16c.5-2.4 2.4-3.8 4.7-3.8s4.2 1.4 4.7 3.8"/><circle cx="13.6" cy="6.6" r="2.1"/><path d="M13.5 10.8c1.9 0 3.4 1.2 3.8 3.2"/>'),
+  ship: s('<path d="M10 3v7.5"/><path d="M10 3.4 15 9h-5"/><path d="M3 12.5h14l-2 3.6c-.3.5-.8.8-1.4.8H6.4c-.6 0-1.1-.3-1.4-.8Z"/>'),
+  tag: s('<path d="M3.5 4.7v4.4c0 .4.2.7.4 1l6.4 6.4c.5.5 1.3.5 1.8 0l4.3-4.3c.5-.5.5-1.3 0-1.8L10 4c-.3-.2-.6-.4-1-.4H4.7c-.7 0-1.2.5-1.2 1.1Z"/><circle cx="7" cy="7.2" r="1.2"/>'),
+  flag: s('<path d="M4.5 17.5V3.5"/><path d="M4.5 4h9.8l-2.3 3.4 2.3 3.4H4.5"/>'),
+  map: s('<path d="m3 5.5 4.5-2 5 2 4.5-2v11l-4.5 2-5-2-4.5 2Z"/><path d="M7.5 3.5v11M12.5 5.5v11"/>'),
+  cloudSun: s('<path d="M7 3.2v1M2.9 7.3h1M4.1 4.4l.7.7M10 4.4l-.7.7"/><path d="M4.6 9.4A2.6 2.6 0 0 1 9.5 7"/><path d="M6.5 16.5h8a3 3 0 0 0 .3-6 4 4 0 0 0-7.6 1.2A2.4 2.4 0 0 0 6.5 16.5Z"/>'),
+  cloudRain: s('<path d="M6 12.5h8a3 3 0 0 0 .3-6 4.2 4.2 0 0 0-8-1A3.3 3.3 0 0 0 6 12.5Z"/><path d="m7 14.5-.8 2M10.5 14.5l-.8 2M14 14.5l-.8 2"/>'),
+  sun: s('<circle cx="10" cy="10" r="3.4"/><path d="M10 2.5v1.6M10 15.9v1.6M2.5 10h1.6M15.9 10h1.6M4.7 4.7l1.1 1.1M14.2 14.2l1.1 1.1M4.7 15.3l1.1-1.1M14.2 5.8l1.1-1.1"/>'),
+  moon: s('<path d="M15.8 12.4A6.6 6.6 0 0 1 7.6 4.2a6.6 6.6 0 1 0 8.2 8.2Z"/>'),
+  bulb: s('<path d="M7.3 13.3c0-1.5-2.3-2.7-2.3-5.3a5 5 0 0 1 10 0c0 2.6-2.3 3.8-2.3 5.3Z"/><path d="M7.6 15.6h4.8M8.5 17.6h3"/>'),
+  bulbOff: s('<path d="M7.3 13.3c0-1.5-2.3-2.7-2.3-5.3a5 5 0 0 1 8.6-3.5M15 8c0 2.6-2.3 3.8-2.3 5.3H7.3"/><path d="M7.6 15.6h4.8M8.5 17.6h3M3.5 3.5l13 13"/>'),
+  lamp: s('<path d="M7 17.5h4M9 17.5V6.5c0-1.7 1.3-3 3-3h0c1.4 0 2.5 1.1 2.5 2.5"/><path d="M12.3 7.2h4.4l-.8 1.8h-2.8Z"/>'),
+  bridge: s('<path d="M2.5 13h15"/><path d="M5.5 16V5M14.5 16V5"/><path d="M2.5 6.5c1 3 2 4.6 3 4.6s4.5-4 4.5-4 3.5 4 4.5 4 2-1.6 3-4.6"/>'),
+  train: s('<rect x="4.5" y="3" width="11" height="11" rx="2.4"/><path d="M4.5 9h11M7.5 14l-2 3.5M12.5 14l2 3.5"/><circle cx="7.6" cy="11.6" r=".5" fill="currentColor"/><circle cx="12.4" cy="11.6" r=".5" fill="currentColor"/>'),
+  store: s('<path d="M3.5 8h13l-1-4h-11Z"/><path d="M4.5 8v8.5h11V8"/><path d="M8 16.5v-4.5h4v4.5"/>'),
+  tent: s('<path d="M2.5 16.5h15"/><path d="M10 3.5 3.5 16.5M10 3.5l6.5 13"/><path d="M10 9.5 7.6 16.5M10 9.5l2.4 7"/>'),
+  alert: s('<path d="M8.7 3.6c.6-1 2-1 2.6 0l6.1 10.6c.6 1-.2 2.3-1.3 2.3H3.9c-1.1 0-1.9-1.3-1.3-2.3Z"/><path d="M10 8v3.4"/><circle cx="10" cy="13.9" r=".5" fill="currentColor"/>'),
+  info: s('<circle cx="10" cy="10" r="7"/><path d="M10 9v4.6"/><circle cx="10" cy="6.6" r=".5" fill="currentColor"/>'),
+  heart: s('<path d="M10 16.5s-6.5-3.8-6.5-8.6A3.4 3.4 0 0 1 10 6.3a3.4 3.4 0 0 1 6.5 1.6c0 4.8-6.5 8.6-6.5 8.6Z"/>'),
+  wrench: s('<path d="M12.2 3.6a3.8 3.8 0 0 0-4.8 4.8l-4 4a1.7 1.7 0 0 0 2.4 2.4l4-4a3.8 3.8 0 0 0 4.8-4.8l-2.3 2.3-1.9-.5-.5-1.9Z"/>'),
+  copy: s('<rect x="7" y="7" width="9.5" height="9.5" rx="2"/><path d="M13 4.6V4.5c0-.6-.5-1-1-1H5c-.8 0-1.5.7-1.5 1.5v7c0 .5.4 1 1 1h.1"/>'),
+  download: s('<path d="M10 3.5v9M6.5 9 10 12.5 13.5 9"/><path d="M4 14.5v1c0 .6.4 1 1 1h10c.6 0 1-.4 1-1v-1"/>'),
+  plane: s('<path d="M17 4.2c-.6-.6-1.7-.5-2.4.2L11.7 7.3 4.5 5 3 6.5l5.9 3.4-2.6 2.6-2.3-.4-1 1 3 1.3 1.3 3 1-1-.4-2.3 2.6-2.6 3.4 5.9 1.5-1.5-2.3-7.2 2.9-2.9c.7-.7.8-1.8.2-2.4Z"/>'),
+  key: s('<circle cx="7" cy="13" r="3.5"/><path d="m9.5 10.5 7-7M14 6l2 2M12 8l1.5 1.5"/>'),
+  github: s('<path d="M7.5 16.5c-3.2 1-3.2-1.6-4.5-2M12.5 18.5V15.7c0-.8.1-1.2-.4-1.7 2.2-.3 4.4-1.1 4.4-4.8a3.7 3.7 0 0 0-1-2.6 3.5 3.5 0 0 0-.1-2.6s-.8-.3-2.7 1a9.2 9.2 0 0 0-4.9 0c-1.9-1.3-2.7-1-2.7-1a3.5 3.5 0 0 0-.1 2.6 3.7 3.7 0 0 0-1 2.6c0 3.7 2.2 4.5 4.4 4.8-.5.5-.5 1-.4 1.7v2.8"/>'),
+  card: s('<rect x="2.5" y="4.5" width="15" height="11" rx="2"/><path d="M2.5 8.2h15M5.5 12.5h3"/>'),
+  chart: s('<path d="M3 16.5h14"/><path d="M4.5 13 8 9l3 2.5 5-6"/><path d="M13 5.5h3v3"/>'),
+  keyboard: s('<rect x="2.5" y="5" width="15" height="10" rx="2"/><path d="M5.5 8h.01M8.5 8h.01M11.5 8h.01M14.5 8h.01M6.5 12h7"/>'),
+} as const;
+
+export type IconName = keyof typeof ICON;

@@ -264,6 +264,102 @@ export function ferryBuilding(): THREE.Group {
   return group;
 }
 
+/**
+ * San Francisco City Hall on the Civic Center block: a Beaux-Arts palace with
+ * a colonnaded drum and a gold-trimmed dome, facing east across its plaza
+ * toward Market Street. Centred on the block at (cx, cz).
+ */
+export function cityHall(cx: number, cz: number): THREE.Group {
+  const b = new GeoBuilder();
+  const r = rng(29);
+  const stone = 0xece6d6;
+  const shade = 0xd9d0bc;
+  const gold = 0xd4af37;
+  const dome = 0x8aa39a;
+  const warm: ColorLike = [1.7, 1.2, 0.65];
+  const x = cx - 0.75;
+  const z = cz;
+  const W = 1.5; // east–west depth
+  const L = 3.3; // north–south length
+  // Plinth, rusticated ground floor, piano nobile with colonnade, attic
+  b.box(W + 0.24, 0.08, L + 0.24, x, 0, z, shade);
+  b.box(W, 0.32, L, x, 0.08, z, shade);
+  b.box(W - 0.04, 0.42, L - 0.04, x, 0.4, z, stone);
+  b.box(W + 0.03, 0.05, L + 0.03, x, 0.82, z, shade);
+  b.box(W - 0.08, 0.16, L - 0.08, x, 0.87, z, stone);
+  b.box(W, 0.04, L, x, 1.03, z, shade);
+  b.windows({ w: W, d: L, x, z, y0: 0.08, rows: 1, rowHeight: 0.32, cols: 16, faces: ['x+', 'x-'] }, r, 0.7, warm, { w: 0.08, h: 0.12 });
+  b.windows({ w: W, d: L, x, z, y0: 0.08, rows: 1, rowHeight: 0.32, cols: 6, faces: ['z+', 'z-'] }, r, 0.7, warm, { w: 0.08, h: 0.12 });
+  b.windows({ w: W - 0.04, d: L - 0.04, x, z, y0: 0.42, rows: 1, rowHeight: 0.38, cols: 18, faces: ['x+', 'x-'] }, r, 0.75, warm, { w: 0.07, h: 0.2 });
+  // Giant-order columns along the long façades
+  for (const side of [1, -1]) {
+    for (let k = 0; k < 18; k++) {
+      const zz = z - L / 2 + 0.12 + (k * (L - 0.24)) / 17;
+      b.cylinder(0.026, 0.03, 0.4, x + side * (W / 2 + 0.01), 0.42, zz, 0xf6f1e4, 6);
+    }
+  }
+  // Central pavilion with a pedimented portico facing the plaza (east, +x)
+  b.box(0.5, 0.95, 1.1, x + W / 2 + 0.1, 0.08, z, stone);
+  for (let k = 0; k < 6; k++) b.cylinder(0.035, 0.04, 0.62, x + W / 2 + 0.33, 0.32, z - 0.42 + k * 0.168, 0xf6f1e4, 8);
+  b.box(0.18, 0.08, 1.14, x + W / 2 + 0.3, 0.94, z, shade);
+  b.gable(1.1, 0.2, 0.22, x + W / 2 + 0.3, 1.02, z, stone, 0.03, Math.PI / 2);
+  for (let k = 0; k < 5; k++) b.box(0.42 - k * 0.04, 0.03, 0.9, x + W / 2 + 0.55 - k * 0.04, 0.08 - k * 0.0, z, shade); // grand stair
+  b.panel(0.36, 0.42, x + W / 2 + 0.355, 0.55, z, Math.PI / 2, warm, true, 0.2);
+  // End pavilions
+  for (const s of [1, -1]) {
+    b.box(W + 0.1, 1.0, 0.5, x, 0.08, z + s * (L / 2 - 0.25), stone);
+    b.box(W + 0.14, 0.05, 0.54, x, 1.08, z + s * (L / 2 - 0.25), shade);
+  }
+  // Rotunda: square base, colonnaded drum, ribbed dome, lantern
+  b.box(1.0, 0.25, 1.0, x, 1.07, z, stone);
+  b.cylinder(0.5, 0.52, 0.08, x, 1.32, z, shade, 24);
+  b.cylinder(0.44, 0.44, 0.5, x, 1.4, z, stone, 24);
+  for (let k = 0; k < 20; k++) {
+    const a = (k / 20) * Math.PI * 2;
+    b.cylinder(0.022, 0.025, 0.46, x + Math.cos(a) * 0.47, 1.42, z + Math.sin(a) * 0.47, 0xf6f1e4, 6);
+  }
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2 + 0.13;
+    b.panel(0.08, 0.2, x + Math.cos(a) * 0.445, 1.65, z + Math.sin(a) * 0.445, Math.PI / 2 - a, warm, true, 0.15 + (k % 4) * 0.2);
+  }
+  b.cylinder(0.5, 0.5, 0.06, x, 1.9, z, gold, 24);
+  b.lathe([[0.47, 0], [0.46, 0.12], [0.42, 0.3], [0.33, 0.48], [0.2, 0.6], [0.08, 0.66], [0, 0.67]], x, 1.96, z, dome, 28);
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    const rib = new THREE.TorusGeometry(0.46, 0.008, 3, 12, Math.PI / 2.1).rotateZ(0).rotateY(-a);
+    b.transformed(rib, new THREE.Matrix4().makeTranslation(x, 1.96, z), gold);
+  }
+  b.cylinder(0.07, 0.08, 0.2, x, 2.62, z, stone, 10);
+  b.lathe([[0.08, 0], [0.05, 0.08], [0.0, 0.12]], x, 2.82, z, gold, 10);
+  b.cylinder(0.008, 0.012, 0.18, x, 2.92, z, gold, 4);
+  b.blob(0.03, x, 3.1, z, [3, 2.6, 1.6], true);
+  // Civic Center Plaza: lawns, rows of clipped plane trees, a fountain, flagpoles
+  const px = cx + 1.05;
+  b.box(1.7, 0.02, L + 0.4, px, 0, z, 0xe6dfcf);
+  for (const s of [-1, 1]) b.box(0.6, 0.03, 1.2, px + 0.05, 0.005, z + s * 0.9, 0x86c55a);
+  for (const s of [-1, 1]) {
+    for (let k = 0; k < 7; k++) {
+      const tz = z - 1.55 + k * 0.52;
+      const tx = px + s * 0.68;
+      b.cylinder(0.018, 0.022, 0.18, tx, 0.02, tz, 0x7a5a42, 5);
+      b.rbox(0.26, 0.2, 0.26, tx, 0.18, tz, 0x4f8f3e, 0.06, 'smooth');
+    }
+  }
+  b.cylinder(0.24, 0.26, 0.05, px + 0.05, 0.02, z, shade, 16);
+  b.cylinder(0.2, 0.2, 0.01, px + 0.05, 0.07, z, 0x6fcfe0, 16, 'glass');
+  for (const s of [-1, 1]) {
+    b.cylinder(0.008, 0.01, 0.7, px + 0.6, 0.02, z + s * 0.25, 0xd8d8d8, 4);
+    b.box(0.003, 0.09, 0.15, px + 0.6, 0.6, z + s * 0.25 + 0.075, s > 0 ? 0xc8402e : 0x2f5aa8);
+  }
+  const { group } = b.build();
+  group.traverse((o) => {
+    o.castShadow = true;
+    o.receiveShadow = true;
+  });
+  group.userData.tip = { title: 'City Hall', detail: 'Beaux-Arts, gold-leafed dome, a little taller than the one in Washington.' };
+  return group;
+}
+
 export function coitTower(): THREE.Group {
   const b = new GeoBuilder();
   const { x, z } = LANDMARKS.coitTower;
@@ -480,7 +576,8 @@ export function sign(): Sign {
     const w = widths[i]!;
     const p = new THREE.Vector3(cx, 0, cz).addScaledVector(right, u + w / 2);
     const ground = terrainHeight(p.x, p.z);
-    const y = Math.max(ground - 0.3, ground * 0.35 + centreY * 0.65);
+    // Letters step down the slope a little rather than floating level on long legs.
+    const y = Math.max(ground - 0.25, ground * 0.65 + centreY * 0.35);
     const geo = new THREE.ExtrudeGeometry(letterShape(ch, height), { depth: 0.12, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 1 });
     geo.translate(-w / 2, 0, 0);
     const mesh = new THREE.Mesh(geo, material);

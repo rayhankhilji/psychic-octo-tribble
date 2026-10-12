@@ -1,5 +1,6 @@
 import type { Snapshot } from '../data/types.ts';
 import type { Action } from './economy.ts';
+import { ITEMS } from './catalog.ts';
 
 /**
  * What the fictional Nightjar founder built over 18 months, so the demo
@@ -28,8 +29,19 @@ const SCRIPT: [day: number, item: string, plot?: string][] = [
   [495, 'day-yacht'],
   [515, 'skyscraper', 'midtown:2'],
   [530, 'hq-tower'],
+  // Only affordable in a boosted demo (?demo&boost=40): the rest are skipped.
+  [520, 'gulfstream'],
+  [533, 'long-range'],
+  [536, 'rocket'],
 ];
 
 export function demoActions(snapshots: Snapshot[]): Action[] {
-  return SCRIPT.filter(([d]) => snapshots[d]).map(([d, item, plot]) => ({ t: snapshots[d]!.t, kind: 'build' as const, item, ...(plot ? { plot } : {}) }));
+  // Big-ticket items only appear when the (boosted) numbers have unlocked them.
+  const peak = (d: number) => Math.max(...snapshots.slice(0, d + 1).map((s) => s.mrr));
+  return SCRIPT.filter(([d, item]) => snapshots[d] && (ITEMS.get(item)?.unlock ?? 0) <= peak(d)).map(([d, item, plot]) => ({
+    t: snapshots[d]!.t,
+    kind: 'build' as const,
+    item,
+    ...(plot ? { plot } : {}),
+  }));
 }

@@ -14,7 +14,7 @@ import {
 describe('the Bay map', () => {
   it('has room for downtown, HQ and plenty of neighbourhoods', () => {
     expect(BLOCKS.filter((b) => b.use === 'hq')).toHaveLength(1);
-    expect(NEIGHBOURHOOD_BLOCKS.length).toBeGreaterThanOrEqual(35);
+    expect(NEIGHBOURHOOD_BLOCKS.length).toBeGreaterThanOrEqual(34);
     for (const b of BUILD_BLOCK_COORDS) expect(BLOCKS.find((x) => x.bx === b.bx && x.bz === b.bz)?.use).toBe('city');
   });
 
@@ -25,7 +25,7 @@ describe('the Bay map', () => {
   });
 
   it('keeps every city block on dry, flat land', () => {
-    for (const b of BLOCKS.filter((x) => x.use === 'city' || x.use === 'hq')) {
+    for (const b of BLOCKS.filter((x) => x.use === 'city' || x.use === 'hq' || x.use === 'civic')) {
       const c = blockCentre(b);
       for (const [dx, dz] of [[0, 0], [2.5, 2.5], [-2.5, -2.5], [2.5, -2.5], [-2.5, 2.5]] as const) {
         expect(coastDistance(c.x + dx, c.z + dz)).toBeLessThan(0);

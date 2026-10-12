@@ -5,6 +5,7 @@ import { palm, tree } from './buildings.ts';
 import { cloudBank } from './models.ts';
 import {
   bayBridge,
+  cityHall,
   cliffHouse,
   coitTower,
   conservatory,
@@ -24,6 +25,7 @@ import {
   AIRPORT,
   AIRPORT_SLOTS,
   BLOCKS,
+  CIVIC_BLOCK,
   HILLS_HOME,
   HILLS_HOOD,
   ISLANDS,
@@ -122,7 +124,8 @@ export class Scenery {
     }
     this.sign = sign();
     this.mill = windmill();
-    const landmarks = [gg, this.bay.group, ferryBuilding(), coitTower(), palaceOfFineArts(), sutroTower(), this.mill.group, conservatory(-16.5, -14.6), cliffHouse(), this.sign.group];
+    const civic = blockCentre(CIVIC_BLOCK);
+    const landmarks = [gg, this.bay.group, cityHall(civic.x, civic.z), ferryBuilding(), coitTower(), palaceOfFineArts(), sutroTower(), this.mill.group, conservatory(-16.5, -14.6), cliffHouse(), this.sign.group];
     for (const l of landmarks) {
       this.object.add(l);
       this.pickables.push(l);
@@ -211,40 +214,63 @@ export class Scenery {
     return this.add(b);
   }
 
-  /** Market cuts the blocks it crosses into triangles: plazas with trees, kiosks and a fountain. */
+  /**
+   * Market cuts the blocks it crosses into triangles. Most become flatirons
+   * (wedge buildings whose prows point along Market, taller toward the
+   * Financial District); two stay open as plazas.
+   */
   private marketPlazas(): THREE.Group {
     const b = new GeoBuilder();
     const r = rng(hash(this.seed, 'plazas'));
     for (const blk of BLOCKS.filter((x) => x.use === 'market')) {
       const c = blockCentre(blk);
-      for (const s of [-1, 1]) {
-        // Triangle on one side of the diagonal through the block centre
-        const tri = new THREE.Shape([
-          new THREE.Vector2(c.x - 2, -(c.z - 2 * s)),
-          new THREE.Vector2(c.x + 2 * s, -(c.z - 2 * s)),
-          new THREE.Vector2(c.x + 2 * s, -(c.z + 2)),
-        ]);
-        void tri;
-        const corner = { x: c.x + 1.25 * s, z: c.z - 1.25 * s };
-        const pts = s > 0 ? [[c.x - 2, c.z - 2], [c.x + 2, c.z - 2], [c.x + 2, c.z + 2]] : [[c.x - 2, c.z - 2], [c.x - 2, c.z + 2], [c.x + 2, c.z + 2]];
+      for (const s of [-1, 1] as const) {
+        // s = −1: north of Market; s = 1: south (SoMa). Reflecting across Market swaps x and z offsets.
+        const at = (dx: number, dz: number): Pt => (s < 0 ? [c.x + dx, c.z + dz] : [c.x + dz, c.z + dx]);
+        const R = at(-2, 2);
+        const tri = [at(-2, -2), R, at(2, 2)];
         const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.Float32BufferAttribute(pts.flatMap(([x, z]) => [x!, 0.01, z!]), 3));
-        g.setIndex(s > 0 ? [0, 2, 1] : [0, 1, 2]);
+        g.setAttribute('position', new THREE.Float32BufferAttribute(tri.flatMap(([x, z]) => [x, 0.012, z]), 3));
+        g.setIndex(s < 0 ? [0, 2, 1] : [0, 1, 2]);
         g.computeVertexNormals();
-        b.transformed(g, new THREE.Matrix4(), PALETTE.plaza);
-        for (let k = 0; k < 4; k++) tree(b, r, corner.x + (r() - 0.5) * 1.6, corner.z + (r() - 0.5) * 1.6, 0.9, 0.01, r() < 0.5 ? 'round' : 'palm');
-        b.box(0.32, 0.26, 0.24, corner.x - 0.3 * s, 0.01, corner.z + 0.3 * s, pick(r, [0x2f6a4f, 0x7a3a2c, 0x2a4a7a] as const));
-        b.box(0.36, 0.03, 0.28, corner.x - 0.3 * s, 0.27, corner.z + 0.3 * s, PALETTE.trim);
-        for (let k = 0; k < 3; k++) b.box(0.24, 0.04, 0.07, corner.x + (k - 1) * 0.4, 0.01, corner.z - 0.8 * s, PALETTE.wood);
-      }
-      if (blk.bx === 1) {
-        // Vaillancourt-ish fountain by the Ferry Building
-        b.cylinder(0.7, 0.75, 0.08, c.x + 1.2, 0.01, c.z - 1.2, 0xbab3a6, 16);
-        b.cylinder(0.62, 0.62, 0.02, c.x + 1.2, 0.09, c.z - 1.2, 0x5fc7d6, 16, 'glass');
-        for (let k = 0; k < 5; k++) b.box(0.14, 0.4 + k * 0.08, 0.14, c.x + 1 + (k % 3) * 0.18, 0.09, c.z - 1.4 + Math.floor(k / 2) * 0.18, 0xa79f92);
+        b.transformed(g, new THREE.Matrix4(), PALETTE.sidewalk);
+        const plaza = (blk.bx === 1 && s < 0) || (blk.bx === -2 && s > 0);
+        if (plaza) {
+          const corner = at(-0.9, 0.9);
+          b.transformed(new THREE.CircleGeometry(1.0, 20).rotateX(-Math.PI / 2), new THREE.Matrix4().makeTranslation(corner[0], 0.016, corner[1]), PALETTE.plaza);
+          for (let k = 0; k < 6; k++) {
+            const [tx, tz] = at(-1.6 + (k % 3) * 0.55, 1.6 - Math.floor(k / 3) * 0.55 - (k % 3) * 0.1);
+            tree(b, r, tx, tz, 0.85, 0.012, k % 2 ? 'round' : 'palm');
+          }
+          for (let k = 0; k < 3; k++) {
+            const [bx, bz] = at(-0.4 + k * 0.35, 0.3 + k * 0.35);
+            b.box(0.24, 0.04, 0.07, bx, 0.012, bz, PALETTE.wood, false, Math.PI / 4);
+          }
+          const [kx, kz] = at(-1.5, 0.4);
+          b.box(0.3, 0.24, 0.22, kx, 0.012, kz, pick(r, [0x2f6a4f, 0x7a3a2c] as const));
+          b.box(0.34, 0.03, 0.26, kx, 0.25, kz, PALETTE.trim);
+          if (blk.bx === 1) {
+            // A Vaillancourt-ish fountain of jumbled concrete tubes
+            const [fx, fz] = at(-1.0, 1.0);
+            b.cylinder(0.55, 0.6, 0.06, fx, 0.012, fz, 0xbab3a6, 16);
+            b.cylinder(0.5, 0.5, 0.01, fx, 0.07, fz, 0x5fc7d6, 16, 'glass');
+            for (let k = 0; k < 6; k++) b.box(0.11, 0.3 + k * 0.07, 0.11, fx - 0.15 + (k % 3) * 0.13, 0.07, fz - 0.1 + Math.floor(k / 3) * 0.16, 0xa79f92, false, k * 0.4);
+          }
+          continue;
+        }
+        // Two flatirons per triangle, split where a line from the corner meets Market at right angles.
+        const Rp = at(-1.88, 1.88);
+        const Ap = at(-1.88, -0.68);
+        const Bp = at(0.68, 1.88);
+        const M: Pt = [(Ap[0] + Bp[0]) / 2, (Ap[1] + Bp[1]) / 2];
+        const tall = [1, 0.82, 0.55, 0.4][1 - blk.bx] ?? 0.4;
+        for (const part of [[Rp, Ap, M], [Rp, M, Bp]] as Pt[][]) {
+          const h = (0.8 + r() * 1.6) * tall * 1.6 + 0.45;
+          flatiron(b, r, part, h, blk.bx === 1 && s > 0 && part[1] === M);
+        }
       }
     }
-    return this.add(b);
+    return this.add(b, { title: 'Market Street', detail: 'Flatirons, plazas and the F-line, from the Ferry Building to the Castro.' });
   }
 
   // ─── Parks and forests ──────────────────────────────────────────────────
@@ -577,11 +603,22 @@ export class Scenery {
     const b = new GeoBuilder();
     const r = rng(hash(this.seed, 'suburbs'));
     const walls = [0xf6ecd8, 0xf3c6a2, 0xc6dcf2, 0xbfe4d0, 0xf6df8c, 0xeab6cf, 0xf8f5ee] as const;
+    // "Little boxes on the hillside": pastel stucco with a garage at street level and a lit window above.
     const house = (x: number, z: number, rot: number, s = 1) => {
       const y = terrainHeight(x, z);
       const w = 0.55 * s;
-      b.box(w, 0.32 * s, 0.5 * s, x, y - 0.05, z, pick(r, walls), false, rot);
-      b.box(w + 0.04, 0.04, 0.54 * s, x, y + 0.27 * s, z, PALETTE.trim, false, rot);
+      const d = 0.5 * s;
+      const h = 0.34 * s;
+      const c = Math.cos(rot);
+      const sn = Math.sin(rot);
+      const at = (fx: number, fz: number): [number, number] => [x + fx * c + fz * sn, z - fx * sn + fz * c];
+      b.box(w, h, d, x, y - 0.05, z, pick(r, walls), false, rot);
+      b.box(w + 0.03, 0.035, d + 0.03, x, y - 0.05 + h, z, PALETTE.trim, false, rot);
+      if (r() < 0.45) b.hip(w, 0.1 * s, d, x, y - 0.05 + h + 0.03, z, pick(r, PALETTE.roofs), 0.03);
+      const [gx, gz] = at(-0.1 * s, d / 2 + 0.003);
+      b.panel(0.2 * s, 0.13 * s, gx, y + 0.02 * s, gz, rot, 0xe8e2d6, false);
+      const [wx, wz] = at(0.12 * s, d / 2 + 0.004);
+      b.panel(0.14 * s, 0.09 * s, wx, y + 0.17 * s, wz, rot, PALETTE.windowWarm, true, 0.1 + r() * 0.9);
     };
     // Daly City and the south: ticky-tacky rows following the hills
     for (let z = -37; z > -62; z -= 1.15) {
@@ -630,6 +667,21 @@ export class Scenery {
       const x = yb.x + Math.cos(a) * d;
       const z = yb.z + Math.sin(a) * d;
       tree(b, r, x, z, 0.9, terrainHeight(x, z) - 0.05, 'cypress');
+    }
+    // Chaparral: low clumps of scrub on the open hills, thicker in the folds.
+    const scrub = [0x5f7f3a, 0x6f8a42, 0x4f6e36, 0x7d8a4a] as const;
+    for (let i = 0; i < 1400; i++) {
+      const x = -95 + r() * 215;
+      const z = -110 + r() * 190;
+      const h = terrainHeight(x, z);
+      if (h < 0.8 || coastDistance(x, z) > -1.5) continue;
+      if (x > -40 && x < 14 && z > -30 && z < 12) continue; // the city
+      if (inSign(x, z) || inHood(x, z)) continue;
+      const fold = 0.5 + 0.5 * Math.sin(x * 0.45 + Math.cos(z * 0.33) * 2);
+      if (r() > 0.35 + fold * 0.5) continue;
+      const k = 0.12 + r() * 0.16;
+      const g = new THREE.IcosahedronGeometry(k, 0).scale(1.3, 0.6, 1.1);
+      b.transformed(g, new THREE.Matrix4().makeTranslation(x, h + k * 0.25, z), pick(r, scrub), 'smooth');
     }
     // Angel Island and the Marin hills: sparse trees
     for (let i = 0; i < 220; i++) {
@@ -859,4 +911,58 @@ function inSign(x: number, z: number): boolean {
 
 function inHood(x: number, z: number): boolean {
   return x > HILLS_HOOD.x0 && x < HILLS_HOOD.x1 && z > HILLS_HOOD.z0 && z < HILLS_HOOD.z1 && !inSign(x, z);
+}
+
+/**
+ * A wedge-shaped building on a polygon footprint: stone or glass, with windows
+ * on every face, belt courses, a cornice, shopfronts and a rooftop water tank.
+ */
+function flatiron(b: GeoBuilder, r: () => number, pts: Pt[], h: number, glass: boolean) {
+  const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+  const cz = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+  const prism = (poly: Pt[], y: number, height: number, color: ColorLike, grow = 0, bucket: 'solid' | 'glass' = 'solid') => {
+    const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(cx + (x - cx) * (1 + grow), -(cz + (z - cz) * (1 + grow)))));
+    const g = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false }).rotateX(-Math.PI / 2).translate(0, y, 0);
+    b.transformed(g, new THREE.Matrix4(), color, bucket);
+  };
+  const wall = glass ? pick(r, [0x7fa9c9, 0x8fb5cf] as const) : pick(r, [0xe8dcc4, 0xd9c7a5, 0xc9a27e, 0xb85a3e, 0xf2ece0, 0xd8b48e] as const);
+  const trim = glass ? 0xe8edf2 : pick(r, [0xf6f1e4, 0xe0d4bc, 0x9a8f80] as const);
+  prism(pts, 0, h, wall, 0, glass ? 'glass' : 'solid');
+  prism(pts, 0, 0.26, glass ? 0x5d6f80 : 0x6b5a4a, 0.012);
+  prism(pts, h - 0.02, 0.06, trim, 0.05);
+  prism(pts, h + 0.04, 0.02, glass ? 0xb9c2cc : 0x8f8a84, -0.04);
+  for (let y = 0.26 + 0.6; y < h - 0.3; y += 0.6) prism(pts, y, 0.025, trim, 0.02);
+  // Windows on every face, each lit at its own moment of dusk.
+  const light: ColorLike = glass ? PALETTE.windowCool : PALETTE.windowWarm;
+  for (let i = 0; i < pts.length; i++) {
+    const [px, pz] = pts[i]!;
+    const [qx, qz] = pts[(i + 1) % pts.length]!;
+    const len = Math.hypot(qx - px, qz - pz);
+    let nx = (qz - pz) / len;
+    let nz = -(qx - px) / len;
+    if (nx * ((px + qx) / 2 - cx) + nz * ((pz + qz) / 2 - cz) < 0) {
+      nx = -nx;
+      nz = -nz;
+    }
+    const rot = Math.atan2(nx, nz);
+    const cols = Math.max(1, Math.floor(len / 0.17));
+    for (let k = 0; k < cols; k++) {
+      const u = (k + 0.5) / cols;
+      const x = px + (qx - px) * u + nx * 0.007;
+      const z = pz + (qz - pz) * u + nz * 0.007;
+      // Shopfront at street level
+      b.panel(len / cols - 0.04, 0.15, x, 0.11, z, rot, [1.7, 1.2, 0.7], true, 0.1 + r() * 0.3);
+      for (let y = 0.4; y < h - 0.12; y += 0.2) {
+        b.panel(glass ? len / cols - 0.03 : 0.08, glass ? 0.15 : 0.11, x, y, z, rot, light, true, r() < 0.6 ? 0.12 + r() * 0.86 : 2);
+      }
+    }
+  }
+  // Water tank on stilts and a stair penthouse
+  const [tx, tz] = [cx + (pts[0]![0] - cx) * 0.35, cz + (pts[0]![1] - cz) * 0.35];
+  if (!glass) {
+    for (const [dx, dz] of [[-0.06, -0.06], [0.06, -0.06], [-0.06, 0.06], [0.06, 0.06]] as const) b.box(0.012, 0.12, 0.012, tx + dx, h + 0.09, tz + dz, 0x4a3a2c);
+    b.cylinder(0.1, 0.1, 0.14, tx, h + 0.21, tz, 0x8a6a4a, 10);
+    b.cylinder(0.0, 0.11, 0.06, tx, h + 0.35, tz, 0x5a4a3a, 10);
+  }
+  b.box(0.16, 0.12, 0.16, cx, h + 0.09, cz, glass ? 0xd8dde4 : trim);
 }

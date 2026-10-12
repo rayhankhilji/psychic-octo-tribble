@@ -15,6 +15,10 @@ import type { Item } from './game/catalog.ts';
 import { demoActions } from './game/demo-script.ts';
 import { describeGame, diffGame, freePlots, money, simulate, type Action, type GameState, type SimOptions } from './game/economy.ts';
 import { clearActions, joinedAt, loadActions, saveActions } from './game/save.ts';
+import { HOME_TIERS } from './game/catalog.ts';
+import { drawMark } from './ui/brand.ts';
+import { afterFrames, bootError, hideBoot, narrateBoot } from './ui/loader.ts';
+import { setThumbnailContext } from './ui/thumbnails.ts';
 
 const SPEEDS = [
   { label: '1×', daysPerSecond: 12 },
@@ -84,6 +88,7 @@ class App {
   constructor(timeline: Timeline, notice?: string) {
     const name = storedName() || timeline.name;
     this.seed = hash(name);
+    setThumbnailContext(name, this.seed);
     this.city = new City(name, this.seed);
     const fixed = parseHour(params.get('time'));
     if (fixed !== null) {
@@ -167,6 +172,8 @@ class App {
     else this.show(this.last, false);
     this.stage.start();
     this.refreshClock();
+    // Lift the boot screen once the world has drawn its first few frames.
+    afterFrames(3, () => hideBoot());
 
     if (timeline.source === 'live') window.setInterval(() => this.poll(), POLL_MS);
   }
@@ -310,38 +317,164 @@ class App {
     const frame = this.stage.capture();
     const s = this.moments[this.index]!.snapshot;
     const t = this.timeline;
+    const g = this.game;
+    const day = this.index + 1;
+    const date = new Date(s.t).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    const tier = HOME_TIERS[g.home.tier]!;
+    const home = tier.options.find((o) => o.id === g.home.option)?.name ?? tier.options[0]!.name;
+
+    /** A postcard: the city framed on warm sand, the mark, the name, the day and a few numbers. */
     const compose = (src: HTMLCanvasElement, withMetrics: boolean) => {
+      const OW = 1600;
+      const K = OW / 1600;
+      const pad = 44 * K;
+      const band = 168 * K;
+      // Keep the picture between portrait 4:5 and wide 2:1, cropping the middle.
+      const aspect = Math.min(2, Math.max(0.8, src.width / src.height));
+      const iw = OW - pad * 2;
+      const ih = Math.round(iw / aspect);
+      const OH = Math.round(pad + ih + band);
       const out = document.createElement('canvas');
-      out.width = src.width;
-      out.height = src.height;
+      out.width = OW;
+      out.height = OH;
       const ctx = out.getContext('2d')!;
-      ctx.drawImage(src, 0, 0);
-      const k = out.width / 1200;
-      const pad = 28 * k;
-      const grad = ctx.createLinearGradient(0, out.height - 160 * k, 0, out.height);
-      grad.addColorStop(0, 'rgba(5,8,26,0)');
-      grad.addColorStop(1, 'rgba(5,8,26,0.85)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, out.height - 160 * k, out.width, 160 * k);
-      ctx.fillStyle = '#eef0ff';
-      ctx.font = `700 ${42 * k}px "Space Grotesk", system-ui, sans-serif`;
+      const ink = '#1b2236';
+      const ink3 = '#7c7f8e';
+      const display = '"Bricolage Grotesque", Geist, system-ui, sans-serif';
+      const ui = 'Geist, system-ui, sans-serif';
+
+      // Paper
+      const paper = ctx.createLinearGradient(0, 0, 0, OH);
+      paper.addColorStop(0, '#fbf5ea');
+      paper.addColorStop(1, '#f1e6d2');
+      ctx.fillStyle = paper;
+      ctx.fillRect(0, 0, OW, OH);
+      ctx.strokeStyle = 'rgba(27,34,54,0.10)';
+      ctx.lineWidth = 2 * K;
+      ctx.strokeRect(16 * K, 16 * K, OW - 32 * K, OH - 32 * K);
+
+      // The picture, cropped to the chosen aspect, with a soft shadow.
+      let sw = src.width;
+      let sh = src.height;
+      if (sw / sh > aspect) sw = sh * aspect;
+      else sh = sw / aspect;
+      const r = 20 * K;
+      ctx.save();
+      ctx.shadowColor = 'rgba(27,34,54,0.28)';
+      ctx.shadowBlur = 36 * K;
+      ctx.shadowOffsetY = 14 * K;
+      ctx.fillStyle = '#cfe4f4';
+      ctx.beginPath();
+      ctx.roundRect(pad, pad, iw, ih, r);
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(pad, pad, iw, ih, r);
+      ctx.clip();
+      ctx.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, pad, pad, iw, ih);
+      // A whisper of vignette so the frame reads as a print.
+      const vg = ctx.createRadialGradient(OW / 2, pad + ih / 2, ih * 0.45, OW / 2, pad + ih / 2, iw * 0.75);
+      vg.addColorStop(0, 'rgba(27,34,54,0)');
+      vg.addColorStop(1, 'rgba(27,34,54,0.16)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(pad, pad, iw, ih);
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(27,34,54,0.12)';
+      ctx.lineWidth = 1.5 * K;
+      ctx.beginPath();
+      ctx.roundRect(pad, pad, iw, ih, r);
+      ctx.stroke();
+
+      // Stamp: the mark and wordmark, pinned to the picture's corner.
+      ctx.font = `800 ${30 * K}px ${display}`;
+      const word = 'TinyTown';
+      const ww = ctx.measureText(word).width;
+      const sx = pad + 22 * K;
+      const sy = pad + 22 * K;
+      const sH = 60 * K;
+      ctx.save();
+      ctx.shadowColor = 'rgba(27,34,54,0.22)';
+      ctx.shadowBlur = 18 * K;
+      ctx.shadowOffsetY = 6 * K;
+      ctx.fillStyle = 'rgba(253,249,242,0.96)';
+      ctx.beginPath();
+      ctx.roundRect(sx, sy, 16 * K + 40 * K + 12 * K + ww + 22 * K, sH, sH / 2);
+      ctx.fill();
+      ctx.restore();
+      drawMark(ctx, sx + 12 * K, sy + 9 * K, 42 * K);
+      ctx.fillStyle = ink;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(word, sx + 16 * K + 40 * K + 10 * K, sy + sH / 2 + 1 * K);
+
+      // Caption: city name and the day.
+      const by = pad + ih;
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(t.name, pad, out.height - pad - 36 * k);
-      ctx.font = `${21 * k}px "Space Grotesk", system-ui, sans-serif`;
-      ctx.fillStyle = '#a6abd0';
-      const day = `Day ${this.index + 1}`;
-      const line = withMetrics
-        ? `${day} · ${s.customers.toLocaleString('en-US')} customers · ${formatMoney(s.mrr, t.currency)} MRR · ${s.releases} releases`
-        : `${day} · satisfaction ${this.game.satisfaction.score} · ${this.game.owned.length} things built`;
-      ctx.fillText(line, pad, out.height - pad);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#ffb347';
-      ctx.fillText('made with TinyTown', out.width - pad, out.height - pad);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = ink;
+      ctx.font = `800 ${50 * K}px ${display}`;
+      ctx.fillText(t.name, pad + 4 * K, by + 86 * K);
+      ctx.font = `500 ${23 * K}px ${ui}`;
+      ctx.fillStyle = ink3;
+      ctx.fillText(`Day ${day.toLocaleString('en-US')} · ${date}`, pad + 6 * K, by + 124 * K);
+
+      // Stats on the right, as little cards.
+      const stats: [string, string][] = withMetrics
+        ? [
+            ['MRR', formatMoney(s.mrr, t.currency)],
+            ['Customers', s.customers.toLocaleString('en-US')],
+            ['Releases', s.releases.toLocaleString('en-US')],
+          ]
+        : [
+            ['Satisfaction', `${g.satisfaction.score}/100`],
+            ['Built', `${g.owned.length}`],
+            ['Home', home],
+          ];
+      let x = OW - pad;
+      const ch = 84 * K;
+      const cy = by + 34 * K;
+      for (const [label, value] of [...stats].reverse()) {
+        ctx.font = `750 ${30 * K}px ${display}`;
+        const vw = ctx.measureText(value).width;
+        ctx.font = `600 ${14 * K}px ${ui}`;
+        const lw = ctx.measureText(label.toUpperCase()).width * 1.1;
+        const cw = Math.max(vw, lw) + 40 * K;
+        x -= cw;
+        ctx.fillStyle = 'rgba(253,249,242,0.9)';
+        ctx.strokeStyle = 'rgba(27,34,54,0.10)';
+        ctx.lineWidth = 1.5 * K;
+        ctx.beginPath();
+        ctx.roundRect(x, cy, cw, ch, 16 * K);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = ink3;
+        ctx.font = `600 ${14 * K}px ${ui}`;
+        ctx.letterSpacing = `${1.4 * K}px`;
+        ctx.fillText(label.toUpperCase(), x + 20 * K, cy + 32 * K);
+        ctx.letterSpacing = '0px';
+        ctx.fillStyle = label === 'MRR' || label === 'Satisfaction' ? '#e5512b' : ink;
+        ctx.font = `750 ${30 * K}px ${display}`;
+        ctx.fillText(value, x + 20 * K, cy + 66 * K);
+        x -= 12 * K;
+      }
       return out;
     };
     const slug = t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'city';
-    this.hud.openShare(frame, compose, `tinytown-${slug}-day-${this.index + 1}.png`);
+    this.hud.openShare(frame, compose, `tinytown-${slug}-day-${day}.png`);
   }
 }
 
-loadTimeline().then(({ timeline, notice }) => new App(timeline, notice));
+narrateBoot();
+loadTimeline()
+  .then(({ timeline, notice }) => new App(timeline, notice))
+  .catch((err: unknown) => {
+    console.error(err);
+    const gl = (() => {
+      try {
+        return !!document.createElement('canvas').getContext('webgl2');
+      } catch {
+        return false;
+      }
+    })();
+    bootError(gl ? "Your city couldn't load. Try reloading the page." : 'TinyTown needs WebGL 2, which this browser has turned off.');
+  });

@@ -1,17 +1,78 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="day">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#05081a" />
-    <meta name="description" content="TinyTown: your startup as a living world. A little isometric city that grows with your real Stripe and GitHub metrics." />
-    <title>TinyTown</title>
+    <meta name="theme-color" content="#f5ecdb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#141a2b" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <title>TinyTown · A Tamagotchi for your startup</title>
+    <meta name="description" content="TinyTown turns your real Stripe and GitHub metrics into a living isometric city by the bay. Every customer is a resident; every dollar of MRR builds something." />
+    <meta property="og:title" content="TinyTown · A Tamagotchi for your startup" />
+    <meta property="og:description" content="Your real revenue grows a little city by the bay. Every customer is a resident; every $1 of MRR is $10,000 to build with." />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,500..800&family=Geist+Mono:wght@400..600&family=Geist:wght@400..700&display=swap" rel="stylesheet" />
+    <style>
+      /* Boot screen: inline so it paints before any script loads. */
+      html, body { margin: 0; height: 100%; background: #f5ecdb; }
+      .boot { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: radial-gradient(120% 80% at 50% 0%, #fbf5ea 0%, #f5ecdb 55%, #ecdfc6 100%); color: #1b2236; font-family: Geist, system-ui, sans-serif; transition: opacity 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0.7s; }
+      .boot.done { opacity: 0; visibility: hidden; pointer-events: none; }
+      .boot.done .boot-inner { transform: translateY(-10px) scale(0.985); }
+      .boot-inner { display: grid; justify-items: center; text-align: center; padding: 24px; transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1); }
+      .boot-mark { width: 92px; height: 92px; overflow: visible; filter: drop-shadow(0 18px 18px rgba(27, 34, 54, 0.14)); }
+      .boot-mark .mk { transform-box: view-box; transform-origin: 24px 46px; animation: boot-rise 0.7s cubic-bezier(0.34, 1.4, 0.64, 1) both; }
+      .boot-mark .mk-0 { animation: none; }
+      .boot-mark .mk-1 { animation-delay: 0.25s; }
+      .boot-mark .mk-2 { animation-delay: 0.4s; }
+      .boot-mark .mk-3 { animation: boot-sun 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.6s both; }
+      .boot-word { margin-top: 18px; font: 800 44px/1 'Bricolage Grotesque', Geist, system-ui, sans-serif; font-stretch: 88%; letter-spacing: -0.035em; }
+      .boot-tag { margin: 10px 0 0; font-size: 15px; color: #5b6075; }
+      .boot-skyline { width: min(320px, 76vw); height: auto; margin-top: 26px; overflow: visible; }
+      .boot-skyline path { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: boot-draw 2.2s cubic-bezier(0.65, 0, 0.35, 1) 0.5s forwards; }
+      .boot-skyline .ghost { stroke-dasharray: none; stroke-dashoffset: 0; animation: none; opacity: 0.12; }
+      .boot-skyline .sky-city { stroke: #1b2236; stroke-width: 1.4; }
+      .boot-skyline .sky-bridge { stroke: #e5512b; stroke-width: 1.6; animation-delay: 0.7s; }
+      .boot-skyline .sky-sun { stroke: #f6b53d; stroke-width: 1.6; animation-delay: 1.6s; animation-duration: 1s; }
+      .boot-skyline .sky-water { stroke: #2c6fb7; stroke-width: 1.2; stroke-dasharray: 1; opacity: 0.6; animation-delay: 1.2s; }
+      .boot-bar { position: relative; width: 148px; height: 3px; margin-top: 22px; border-radius: 3px; background: rgba(27, 34, 54, 0.1); overflow: hidden; }
+      .boot-bar i { position: absolute; inset: 0; width: 40%; border-radius: 3px; background: linear-gradient(90deg, transparent, #e5512b, transparent); animation: boot-slide 1.3s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+      .boot-status { min-height: 18px; margin: 12px 0 0; font-size: 12.5px; color: #8a8a94; font-variant-numeric: tabular-nums; }
+      .boot.failed .boot-bar { display: none; }
+      .boot.failed .boot-status { color: #b83c1c; max-width: 360px; font-size: 14px; }
+      @keyframes boot-rise { from { opacity: 0; transform: translateY(10px) scaleY(0.2); } }
+      @keyframes boot-sun { from { opacity: 0; transform: translate(-6px, 8px) scale(0.4); } }
+      @keyframes boot-fade { from { opacity: 0; transform: translateY(6px); } }
+      @keyframes boot-draw { to { stroke-dashoffset: 0; } }
+      @keyframes boot-slide { from { transform: translateX(-110%); } to { transform: translateX(260%); } }
+      @media (prefers-reduced-motion: reduce) {
+        .boot *, .boot { animation: none !important; transition-duration: 0.01s !important; }
+        .boot-skyline path { stroke-dashoffset: 0; }
+      }
+    </style>
   </head>
   <body>
+    <div id="boot" class="boot" role="status" aria-live="polite">
+      <div class="boot-inner">
+        <svg class="boot-mark" viewBox="0 0 48 48" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path class="mk mk-3" d="M33.7 12.2a4.7 4.7 0 1 0 9.4 0a4.7 4.7 0 1 0 -9.4 0Z" fill="#f6b53d"/><path class="mk mk-0" d="M3.91 33.91L24 45.51L24 41.8L3.91 30.2Z" fill="#2c6fb7"/><path class="mk mk-0" d="M44.09 33.91L44.09 30.2L24 41.8L24 45.51Z" fill="#1d4f8a"/><path class="mk mk-0" d="M24 18.6L44.09 30.2L24 41.8L3.91 30.2Z" fill="#f5ecdb"/><path class="mk mk-1" d="M16.97 25.21L24 29.27L24 10.48L16.97 6.42Z" fill="#e5512b"/><path class="mk mk-1" d="M31.03 25.21L31.03 6.42L24 10.48L24 29.27Z" fill="#b83c1c"/><path class="mk mk-1" d="M24 2.36L31.03 6.42L24 10.48L16.97 6.42Z" fill="#ff8a5c"/><path class="mk mk-1" d="M16.97 19.41L24 23.47L24 22.31L16.97 18.25Z" fill="rgba(255,250,240,0.55)"/><path class="mk mk-1" d="M31.03 19.41L31.03 18.25L24 22.31L24 23.47Z" fill="rgba(255,250,240,0.32)"/><path class="mk mk-1" d="M16.97 15.24L24 19.3L24 18.14L16.97 14.08Z" fill="rgba(255,250,240,0.55)"/><path class="mk mk-1" d="M31.03 15.24L31.03 14.08L24 18.14L24 19.3Z" fill="rgba(255,250,240,0.32)"/><path class="mk mk-1" d="M16.97 11.06L24 15.12L24 13.96L16.97 9.9Z" fill="rgba(255,250,240,0.55)"/><path class="mk mk-1" d="M31.03 11.06L31.03 9.9L24 13.96L24 15.12Z" fill="rgba(255,250,240,0.32)"/><path class="mk mk-2" d="M26.01 30.43L32.84 34.38L32.84 24.4L26.01 20.46Z" fill="#f0e2c6"/><path class="mk mk-2" d="M39.87 30.32L39.87 20.34L32.84 24.4L32.84 34.38Z" fill="#d5bd93"/><path class="mk mk-2" d="M33.04 16.4L39.87 20.34L32.84 24.4L26.01 20.46Z" fill="#fffaf0"/><path class="mk mk-2" d="M8.13 30.32L15.16 34.38L15.16 28.34L8.13 24.28Z" fill="#f0e2c6"/><path class="mk mk-2" d="M21.79 30.55L21.79 24.52L15.16 28.34L15.16 34.38Z" fill="#d5bd93"/><path class="mk mk-2" d="M14.76 20.46L21.79 24.52L15.16 28.34L8.13 24.28Z" fill="#fffaf0"/><path class="mk mk-2" d="M14.76 22.31L18.58 24.52L15.16 26.49L11.34 24.28Z" fill="#2c6fb7"/><path class="mk mk-2" d="M24.2 31.7L31.43 35.87L24 40.16L16.77 35.99Z" fill="#5fae5a"/><path class="mk mk-2" d="M21.4 32.8a2.6 2.6 0 1 0 5.2 0a2.6 2.6 0 1 0 -5.2 0Z" fill="#3f8a49"/></svg>
+        <div class="boot-word">TinyTown</div>
+        <p class="boot-tag">A Tamagotchi for your startup.</p>
+        <svg class="boot-skyline" viewBox="0 0 280 64" aria-hidden="true">
+          <path class="ghost sky-water" pathLength="1" d="M0 60.5h280"/><path class="ghost sky-bridge" pathLength="1" d="M20 44h96M44 56V14M92 56V14M20 50 44 15Q68 42 92 15L116 50M41 14h6M89 14h6"/><path class="ghost sky-city" pathLength="1" d="M0 56q10-14 22-8M118 56V40h8V30h8v-6h4v32M142 56V36h6V28h6v28M156 56l8-44 8 44M174 56V32h10v-8h6v32M192 56V40h8v16M202 56q16-26 40-20 22 6 38 20M223 40.5h2.4M228.5 38.6h2.4M234 37.4h2.4M239.5 36.9h2.4M245 37.2h2.4M250.5 38h2.4M0 56h280"/><path class="ghost sky-sun" pathLength="1" d="M252 20a7 7 0 1 0 14 0a7 7 0 1 0-14 0"/>
+          <path class="sky-water" pathLength="1" d="M0 60.5h280"/>
+          <path class="sky-bridge" pathLength="1" d="M20 44h96M44 56V14M92 56V14M20 50 44 15Q68 42 92 15L116 50M41 14h6M89 14h6"/>
+          <path class="sky-city" pathLength="1" d="M0 56q10-14 22-8M118 56V40h8V30h8v-6h4v32M142 56V36h6V28h6v28M156 56l8-44 8 44M174 56V32h10v-8h6v32M192 56V40h8v16M202 56q16-26 40-20 22 6 38 20M223 40.5h2.4M228.5 38.6h2.4M234 37.4h2.4M239.5 36.9h2.4M245 37.2h2.4M250.5 38h2.4M0 56h280"/>
+          <path class="sky-sun" pathLength="1" d="M252 20a7 7 0 1 0 14 0a7 7 0 1 0-14 0"/>
+        </svg>
+        <div class="boot-bar"><i></i></div>
+        <p class="boot-status">Laying out the streets…</p>
+      </div>
+    </div>
     <div id="world" aria-label="Your city"></div>
     <div id="ui"></div>
     <script type="module" src="/src/main.ts"></script>

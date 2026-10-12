@@ -142,9 +142,11 @@ export interface BlockCoord {
   bz: number;
 }
 
-export type BlockUse = 'hq' | 'city' | 'market' | 'park' | 'presidio' | 'hill';
+export type BlockUse = 'hq' | 'city' | 'market' | 'park' | 'presidio' | 'hill' | 'civic';
 
 export const HQ_BLOCK: BlockCoord = { bx: 0, bz: 0 };
+/** Civic Center: City Hall and its plaza, just off Market. */
+export const CIVIC_BLOCK: BlockCoord = { bx: -3, bz: -4 };
 
 /** Market Street runs along x − z = MARKET_K, from the Ferry Building to Twin Peaks. */
 export const MARKET_K = 10;
@@ -188,6 +190,7 @@ function hills(x: number, z: number): number {
 function blockUseRaw(b: BlockCoord): BlockUse | null {
   const { bx, bz } = b;
   if (bx === HQ_BLOCK.bx && bz === HQ_BLOCK.bz) return 'hq';
+  if (bx === CIVIC_BLOCK.bx && bz === CIVIC_BLOCK.bz) return 'civic';
   if (bx - bz * 1 === MARKET_K / PITCH && bz >= -4) return 'market';
   if (bz === -3 && bx <= -3) return 'park';
   if ((bx <= -6 && bz >= 0) || (bx === -5 && bz === 1)) return 'presidio';
@@ -264,7 +267,11 @@ export function terrainHeight(x: number, z: number): number {
   const airport = Math.hypot(Math.max(0, AIRPORT.x0 - 1 - x, x - AIRPORT.x1 - 1), Math.max(0, AIRPORT.z0 - 1 - z, z - AIRPORT.z1 - 1));
   const flat = smooth(0.2, 2.6, cityFlatness(x, z)) * smooth(0, 3, airport);
   let h = hills(x, z) * flat;
-  for (const isl of Object.values(ISLANDS)) h += bump(x, z, isl.x, isl.z, isl.r, isl.h);
+  for (const isl of Object.values(ISLANDS)) {
+    // Your island and its launch site are flat-topped rock (room for an estate and a pad); the rest are hills.
+    const d = Math.hypot(x - isl.x, z - isl.z) / isl.r;
+    h += isl.id === 'founder' || isl.id === 'launch' ? isl.h * (1 - smooth(0.62, 1, d)) : bump(x, z, isl.x, isl.z, isl.r, isl.h);
+  }
   // Gentle rolling everywhere outside the city.
   h += flat * 0.25 * (Math.sin(x * 0.31) * Math.cos(z * 0.27) + 0.5 * Math.sin(x * 0.7 + z * 0.5));
   if (coast < 0) {
@@ -279,7 +286,10 @@ export function terrainHeight(x: number, z: number): number {
 /** Beach (sand) rather than grass: low, close to the sea, not in the city. */
 export function isBeach(x: number, z: number): boolean {
   const c = coastDistance(x, z);
-  return c < 0 && c > -2.4 && cityFlatness(x, z) > 0.5;
+  // Islands get a narrow strand; the mainland, proper beaches.
+  const island = Math.min(...Object.values(ISLANDS).map((i) => Math.hypot(x - i.x, z - i.z) - i.r));
+  const band = island <= c + 0.01 ? 0.7 : 2.4;
+  return c < 0 && c > -band && cityFlatness(x, z) > 0.5;
 }
 
 // ─── Landmarks and sites ────────────────────────────────────────────────────

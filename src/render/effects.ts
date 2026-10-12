@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GeoBuilder, glowMaterial } from './geo.ts';
+import { GeoBuilder } from './geo.ts';
 import { PALETTE } from './palette.ts';
 import { bright } from './buildings.ts';
 import { rng } from '../world/rng.ts';
@@ -57,7 +57,10 @@ export class Rain {
 
 // ─── Fireworks ────────────────────────────────────────────────────────────
 
-const FIREWORK_COLOURS = [0xff4fd8, 0x4ff2ff, 0xffd23f, 0x7dff8a, 0xff7a3f, 0xb48cff];
+const FIREWORK_COLOURS = [0xff4fd8, 0x4ff2ff, 0xffd23f, 0x7dff8a, 0xff7a3f, 0xb48cff, 0xfff4e0];
+const SPARKS = 160;
+
+type Shape = 'peony' | 'ring' | 'palm' | 'willow';
 
 interface Burst {
   points: THREE.Points;
@@ -66,12 +69,52 @@ interface Burst {
   life: number;
   rocket: THREE.Vector3 | null;
   apex: number;
+  drag: number;
+  gravity: number;
+  trail: number;
 }
 
+/**
+ * Celebration fireworks: a rocket climbs with a sparkling trail and bursts
+ * into a peony, a ring, a palm or a willow, sometimes in two colours, with
+ * a crackle as the sparks die.
+ */
 export class Fireworks {
   readonly object = new THREE.Group();
   private bursts: Burst[] = [];
   private queue: { delay: number; at: THREE.Vector3; colour: number }[] = [];
+  private material: THREE.ShaderMaterial;
+
+  constructor() {
+    this.material = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uScale: { value: Math.min(2, window.devicePixelRatio) } },
+      vertexShader: /* glsl */ `
+        attribute vec3 tint;
+        attribute float alpha;
+        attribute float size;
+        uniform float uScale;
+        varying vec3 vTint;
+        varying float vAlpha;
+        void main() {
+          vTint = tint;
+          vAlpha = alpha;
+          gl_PointSize = size * uScale;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: /* glsl */ `
+        varying vec3 vTint;
+        varying float vAlpha;
+        void main() {
+          vec2 p = gl_PointCoord - 0.5;
+          float d = length(p);
+          float core = smoothstep(0.5, 0.0, d);
+          gl_FragColor = vec4(vTint * (core * 1.4 + 0.2), vAlpha * core);
+        }`,
+    });
+  }
 
   /** Launches `count` rockets around a point, staggered. */
   launch(at: THREE.Vector3, count = 3, spread = 1.5) {
@@ -83,33 +126,49 @@ export class Fireworks {
   }
 
   private spawn(at: THREE.Vector3, colour: number) {
-    const n = 90;
-    const positions = new Float32Array(n * 3);
-    const velocities = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
+    const shapes: Shape[] = ['peony', 'peony', 'ring', 'palm', 'willow'];
+    const shape = shapes[Math.floor(Math.random() * shapes.length)]!;
+    const second = Math.random() < 0.4 ? FIREWORK_COLOURS[Math.floor(Math.random() * FIREWORK_COLOURS.length)]! : colour;
+    const positions = new Float32Array(SPARKS * 3);
+    const velocities = new Float32Array(SPARKS * 3);
+    const tints = new Float32Array(SPARKS * 3);
+    const alphas = new Float32Array(SPARKS).fill(1);
+    const sizes = new Float32Array(SPARKS);
+    const a = new THREE.Color(...bright(colour, 2.6));
+    const b = new THREE.Color(...bright(second, 2.6));
+    const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.random() * 1.2 - 0.6, Math.random() * Math.PI, Math.random() * 1.2 - 0.6));
+    const v = new THREE.Vector3();
+    for (let i = 0; i < SPARKS; i++) {
       positions.set([at.x, at.y, at.z], i * 3);
-      // Uniform-ish sphere
       const u = Math.random() * 2 - 1;
       const t = Math.random() * Math.PI * 2;
-      const s = Math.sqrt(1 - u * u);
-      const speed = 2.2 + Math.random() * 0.6;
-      velocities.set([s * Math.cos(t) * speed, u * speed, s * Math.sin(t) * speed], i * 3);
+      const sq = Math.sqrt(1 - u * u);
+      if (shape === 'ring') {
+        v.set(Math.cos(t), 0, Math.sin(t)).multiplyScalar(2.6).applyQuaternion(tilt);
+      } else if (shape === 'palm') {
+        // A few thick fronds that droop.
+        const frond = Math.floor(Math.random() * 7);
+        const fa = (frond / 7) * Math.PI * 2;
+        v.set(Math.cos(fa) * 0.8, 0.9 + Math.random() * 0.25, Math.sin(fa) * 0.8).multiplyScalar(2.2 * (0.6 + Math.random() * 0.4));
+      } else {
+        v.set(sq * Math.cos(t), u, sq * Math.sin(t)).multiplyScalar((shape === 'willow' ? 1.8 : 2.4) * (0.85 + Math.random() * 0.2));
+      }
+      velocities.set([v.x, v.y, v.z], i * 3);
+      const c = i % 2 ? a : b;
+      tints.set([c.r, c.g, c.b], i * 3);
+      sizes[i] = 2.4 + Math.random() * 1.6;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const material = new THREE.PointsMaterial({
-      color: new THREE.Color(...bright(colour, 3)),
-      size: 3.2 * Math.min(2, window.devicePixelRatio),
-      sizeAttenuation: false,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const points = new THREE.Points(geo, material);
+    geo.setAttribute('tint', new THREE.BufferAttribute(tints, 3));
+    geo.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
+    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    const points = new THREE.Points(geo, this.material);
     points.frustumCulled = false;
     this.object.add(points);
     const apex = at.y + 4 + Math.random() * 2;
-    this.bursts.push({ points, velocities, age: 0, life: 1.8, rocket: at.clone(), apex });
+    const willow = shape === 'willow';
+    this.bursts.push({ points, velocities, age: 0, life: willow ? 2.8 : shape === 'palm' ? 2.2 : 1.8, rocket: at.clone(), apex, drag: willow ? 1.6 : 0.9, gravity: willow ? 1.2 : 2.6, trail: 0 });
   }
 
   update(dt: number) {
@@ -118,35 +177,48 @@ export class Fireworks {
     this.queue = this.queue.filter((q) => q.delay > 0);
 
     for (const b of this.bursts) {
-      const pos = b.points.geometry.attributes.position as THREE.BufferAttribute;
+      const geo = b.points.geometry;
+      const pos = geo.attributes.position as THREE.BufferAttribute;
+      const alpha = geo.attributes.alpha as THREE.BufferAttribute;
       const arr = pos.array as Float32Array;
-      const mat = b.points.material as THREE.PointsMaterial;
       if (b.rocket) {
-        // Rising trail: all particles travel together until the apex.
+        // The climb: the head is spark 0; the rest trail below it, flickering.
         b.rocket.y += dt * 9;
-        for (let i = 0; i < arr.length; i += 3) arr.set([b.rocket.x, b.rocket.y, b.rocket.z], i);
-        mat.size = 2.5;
-        if (b.rocket.y >= b.apex) b.rocket = null;
+        b.trail += dt;
+        for (let i = 0; i < SPARKS; i++) {
+          const k = Math.min(1, (i / SPARKS) * 3);
+          arr[i * 3] = b.rocket.x + (Math.random() - 0.5) * 0.05 * k;
+          arr[i * 3 + 1] = b.rocket.y - k * Math.min(1.6, b.trail * 9);
+          arr[i * 3 + 2] = b.rocket.z + (Math.random() - 0.5) * 0.05 * k;
+          alpha.setX(i, i === 0 ? 1 : (1 - k) * 0.6 * (Math.random() < 0.6 ? 1 : 0.2));
+        }
+        if (b.rocket.y >= b.apex) {
+          for (let i = 0; i < SPARKS; i++) arr.set([b.rocket.x, b.rocket.y, b.rocket.z], i * 3);
+          b.rocket = null;
+        }
       } else {
         b.age += dt;
+        const k = b.age / b.life;
+        const drag = 1 - dt * b.drag;
         for (let i = 0; i < arr.length; i += 3) {
-          b.velocities[i + 1]! -= 2.6 * dt;
-          b.velocities[i]! *= 1 - dt * 0.9;
-          b.velocities[i + 1]! *= 1 - dt * 0.9;
-          b.velocities[i + 2]! *= 1 - dt * 0.9;
+          b.velocities[i + 1]! -= b.gravity * dt;
+          b.velocities[i]! *= drag;
+          b.velocities[i + 1]! *= drag;
+          b.velocities[i + 2]! *= drag;
           arr[i]! += b.velocities[i]! * dt;
           arr[i + 1]! += b.velocities[i + 1]! * dt;
           arr[i + 2]! += b.velocities[i + 2]! * dt;
+          // Fade out, crackling (random twinkle) toward the end.
+          const crackle = k > 0.6 && Math.random() < 0.35 ? 0.15 : 1;
+          alpha.setX(i / 3, Math.max(0, 1 - k * k) * crackle);
         }
-        mat.opacity = Math.max(0, 1 - b.age / b.life);
-        mat.size = 3.2 * Math.min(2, window.devicePixelRatio);
       }
       pos.needsUpdate = true;
+      alpha.needsUpdate = true;
     }
     for (const b of this.bursts.filter((b) => b.age >= b.life)) {
       this.object.remove(b.points);
       b.points.geometry.dispose();
-      (b.points.material as THREE.Material).dispose();
     }
     this.bursts = this.bursts.filter((b) => b.age < b.life);
   }
@@ -249,120 +321,6 @@ export class Train {
       // Keep right: each direction has its own track.
       car.group.position.set(p.x + t.z * 0.36, p.y + 0.02, p.z - t.x * 0.36);
       car.group.rotation.y = Math.atan2(-t.z, t.x);
-    }
-  }
-}
-
-// ─── Traffic: little cars on the developed roads ──────────────────────────
-
-/** A straight, contiguous stretch of road a car can drive along. */
-export interface Run {
-  axis: 'x' | 'z';
-  /** Fixed coordinate of the road's centre line. */
-  line: number;
-  from: number;
-  to: number;
-}
-
-interface Car {
-  run: Run;
-  pos: number;
-  dir: 1 | -1;
-  speed: number;
-}
-
-const CAR_COLOURS = [0xf4f2ee, 0xd84a4a, 0x3a7ad8, 0xf2c94c, 0x2f3542, 0x6fcf97, 0xf28a3a, 0xc9ced6];
-
-export class Traffic {
-  readonly object = new THREE.Group();
-  private bodies: THREE.InstancedMesh;
-  /** Low, wide sports cars: their share grows with the city's wealth. */
-  private sports: THREE.InstancedMesh;
-  private luxury = 0;
-  private heads: THREE.InstancedMesh;
-  private tails: THREE.InstancedMesh;
-  private cars: Car[] = [];
-  private runs: Run[] = [];
-  private dummy = new THREE.Object3D();
-  private max: number;
-
-  constructor(max = 60) {
-    this.max = max;
-    const body = new THREE.BoxGeometry(0.34, 0.12, 0.18);
-    body.translate(0, 0.1, 0);
-    this.bodies = new THREE.InstancedMesh(body, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 }), max);
-    this.bodies.castShadow = true;
-    const sport = new THREE.BoxGeometry(0.4, 0.08, 0.2);
-    sport.translate(0, 0.07, 0);
-    this.sports = new THREE.InstancedMesh(sport, new THREE.MeshStandardMaterial({ roughness: 0.25, metalness: 0.5 }), max);
-    this.sports.castShadow = true;
-    const SPORT_COLOURS = [0xd8402e, 0xf2c84b, 0x1c1c24, 0xf4f4f0, 0x2f6fa8];
-    for (let i = 0; i < max; i++) this.sports.setColorAt(i, new THREE.Color(SPORT_COLOURS[i % SPORT_COLOURS.length]!));
-    const light = new THREE.BoxGeometry(0.02, 0.035, 0.14);
-    this.heads = new THREE.InstancedMesh(light.clone().translate(0.171, 0.11, 0), glowMaterial({ color: new THREE.Color(3, 2.8, 2.2) }), max);
-    this.tails = new THREE.InstancedMesh(light.translate(-0.171, 0.11, 0), glowMaterial({ color: new THREE.Color(2.6, 0.2, 0.15) }), max);
-    for (let i = 0; i < max; i++) this.bodies.setColorAt(i, new THREE.Color(CAR_COLOURS[i % CAR_COLOURS.length]!));
-    for (const m of [this.bodies, this.sports, this.heads, this.tails]) {
-      m.count = 0;
-      m.frustumCulled = false;
-      this.object.add(m);
-    }
-  }
-
-  setRoads(runs: Run[]) {
-    this.runs = runs.filter((r) => r.to - r.from >= 2);
-    for (const car of this.cars) {
-      if (!this.runs.includes(car.run)) this.place(car);
-    }
-  }
-
-  /** Share of cars (0–1) that are sports cars. */
-  setLuxury(share: number) {
-    this.luxury = Math.min(1, Math.max(0, share));
-  }
-
-  setCount(n: number) {
-    n = Math.min(this.max, this.runs.length ? n : 0);
-    while (this.cars.length < n) {
-      const car = { run: this.runs[0]!, pos: 0, dir: 1 as const, speed: 1 };
-      this.place(car);
-      this.cars.push(car);
-    }
-    this.cars.length = n;
-  }
-
-  private place(car: Car) {
-    const run = this.runs[Math.floor(Math.random() * this.runs.length)];
-    if (!run) return;
-    car.run = run;
-    car.dir = Math.random() < 0.5 ? 1 : -1;
-    car.pos = run.from + Math.random() * (run.to - run.from);
-    car.speed = 1.1 + Math.random() * 0.8;
-  }
-
-  update(dt: number) {
-    const regular = this.cars.length - Math.round(this.cars.length * this.luxury);
-    this.cars.forEach((car, i) => {
-      car.pos += car.dir * car.speed * dt;
-      if (car.pos > car.run.to || car.pos < car.run.from) {
-        this.place(car);
-      }
-      const lane = car.dir * 0.2;
-      const [x, z] = car.run.axis === 'x' ? [car.pos, car.run.line + lane] : [car.run.line - lane, car.pos];
-      this.dummy.position.set(x, 0, z);
-      this.dummy.rotation.y = car.run.axis === 'x' ? (car.dir > 0 ? 0 : Math.PI) : car.dir > 0 ? -Math.PI / 2 : Math.PI / 2;
-      this.dummy.updateMatrix();
-      // The last `sporty` cars are sports cars; the rest are everyday cars.
-      if (i >= regular) this.sports.setMatrixAt(i - regular, this.dummy.matrix);
-      else this.bodies.setMatrixAt(i, this.dummy.matrix);
-      this.heads.setMatrixAt(i, this.dummy.matrix);
-      this.tails.setMatrixAt(i, this.dummy.matrix);
-    });
-    this.bodies.count = regular;
-    this.sports.count = this.cars.length - regular;
-    for (const m of [this.bodies, this.sports, this.heads, this.tails]) {
-      if (m !== this.bodies && m !== this.sports) m.count = this.cars.length;
-      m.instanceMatrix.needsUpdate = true;
     }
   }
 }

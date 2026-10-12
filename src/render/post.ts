@@ -9,13 +9,33 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 export type Quality = 'low' | 'medium' | 'high';
 
 /**
+ * GTAO that ignores see-through things. Its normal/depth pre-pass draws every
+ * mesh with a normal material, so sprites (the fog), wakes and other
+ * transparent effects would turn into solid slabs that cast AO "shadows".
+ */
+class SolidAO extends GTAOPass {
+  private hidden: THREE.Object3D[] = [];
+
+  override render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget, deltaTime: number, maskActive: boolean) {
+    this.scene.traverseVisible((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+      if ((o as THREE.Sprite).isSprite || (m && !Array.isArray(m) && m.transparent)) this.hidden.push(o);
+    });
+    for (const o of this.hidden) o.visible = false;
+    super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    for (const o of this.hidden) o.visible = true;
+    this.hidden.length = 0;
+  }
+}
+
+/**
  * The final look: a miniature you could pick up. Soft contact shadows
  * (GTAO), bloom on lights after dark, a tilt-shift blur at the top and
  * bottom of the frame, and a gentle filmic grade with a vignette.
  */
 export class Post {
   readonly composer: EffectComposer;
-  private ao: GTAOPass;
+  private ao: SolidAO;
   private bloom: UnrealBloomPass;
   private grade: ShaderPass;
   quality: Quality;
@@ -27,7 +47,7 @@ export class Post {
     this.composer = new EffectComposer(renderer, target);
     this.composer.addPass(new RenderPass(scene, camera));
 
-    this.ao = new GTAOPass(scene, camera, size.x, size.y);
+    this.ao = new SolidAO(scene, camera, size.x, size.y);
     this.ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.6, thickness: 1.4, scale: 1.15, samples: 12, distanceFallOff: 1, screenSpaceRadius: false });
     this.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
     this.ao.blendIntensity = 0.85;
