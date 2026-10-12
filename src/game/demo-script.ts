@@ -32,7 +32,8 @@ const SCRIPT: [day: number, item: string, plot?: string][] = [
   // Only affordable in a boosted demo (?demo&boost=40): the rest are skipped.
   [520, 'gulfstream'],
   [533, 'long-range'],
-  [536, 'rocket'],
+  // The boosted demo first crosses $1M MRR (the rocket's unlock) on day 537.
+  [537, 'rocket'],
 ];
 
 export function demoActions(snapshots: Snapshot[]): Action[] {

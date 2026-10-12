@@ -203,4 +203,12 @@ describe('catalogue', () => {
     expect(g.owned.length).toBeGreaterThan(15);
     expect(FREE_HOUSED).toBe(100);
   });
+
+  it('ends the boosted demo with a rocket on the launch pad', () => {
+    const t = demoTimeline({ boost: 40 });
+    const g = simulate(t.snapshots, demoActions(t.snapshots), t.snapshots.length - 1);
+    expect(g.rejected).toEqual([]);
+    expect(g.regions.launchpad).toBe(true);
+    expect(g.owned.some((o) => o.item === 'rocket' && o.site === 'launchpad')).toBe(true);
+  });
 });
