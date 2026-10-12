@@ -19,7 +19,6 @@ Every task follows the visual bar in `CLAUDE.md`: screenshot it, day and night, 
 
 The four agents' work is committed. Items each one reported as unfinished are listed here.
 
-- [ ] Traffic and pedestrians: _see "Agent leftovers" below._
 - [ ] **Perf pass on a real GPU.** Measure draw calls and triangles with `tools/perf.mjs` at day 540, `quality=high`. Target a few hundred draw calls. If over budget, batch or instance more: tents, trees in parks, district items.
 - [ ] **Bundle size.** The production chunk is over 1 MB. Split out the showcase-only code and lazy-load `ui/thumbnails.ts` and the post-processing passes if that helps first paint.
 
@@ -71,7 +70,7 @@ The order agreed with the owner: the game loop first (done), then hosting.
 
 ## Agent leftovers
 
-_Filled in from each agent's final report at handoff._
+From the four agents' final reports at handoff (homes, models, UI, traffic). The homes agent's leftovers are under P2.
 
 ### UI and branding (UI agent's report)
 
@@ -106,3 +105,22 @@ Done: shared `Kit` in `towers.ts` with three extra lit layers (window glass tint
 - [ ] Hacker house and studio: more rooftop detail.
 - [ ] Encampment: close-up review (handle with dignity).
 - [ ] Check founder homes and block items from the back (`az=225`).
+
+### Traffic and pedestrians (traffic agent's report)
+
+Done:
+- **Cars:** nine instanced car models (about 600 tris each, 4 meshes per model) with paint colours in real-world shares. Night head and tail lights, brake lights, headlight cones, body roll and nose-dive.
+- **Lane graph:** covers the grid plus Market, the Embarcadero, the bridge approach and the Great Highway. Smooth turns, 49 all-way stops, 5 signalised Market crossings with a green wave, and a gridlock breaker.
+- **Bridges:** Golden Gate two lanes each way; Bay Bridge westbound on the upper deck and eastbound on the lower deck.
+- **People:** about 360 pedestrians with corner crossings, plus 22 joggers.
+- **Testing:** a 15-minute soak test had zero overlaps and zero deadlocks.
+- **Cost:** 41 draw calls (42 at night), about 0.7 ms per update. City API: `setRoads`, `setCount` (`plan.traffic × 2.6`, cap 160), `setLuxury`, `setBlocks`, `update`, and an optional `blocked(x, z, r)` hook.
+- **Showcase sets:** `cars` (`&only=sedan,taxi`) and `people`.
+
+- [ ] **Bridge ramps:** bridge decks end in fades instead of ramps into the city (the decks float about 2.3 above the approaches). Draw ramps in `landmarks.ts` so bridge traffic joins the grid.
+- [ ] **Streetcars vs cars:** cars crossing Market or Powell can pass through an F-line car or cable car. Wire `traffic.blocked` from `Life` (cable cars) and `Train` (F-line).
+- [ ] Fading cars still cast a full shadow.
+- [ ] Shadow side: the shadow offset (0.03) is bigger than car ground clearance, so cars now cast shadows from both faces. Check other low objects for missing shadows.
+- [ ] Not built yet: pedestrian walk signals, lane changes on the bridges, people on Market's plazas and the piers, umbrellas in rain.
+- [ ] Cab (638) and sports car (648) are about 8% over the ~600 triangle budget.
+- [ ] Watch the motion on a real GPU (headless frames were too slow to judge it).

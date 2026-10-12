@@ -681,6 +681,7 @@ interface Path {
 const BRAKE = 1.25;
 const HARD_BRAKE = 6;
 const LAT = 0.55;
+const BRIDGE_SPACING = 2.0;
 
 function mkPath(kind: Path['kind'], xyz: number[], speed: number, from: GNode | null, to: GNode | null): Path {
   const n = xyz.length / 3;
@@ -1035,6 +1036,8 @@ function buildGraph(cells: readonly RoadCell[]): Graph {
         const side = -d1z * d2x + d1x * d2z;
         c.turn = uturn ? 2 : dot > 0.7 ? 0 : side > 0 ? 1 : -1;
         c.weight = (uturn ? 0.01 : c.turn === 0 ? 1 : c.turn > 0 ? 0.75 : 0.55) * b.weight * (b.to?.spawn ? 0.35 : 1);
+        // Traffic gravitates downtown: exits heading toward the Financial District are favoured.
+        if (b.to && a.from) c.weight *= Math.exp((downtown(a.from) - downtown(b.to)) * 0.06);
         a.outs.push(c);
         n.conns.push(c);
         conns.push(c);
@@ -1062,14 +1065,16 @@ function buildGraph(cells: readonly RoadCell[]): Graph {
   }
   const bb = LANDMARKS.bayBridge;
   const UP = 2.35;
+  // The east span runs on to Oakland off-screen: streams start and end just past the tunnel.
+  const BB_EAST = Math.min(bb.x1, 39);
   const LOW = 1.9;
-  const westbound = (zSusp: number, zEast: number) => [bb.x1 + 1, UP, bb.z + zEast, 36.4, UP, bb.z + zEast, 33, UP, bb.z + (zEast + zSusp) / 2, 29.8, UP, bb.z + zSusp, bb.x0 + 0.5, UP, bb.z + zSusp];
-  const eastbound = (zSusp: number, zEast: number) => [bb.x0 + 0.5, LOW, bb.z + zSusp, 29.8, LOW, bb.z + zSusp, 33, (LOW + UP) / 2, bb.z + (zEast + zSusp) / 2, 36.4, UP, bb.z + zEast, bb.x1 + 1, UP, bb.z + zEast];
+  const westbound = (zSusp: number, zEast: number) => [BB_EAST, UP, bb.z + zEast, 36.4, UP, bb.z + zEast, 33, UP, bb.z + (zEast + zSusp) / 2, 29.8, UP, bb.z + zSusp, bb.x0 + 0.5, UP, bb.z + zSusp];
+  const eastbound = (zSusp: number, zEast: number) => [bb.x0 + 0.5, LOW, bb.z + zSusp, 29.8, LOW, bb.z + zSusp, 33, (LOW + UP) / 2, bb.z + (zEast + zSusp) / 2, 36.4, UP, bb.z + zEast, BB_EAST, UP, bb.z + zEast];
   for (const xyz of [westbound(-0.2, -0.2), westbound(0.2, -0.48), eastbound(-0.2, 0.2), eastbound(0.2, 0.48)]) {
     const p = mkPath(LANE, xyz, 1.55, null, null);
     p.bridge = true;
     // Through Yerba Buena: hidden between the tunnel portals.
-    const s0 = xyz[0]! > xyz[xyz.length - 3]! ? bb.x1 + 1 - 36.2 : 30.1 - bb.x0 - 0.5;
+    const s0 = xyz[0]! > xyz[xyz.length - 3]! ? BB_EAST - 36.2 : 30.1 - bb.x0 - 0.5;
     p.hide = [s0, s0 + 6.1];
     bridges.push(p);
   }
@@ -1077,7 +1082,7 @@ function buildGraph(cells: readonly RoadCell[]): Graph {
   const spots = lanes.filter((l) => !l.from?.spawn && !l.to?.spawn && l.len > 1.6);
   const spotCum: number[] = [];
   let acc = 0;
-  for (const l of spots) spotCum.push((acc += l.len));
+  for (const l of spots) spotCum.push((acc += l.len * (0.35 + 2.4 * Math.exp(-downtown(l.to!) / 9))));
   return {
     nodes: [...nodes.values()],
     lanes,
@@ -1087,6 +1092,11 @@ function buildGraph(cells: readonly RoadCell[]): Graph {
     sources: lanes.filter((l) => l.from?.spawn),
     bridges,
   };
+}
+
+/** Distance from the heart of downtown (around Market and Montgomery). */
+function downtown(n: { x: number; z: number }): number {
+  return Math.hypot(n.x - 1, n.z + 5);
 }
 
 function minDist(a: Path, b: Path): number {
@@ -1185,7 +1195,7 @@ export class Traffic {
   private r = rng(4242);
   private cap: number;
 
-  constructor(cap = 220) {
+  constructor(cap = 320) {
     this.cap = cap;
     this.fleets = CAR_MODELS.map((m) => new Fleet(m, m === 'bus' ? 12 : cap, this.mats));
     for (const f of this.fleets) for (const m of f.meshes) this.object.add(m);
@@ -1199,7 +1209,6 @@ export class Traffic {
     this.people = new Pedestrians();
     this.object.add(this.people.object);
     this.object.name = 'traffic';
-    (globalThis as unknown as { __traffic: Traffic }).__traffic = this; // TEMP-DEBUG
   }
 
   /** For tests and debugging: the live cars and the graph. */
@@ -1324,11 +1333,15 @@ export class Traffic {
 
   /** Cars driving around town (bridge traffic scales with it). */
   setCount(n: number) {
-    this.target = Math.max(0, Math.min(this.cap - 60, Math.round(n)));
+    this.target = Math.max(0, Math.min(160, this.cap - 120, Math.round(n)));
   }
 
+  /** Bridge cars: about one every 2 units of lane in a busy city, thinner in a small one. */
   private get bridgeTarget() {
-    return this.graph ? Math.round(16 + this.target * 0.3) : 0;
+    if (!this.graph) return 0;
+    let len = 0;
+    for (const p of this.graph.bridges) len += p.len;
+    return Math.round((len / BRIDGE_SPACING) * (0.35 + 0.65 * Math.min(1, this.target / 100)));
   }
 
   private pickModel(bridge: boolean): number {
@@ -1417,7 +1430,8 @@ export class Traffic {
     // City cars
     let city = 0;
     for (const c of this.cars) if (!c.bridge && !c.leaving) city++;
-    let tries = this.fill ? this.target * 4 : 3;
+    // A big jump (seeking the timeline) refills quickly; day-to-day changes trickle in.
+    let tries = this.fill ? this.target * 4 : Math.max(3, Math.ceil((this.target - city) / 3));
     while (city < this.target && tries-- > 0) {
       if (!this.fill && this.r() < 0.35 && g.sources.length) {
         const p = g.sources[Math.floor(this.r() * g.sources.length)]!;
@@ -1445,10 +1459,10 @@ export class Traffic {
     // Bridge streams: keep each lane fed from its far end.
     let bridge = 0;
     for (const c of this.cars) if (c.bridge) bridge++;
-    const perLane = this.bridgeTarget / Math.max(1, g.bridges.length);
+    const density = this.bridgeTarget / Math.max(1, g.bridges.reduce((a, p) => a + p.len, 0));
     for (const p of g.bridges) {
+      const spacing = 1 / Math.max(0.05, density);
       if (this.fill) {
-        const spacing = p.len / Math.max(1, perLane);
         for (let s = spacing * this.r(); s < p.len - 0.5 && bridge < this.bridgeTarget; s += spacing * (0.6 + this.r() * 0.8)) {
           this.spawn(p, s, p.speed, true, true);
           bridge++;
@@ -1459,7 +1473,7 @@ export class Traffic {
       if (bridge < this.bridgeTarget && (!first || first.s - first.half > p.nextGap)) {
         this.spawn(p, 0, p.speed * 0.9, true, false).appear = 1;
         bridge++;
-        p.nextGap = 0.6 + this.r() * (p.len / Math.max(1, perLane)) * 1.4;
+        p.nextGap = 0.5 + spacing * (0.3 + this.r() * 1.2);
       }
     }
     this.fill = false;
@@ -1591,7 +1605,23 @@ export class Traffic {
         c.stopT = n.signal ? 0 : 0.35 + this.r() * 0.45;
         n.waiting.push(c);
       }
-      if (c.atLine) c.stopT -= dt;
+      if (c.atLine) {
+        c.stopT -= dt;
+        const waited = now - c.arrived;
+        // Gridlock breaker: if the way ahead stays full, take another exit; failing that, pull over and park.
+        if (waited > 6 && !this.roomAfter(c)) {
+          for (const o of p.outs) {
+            if (o === c.next || (o.turn === 2 && p.outs.length > 1)) continue;
+            const last = o.outs[0]?.cars[0];
+            if (!last || last.s - last.half > c.half * 2 + 0.12) {
+              c.next = o;
+              c.next2 = o.outs[0] ?? null;
+              break;
+            }
+          }
+        }
+        if (waited > 30) c.leaving = true;
+      }
       // At a signal, roll through on green without stopping; at a stop sign, stop first.
       const go = n.signal
         ? (stopped ? signalState(n, p.phase, now) < 2 : signalState(n, p.phase, now) === 0 && d < 0.9) && p.cars[c.idx + 1] === undefined && this.mayGo(c, n)
@@ -2197,6 +2227,8 @@ export function carShowcase(): { label: string; object: THREE.Object3D; size: nu
             m.needsUpdate = true;
           }
         }
+        mats.paint.envMapIntensity = glassMaterial.envMapIntensity * 0.75;
+        mats.glass.envMapIntensity = glassMaterial.envMapIntensity * 1.1;
         (fleet.brake.array as Float32Array)[0] = Math.sin(t * 2) > 0.3 ? 1 : 0;
         fleet.brake.needsUpdate = true;
       },
