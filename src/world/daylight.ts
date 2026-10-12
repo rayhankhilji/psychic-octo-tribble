@@ -37,7 +37,7 @@ interface Key {
   exposure: number;
 }
 
-// Golden Coast: bright Californian days, long golden evenings, moonlit nights.
+// The Bay: bright Californian days, long golden evenings, moonlit nights.
 const KEYS: Key[] = [
   { h: 0, light: '#8fa6ff', intensity: 0.6, sky: '#34447e', ground: '#16152a', hemi: 0.8, fog: '#121a38', night: 1, bloom: 0.7, exposure: 1.15 },
   { h: 5.2, light: '#8fa6ff', intensity: 0.6, sky: '#34447e', ground: '#16152a', hemi: 0.8, fog: '#141c3c', night: 1, bloom: 0.7, exposure: 1.15 },

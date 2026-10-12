@@ -1466,20 +1466,33 @@ export class Traffic {
   }
 
   /** Bumper-to-bumper gap to whoever is ahead (on this path or the next two), and their speed. */
-  private leader(c: Car): [number, number] {
+  private leader(c: Car) {
+    const L = this.lead;
     const p = c.path;
     const o = p.cars[c.idx + 1];
-    if (o) return [o.s - c.s - o.half - c.half, o.v];
+    L.gap = Infinity;
+    L.v = 0;
+    if (o) {
+      L.gap = o.s - c.s - o.half - c.half;
+      L.v = o.v;
+      return L;
+    }
     let d = p.len - c.s;
-    for (const q of [c.next, c.next2]) {
+    for (let k = 0; k < 2; k++) {
+      const q = k ? c.next2 : c.next;
       if (!q) break;
       const f = q.cars[0];
-      if (f && f !== c) return [d + f.s - f.half - c.half, f.v];
+      if (f && f !== c) {
+        L.gap = d + f.s - f.half - c.half;
+        L.v = f.v;
+        return L;
+      }
       d += q.len;
       if (d > 3) break;
     }
-    return [Infinity, 0];
+    return L;
   }
+  private lead = { gap: Infinity, v: 0 };
 
   /** May this car, stopped at the line, go into the junction now? */
   private mayGo(c: Car, n: GNode): boolean {
@@ -1507,7 +1520,7 @@ export class Traffic {
   }
 
   update(dt: number) {
-    dt = Math.min(dt, 0.05);
+    dt = Math.max(0, Math.min(dt, 0.05));
     this.time += dt;
     const g = this.graph;
     if (!g) return;
@@ -1595,7 +1608,7 @@ export class Traffic {
     if (p.kind === CONN) p.from!.busyUntil = now + 0.3;
     else if (n && dEnd < 0.9 + c.half && c.v > 0.08) n.busyUntil = now + 0.3;
     // Following
-    const [gap, vl] = this.leader(c);
+    const { gap, v: vl } = this.leader(c);
     const g0 = 0.07 + c.v * 0.32;
     if (gap < Infinity) vt = Math.min(vt, Math.sqrt(vl * vl + 2 * BRAKE * Math.max(0, gap - g0)));
     if (gap < 0.03) vt = 0;
@@ -1793,9 +1806,10 @@ interface Walker {
   x: number;
   z: number;
   y: number;
-  shirt: number;
-  pants: number;
-  skin: number;
+  /** Linear RGB, copied into the instance slot each frame. */
+  shirt: number[];
+  pants: number[];
+  skin: number[];
 }
 
 /** Tiny people: trousers, shirt and head meshes; limbs swing in the vertex shader. */
@@ -1886,7 +1900,10 @@ class Pedestrians {
 
   private walker(block: number, u: number, jogger: boolean): Walker {
     const r = this.r;
-    const colour = (p: Palette) => tmpC.setHex(weighted(p, r())).getHex();
+    const colour = (p: Palette) => {
+      tmpC.setHex(weighted(p, r()));
+      return [tmpC.r, tmpC.g, tmpC.b];
+    };
     return {
       block, u, dir: r() < 0.5 ? 1 : -1, speed: jogger ? 0.26 + r() * 0.08 : 0.075 + r() * 0.045, state: 0, timer: 0,
       lateral: (r() - 0.5) * 0.1, phase: r() * 10, wx: new Float32Array(4), wz: new Float32Array(4), t: 0, tLen: 1, toBlock: 0, toU: 0, node: null,
@@ -1921,7 +1938,9 @@ class Pedestrians {
     const m = this.matrix.array as Float32Array;
     const fadeA = this.fade.array as Float32Array;
     const walkA = this.walk.array as Float32Array;
-    const [shirtA, pantsA, skinA] = this.colors.map((c) => c.array as Float32Array) as [Float32Array, Float32Array, Float32Array];
+    const shirtA = this.colors[0]!.array as Float32Array;
+    const pantsA = this.colors[1]!.array as Float32Array;
+    const skinA = this.colors[2]!.array as Float32Array;
     let n = 0;
     for (const w of this.walkers) {
       const visible = w.nightRank < (w.jogger ? 1 - 0.9 * night : outAfterDark);
@@ -1944,16 +1963,14 @@ class Pedestrians {
       fadeA[n] = w.fade;
       walkA[n * 2] = w.phase;
       walkA[n * 2 + 1] = amp;
-      for (const [arr, hex] of [[shirtA, w.shirt], [pantsA, w.pants], [skinA, w.skin]] as const) {
-        tmpC.setHex(hex);
-        arr[n * 3] = tmpC.r;
-        arr[n * 3 + 1] = tmpC.g;
-        arr[n * 3 + 2] = tmpC.b;
-      }
+      shirtA.set(w.shirt, n * 3);
+      pantsA.set(w.pants, n * 3);
+      skinA.set(w.skin, n * 3);
       n++;
     }
     for (const mesh of this.meshes) mesh.count = n;
-    for (const a of [this.matrix, this.fade, this.walk, ...this.colors]) a.needsUpdate = true;
+    this.matrix.needsUpdate = this.fade.needsUpdate = this.walk.needsUpdate = true;
+    for (const a of this.colors) a.needsUpdate = true;
   }
 
   /** Walks one person on. Returns whether their legs are moving. */

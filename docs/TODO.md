@@ -1,0 +1,76 @@
+# TinyTown backlog
+
+Prioritised. Work from the top unless the owner asks for something else. When you finish something, tick it off here and update "Current state" in `docs/HANDOFF.md`. Add new findings where they belong.
+
+Every task follows the visual bar in `CLAUDE.md`: screenshot it, day and night, before calling it done.
+
+## P0: Housekeeping
+
+- [ ] **Base branch.** `claude/tender-keller-mnunoy` is the only branch on GitHub. Ask the owner whether to create `main` from it, so future work can go through PRs.
+- [ ] **Refresh README screenshots** (`docs/images/city.png`, `build.png`, `evening.png`, `night.png`, `decay.png`, `island.png`). Some may still show the old Golden Coast look. Use `tools/shot.mjs` from a frozen build. Suggested shots:
+  - `city`: `time=13:00`, `--day=end`, with UI
+  - `build`: build menu open (press `b`)
+  - `evening`: `time=18:45`
+  - `night`: `time=22:00`
+  - `decay`: day ~105 at night (tents, dark sign, rust)
+  - `island`: `&boost=40`, focus the island
+
+## P1: Finish the visual overhaul (leftovers from the parallel agents)
+
+The four agents' work is committed. Items each one reported as unfinished are listed here.
+
+- [ ] Towers, HQ, items, founder homes, vehicles: _see "Agent leftovers" below._
+- [ ] Traffic and pedestrians: _see "Agent leftovers" below._
+- [ ] UI and branding: _see "Agent leftovers" below._
+- [ ] **Perf pass on a real GPU.** Measure draw calls and triangles with `tools/perf.mjs` at day 540, `quality=high`. Target a few hundred draw calls. If over budget, batch or instance more: tents, trees in parks, district items.
+- [ ] **Bundle size.** The production chunk is over 1 MB. Split out the showcase-only code and lazy-load `ui/thumbnails.ts` and the post-processing passes if that helps first paint.
+
+## P2: Polish and bugs
+
+- [ ] **Cloud banks over locked land** are bright white at night. Tint them with the atmosphere (they should go blue-grey under moonlight), or soften them with the fog colour.
+- [ ] Apartments average about 1,530 triangles, just over the 1,500 home budget. Trim them if perf needs it.
+- [ ] `buildings.ts` leaves out the south-west street lamp of each block because `city.ts` puts a junction lamp there. If that lamp moves, add it back.
+- [ ] The camera auto-framing ease feels slow when jumping across the timeline. Check on a real GPU (in SwiftShader it never converges, which is expected).
+- [ ] Check that the house-pick **swap fee** (25% of the house's value, in game money) is wired in the home dialog (see GAME_DESIGN).
+- [ ] Accessibility pass: focus order, aria labels on icon buttons, contrast of small text on the light panels.
+
+## P3: Game features designed but not built
+
+All in `docs/GAME_DESIGN.md` and HANDOFF §7.
+
+- [ ] **"While you were away" summary** when the app opens: income since last visit, what was built, decay or recovery, new unlocks.
+- [ ] **Celebrations:** a moment and a share prompt when the TINYTOWN sign relights; bigger fireworks on MRR milestones; a street festival at high satisfaction and protest signs at City Hall at low satisfaction.
+- [ ] **Moon scene:** after the rocket launch, cut to the moon, show the moon house, then the return. The moon sprite during flights (`src/render/moon.ts`) is the current stand-in.
+- [ ] **Sound:** ambient city by day and night, waves and gulls, construction, fireworks, UI ticks. Off by default or very quiet, with a mute toggle.
+- [ ] **More $1B-a-month projects:** a second bridge, a new district across the bay (Oakland side), an international airport upgrade, "launch a venture" from the venture studio.
+
+## P4: Hosted product (the next big phase)
+
+The order agreed with the owner: the game loop first (done), then hosting.
+
+- [ ] **Accounts and saves:** Supabase auth; move saved actions from localStorage to the server.
+- [ ] **Server-authoritative game:** run `simulate()` on the server, validate every purchase there, and keep the browser display-only for money.
+- [ ] **Connect with Stripe:** OAuth / Stripe Apps, read-only, no pasted keys. Reject test-mode data for the economy.
+- [ ] **PostHog** for monthly active users (the housing population), with a manual entry fallback. **GitHub** as an app/OAuth instead of a token.
+- [ ] **Brand import:** sign up with the startup name and URL, pull the logo and brand colour, and show them on HQ's rooftop sign and street plaque.
+- [ ] **Billing:** $12/month or $99/year with Stripe Checkout, **no free trial**. Ask the owner about a 14-day money-back guarantee. The paywall goes before connecting real data; the demo stays free to view.
+- [ ] **Deploy:** Vercel (front end + API routes) + Supabase. Don't buy a domain without asking.
+
+## P5: Social and growth
+
+- [ ] **Public world page** (opt-in, metrics hidden by default) with a shareable URL.
+- [ ] **Flights and visits:** buy a plane, pick a founder, play a cinematic flight (taxi, take off, 5–10 s over the ocean, land), then explore their city as a visitor and leave a postcard.
+- [ ] **Growth recap video:** export the replay as a 15-second clip.
+- [ ] **Leaderboards / public score**, satisfaction first (safer than MRR).
+
+## P6: Later
+
+- [ ] Desktop mode (small always-on window or wallpaper).
+- [ ] More regions, then more cities and themes, only once the first world is exquisite.
+- [ ] Cosmetics (plane liveries, house paint, seasonal decorations), never economic.
+
+---
+
+## Agent leftovers
+
+_Filled in from each agent's final report at handoff._

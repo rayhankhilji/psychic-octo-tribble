@@ -1,7 +1,7 @@
 /**
- * Golden Coast: a sunny cross between San Francisco and Los Angeles.
- * Stucco and painted-lady houses, terracotta roofs, palms, glass towers,
- * a turquoise bay and golden hills.
+ * A sunny San Francisco Bay: pastel stucco and painted-lady houses,
+ * terracotta roofs, palms and street trees, glass towers, a turquoise bay
+ * and golden hills.
  */
 export const PALETTE = {
   grass: 0x74b84c,

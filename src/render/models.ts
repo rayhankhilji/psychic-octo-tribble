@@ -2184,7 +2184,7 @@ function propPlane(b: Kit, r: () => number, liv: Livery) {
     nacelle(b, 0.08, y - 0.02, ez, 0.26, 0.034, liv.body);
     put(b, new THREE.ConeGeometry(0.02, 0.05, 8), 0.235, y - 0.02, ez, liv.main, 'smooth', 0, 0, -Math.PI / 2);
     for (let k = 0; k < 4; k++) put(b, new THREE.BoxGeometry(0.006, 0.17, 0.016), 0.215, y - 0.02, ez, 0x2a2f38, 'solid', 0, (k * Math.PI) / 4, 0);
-    put(b, new THREE.CylinderGeometry(0.09, 0.09, 0.002, 18), 0.218, y - 0.02, ez, [0.5, 0.52, 0.55], 'glass', 0, 0, Math.PI / 2);
+    put(b, new THREE.CylinderGeometry(0.075, 0.075, 0.002, 18), 0.218, y - 0.02, ez, [0.32, 0.34, 0.38], 'glass', 0, 0, Math.PI / 2);
     gear(b, 0.06, ez, y - 0.05, 0.024);
   }
   const tl = tipOf(-1, 0.12, y - 0.04, rad * 0.6, 0.55, 0.04, 0.08, 0.08);
@@ -2316,10 +2316,6 @@ export function airliner(seed: number): Built {
     wing(b, s, wx, y - rad * 0.65, rad * 0.75, span, 0.52, 0.14, sweep, dih, 0.024, 0xe6e9ee);
     const t = tipOf(s, wx, y - rad * 0.65, rad * 0.75, span, sweep, 0.14, dih);
     profile(b, [[0, 0], [0.14, 0], [0.04, 0.12], [-0.02, 0.12]], 0.008, t[0] - 0.06, t[1], t[2], 0, al.tail);
-    for (let k = 1; k < 4; k++) {
-      const u = k / 4;
-      b.rbox(0.12, 0.02, 0.018, wx - 0.45 - sweep * u + 0.05, y - rad * 0.65 - 0.02 + Math.sin(dih) * span * u, s * (rad * 0.75 + span * u), 0xd8dce0, 0.008);
-    }
     // Underwing turbofan on a pylon
     const ez = s * (rad * 0.75 + span * 0.36);
     const ex = wx - sweep * 0.36 + 0.12;

@@ -106,6 +106,10 @@ npm test             # planner, events, weather, Stripe/GitHub aggregation, stat
 npm run typecheck
 ```
 
+## Working on TinyTown
+
+Start with [`CLAUDE.md`](CLAUDE.md) and [`docs/HANDOFF.md`](docs/HANDOFF.md), which hold the whole history, decisions and current state. Then read [`docs/TODO.md`](docs/TODO.md) (backlog), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (code map) and [`docs/DEV_WORKFLOW.md`](docs/DEV_WORKFLOW.md) (running, testing and screenshots). To hand the project to a new Claude Code cloud session, paste the prompt in [`docs/NEXT_SESSION_PROMPT.md`](docs/NEXT_SESSION_PROMPT.md).
+
 ## Roadmap
 
 From [the product thesis](docs/PRODUCT.md), in priority order:
