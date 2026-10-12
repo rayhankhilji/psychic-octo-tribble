@@ -68,6 +68,9 @@ export interface GameState {
   treasury: number;
   incomePerDay: number;
   upkeepPerDay: number;
+  /** Running totals since day one: income credited and upkeep actually paid. */
+  earned: number;
+  upkeepPaid: number;
   /** 0–100: how much of the city's upkeep is being paid. */
   maintenance: number;
   population: number;
@@ -147,6 +150,8 @@ export function simulate(snapshots: Snapshot[], actions: Action[], upto: number,
   const picks: Record<number, string> = {};
 
   let treasury = STARTING_GRANT;
+  let earned = 0;
+  let upkeepPaid = 0;
   let maintenance = 100;
   let peak = 0;
   let hqLevel = 0;
@@ -239,6 +244,7 @@ export function simulate(snapshots: Snapshot[], actions: Action[], upto: number,
 
     incomePerDay = opts.incomeFrom === undefined || s.t >= opts.incomeFrom ? (s.mrr * RATE) / DAYS_PER_MONTH : 0;
     treasury += incomePerDay;
+    earned += incomePerDay;
 
     while (qi < queue.length && queue[qi]!.t <= s.t) apply(queue[qi++]!, s);
     openLand();
@@ -252,6 +258,7 @@ export function simulate(snapshots: Snapshot[], actions: Action[], upto: number,
     upkeepPerDay = (Math.max(0, housed - FREE_HOUSED) * HOUSING_UPKEEP + buildingUpkeep) / DAYS_PER_MONTH;
     const paid = Math.min(upkeepPerDay, treasury);
     treasury -= paid;
+    upkeepPaid += paid;
     // Unpaid upkeep runs the city down, and so does a homelessness crisis:
     // poor conversion shows up in the streets, not just in the tents.
     const funded = upkeepPerDay > 0 ? (paid / upkeepPerDay) * 100 : 100;
@@ -283,6 +290,8 @@ export function simulate(snapshots: Snapshot[], actions: Action[], upto: number,
     treasury: Math.max(0, treasury),
     incomePerDay,
     upkeepPerDay,
+    earned,
+    upkeepPaid,
     maintenance: Math.round(maintenance * 10) / 10,
     population,
     housed,

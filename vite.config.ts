@@ -6,7 +6,14 @@ export default defineConfig({
     proxy: { '/api': 'http://localhost:8787' },
   },
   build: {
-    chunkSizeWarningLimit: 1000,
+    // three.js is most of the bundle and changes far less often than the game:
+    // its own chunk stays cached across our releases.
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => (id.includes('node_modules/three/') ? 'three' : undefined),
+      },
+    },
   },
   test: {
     include: ['tests/**/*.test.ts'],
