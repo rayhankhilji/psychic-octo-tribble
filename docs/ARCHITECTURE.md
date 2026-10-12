@@ -99,7 +99,7 @@ Colours are hex or linear RGB triples; values above 1 glow under bloom. `build()
 
 **Environment map:** `setEnvironment(tex, k)` applies it only to glass (1.25·k) and smooth (0.18·k). **Don't use `scene.environment`**: it overrides per-material intensity and washes everything out.
 
-**Homes go through `Batch`** (`BatchedMesh` per bucket). Home models must therefore use only the standard GeoBuilder materials and add no extra child objects (lights, sprites). BatchedMesh needs `frustumCulled = false` and `perObjectFrustumCulled = true`, because the whole-batch bounding sphere goes stale as homes come and go.
+**Most models go through `Batch`** (`BatchedMesh` per bucket): homes, neighbourhood grounds, plot items, founder homes, planes and yachts (City), boats, airliners and cable cars (Life), static landmarks and scenery parts (Scenery). `Batch.add` merges meshes using the shared buckets and the stock lit layers (`glowMaterial`, Kit's `windowMaterial`/`neonMaterial`/`screenMaterial`, recognised by `customProgramCacheKey`, while their colour is still white). Anything else (custom materials, sprites, lines, instanced meshes) is moved onto the model's proxy and keeps its own draw calls, so the proxy must be added to the scene. Per model: `touch(key)` after moving its proxy, `setGlow` for light fades, `setVisible`, `setTip`. BatchedMesh needs `frustumCulled = false` and `perObjectFrustumCulled = true`, because the whole-batch bounding sphere goes stale as models come and go. **Never mutate a shared material** (`solidMaterial`, `smoothMaterial`, …) for one model: it changes every model in the game.
 
 ## Budgets
 
@@ -112,7 +112,7 @@ Colours are hex or linear RGB triples; values above 1 glow under bloom. `build()
 | Vehicle (plane, yacht) | ≤ ~3k |
 | Car model (instanced) | ≤ ~600 |
 
-- **Draw calls:** a grown city should stay at a few hundred. Batching cut it from about 1,080 to about 376, but the newest models brought it back up to 755 (see TODO P1). Re-measure with `tools/perf.mjs`.
+- **Draw calls:** a grown city should stay at a few hundred. It's **263** after the second session's batching (it had crept to 755). Re-measure with `tools/perf.mjs`, which also lists the costliest objects (add `&debug` to measure a frozen build).
 - **Per frame:** update instance matrices only, with no per-frame allocations in hot loops.
 
 ## Rendering gotchas (learned the hard way)

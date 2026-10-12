@@ -81,9 +81,11 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
 
 ## 5. Current state (update this as you work)
 
-**Branch:** `claude/tender-keller-mnunoy`. It is currently the **only branch** on GitHub, so it's effectively the default branch, and there is no `main` to open PRs against. Ask the owner whether to create `main` from it; don't create or push other branches without asking.
+**Branch:** `claude/friendly-darwin-sjkcz1` (second session; it continues from `claude/tender-keller-mnunoy`). There is no `main` to open PRs against. The owner has been asked whether to create `main` from the latest work branch; don't create or push other branches without asking.
 
-**Health:** `npm run typecheck` clean, `npm test` 59/59 passing, `npm run build` succeeds. Grown city (day 540): 755 draw calls and 2.27M triangles per frame, which is over budget; see the perf item in TODO P1.
+**Health:** `npm run typecheck` clean, `npm test` 64/64 passing, `npm run build` succeeds (two chunks: app 163 kB gzip, three.js 170 kB gzip). Grown city (day 540, `quality=high`): **263 draw calls** (was 755) and ~2.2M triangles counting the shadow pass.
+
+**Second session so far:** perf pass (generalised `Batch`, see ARCHITECTURE), boosted-demo rocket fix, night fixes (clouds, lighthouse beam, Ferry Building, glass flatirons), Daly City as terraced streets, scenery tooltips wired, cars give way to streetcars, fading car shadows, the bundle split, and the "while you were away" logic. Two parallel agents were run: models (trims, rocket, yacht, Concorde, ballpark, founder-home rooftops, back sides, encampment, night cloud tint) and UI (swap fee, accessibility, short screens, thumbnails context, night share card, the away card). Check `git log` and TODO for what landed.
 
 **Built and working:**
 
@@ -95,6 +97,7 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
   - founder homes on the ladder;
   - planes on the apron, yachts at the marina, the rocket on the launch pad;
   - tents and decay.
+- **Batching** (`batch.ts`): homes, neighbourhood grounds, plot items, founder homes, planes and yachts share one `Batch` in City; Life and Scenery have their own. `Batch.add` merges the shared buckets and the lit layers (glow, Kit windows, neon, screens, recognised by shader cache key); anything else stays a real object on the model's proxy, which must then be in the scene. Move a proxy, then `touch(key)`; City does this for animations and building sites.
 - **Homes** (`buildings.ts`, finished by the homes agent):
   - Sunset "Doelger" stucco, Marina Mediterranean and Edwardian cottages (`house`);
   - painted ladies (`townhouse`);

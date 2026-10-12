@@ -6,23 +6,25 @@ Every task follows the visual bar in `CLAUDE.md`: screenshot it, day and night, 
 
 ## P0: Housekeeping
 
-- [ ] **Base branch.** `claude/tender-keller-mnunoy` is the only branch on GitHub. Ask the owner whether to create `main` from it, so future work can go through PRs.
+- [ ] **Base branch.** There's no `main`: work lives on `claude/*` branches (latest: `claude/friendly-darwin-sjkcz1`). Asked the owner whether to create `main` from it, so future work can go through PRs; waiting on their answer.
 
 ## P1: Finish the visual overhaul (leftovers from the parallel agents)
 
 The four agents' work is committed. Items each one reported as unfinished are listed here.
 
-- [ ] **Perf pass.** At handoff, `tools/perf.mjs` (day 540, `quality=high`, one render including the shadow pass) measured **755 draw calls, 2.27M triangles, 108 shader programs**. That's up from about 376 calls and 1.28M triangles before the new models. Target: a few hundred calls and under about 1.5M triangles, holding 60 fps on a mid-range laptop.
-  - **Cheapest wins:** batch district and plot items through `Batch` the same way homes are (towers and items are separate meshes today); instance park and forest trees and the tents; trim the over-budget models (see the models leftovers below).
-  - **Shadows:** consider excluding small props from casting.
-  - **Shader programs:** check why there are 108; per-model material clones may be defeating program sharing.
-  - **Then:** confirm frame time on a real GPU and tune adaptive quality (`stage.ts` `adapt()`).
-- [ ] **Bundle size.** The production chunk is over 1 MB. Split out the showcase-only code and lazy-load `ui/thumbnails.ts` and the post-processing passes if that helps first paint.
+- [x] **Perf pass: draw calls.** 742 → **263** draw calls (day 540, `quality=high`, shadow pass included). `Batch` now merges any GeoBuilder/Kit model (lit layers too) and keeps unmergeable parts on the proxy; grounds, items, founder homes, planes, yachts, Life's boats and airliners, and static scenery are batched; Ferris gondolas and sea lions instanced. `tools/perf.mjs` lists the objects that cost the most calls.
+- [ ] **Perf, what's left.** Traffic is now the biggest single cost (73 calls: 9 models × 4 meshes + shadows); HQ is 19. Triangles are ~2.2M *including* the shadow pass (about 1.1M per pass); trimming the over-budget models helps. 107 shader programs (mostly post passes and per-key variants): check compile time on a real GPU. Then confirm frame time on a real GPU and tune adaptive quality (`stage.ts` `adapt()`).
+- [x] **Bundle size.** three.js is its own chunk (170 kB gzip, cached across our releases); the app chunk is 163 kB gzip. The boot screen paints from `index.html` before any JS, so lazy-loading thumbnails or post passes wouldn't change first paint much.
 
 ## P2: Polish and bugs
 
-- [ ] **Rocket missing in the boosted demo.** With `/?demo&fresh&boost=40`, the launch site at day 540 shows the launch tower but no rocket on the pad. Check whether the demo founder can afford the $2B rocket by then (`src/game/demo-script.ts`, entry 536) and whether `city.ts` places it. The README `island.png` was taken without it.
-- [ ] **Cloud banks over locked land** are bright white at night. Tint them with the atmosphere (they should go blue-grey under moonlight), or soften them with the fog colour.
+- [x] **Rocket missing in the boosted demo.** The boosted demo crosses $1M MRR on day 537, not 536; fixed and tested. (The README `island.png` still lacks it: refresh it.)
+- [x] **Cloud banks over locked land** go moonlit blue-grey at night (`cloudMaterial`/`setCloudLight` in `models.ts`, called from `city.ts`).
+- [x] **Lighthouse beam** was built backwards as a flat wedge and shone through the island's clouds; now a soft beam, only once the island is yours.
+- [x] **Scenery tooltips** (City Hall, Market Street, the Wharf…) were never raycast; fixed.
+- [x] **Kites made the shared smooth material double-sided** for every model; fixed.
+- [x] **Night blow-outs:** Ferry Building nave and clocks, glass flatirons on Market.
+- [x] **Suburbs** read as a field of dots from above; Daly City is now terraced rows on streets over the hills, with muted roofs. The East Bay hills houses are still scattered: give them the same treatment.
 - [ ] Apartments average about 1,530 triangles, just over the 1,500 home budget. Trim them if perf needs it.
 - [ ] `buildings.ts` leaves out the south-west street lamp of each block because `city.ts` puts a junction lamp there. If that lamp moves, add it back.
 - [ ] The camera auto-framing ease feels slow when jumping across the timeline. Check on a real GPU (in SwiftShader it never converges, which is expected).
@@ -33,7 +35,7 @@ The four agents' work is committed. Items each one reported as unfinished are li
 
 All in `docs/GAME_DESIGN.md` and HANDOFF §7.
 
-- [ ] **"While you were away" summary** when the app opens: income since last visit, what was built, decay or recovery, new unlocks.
+- [ ] **"While you were away" summary** when the app opens. Logic done and tested (`src/game/away.ts`, `lastSeen`/`markSeen` in `save.ts`); the card (`Hud.showAway`) is being built by the UI agent, then main.ts wires it at boot with a `?away=N` preview param for the demo.
 - [ ] **Celebrations:** a moment and a share prompt when the TINYTOWN sign relights; bigger fireworks on MRR milestones; a street festival at high satisfaction and protest signs at City Hall at low satisfaction.
 - [ ] **Moon scene:** after the rocket launch, cut to the moon, show the moon house, then the return. The moon sprite during flights (`src/render/moon.ts`) is the current stand-in.
 - [ ] **Sound:** ambient city by day and night, waves and gulls, construction, fireworks, UI ticks. Off by default or very quiet, with a mute toggle.
@@ -116,8 +118,8 @@ Done:
 - **Showcase sets:** `cars` (`&only=sedan,taxi`) and `people`.
 
 - [ ] **Bridge ramps:** bridge decks end in fades instead of ramps into the city (the decks float about 2.3 above the approaches). Draw ramps in `landmarks.ts` so bridge traffic joins the grid.
-- [ ] **Streetcars vs cars:** cars crossing Market or Powell can pass through an F-line car or cable car. Wire `traffic.blocked` from `Life` (cable cars) and `Train` (F-line).
-- [ ] Fading cars still cast a full shadow.
+- [x] **Streetcars vs cars:** cars wait at junctions for running F-line streetcars and cable cars (soak-tested, no gridlock).
+- [x] Fading cars still cast a full shadow (dithered depth material for cars and pedestrians).
 - [ ] Shadow side: the shadow offset (0.03) is bigger than car ground clearance, so cars now cast shadows from both faces. Check other low objects for missing shadows.
 - [ ] Not built yet: pedestrian walk signals, lane changes on the bridges, people on Market's plazas and the piers, umbrellas in rain.
 - [ ] Cab (638) and sports car (648) are about 8% over the ~600 triangle budget.
