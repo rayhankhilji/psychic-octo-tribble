@@ -1331,7 +1331,8 @@ function apartment(b: GeoBuilder, r: () => number) {
       b.cylinder(0.025, 0.025, 0.004, hx, rt + 0.06, back, 0x4a4e54, 8);
     }
   }
-  if (r() < 0.6) {
+  const deckRoll = r();
+  if (deckRoll < 0.38) {
     // Roof deck: boards, planters, an umbrella and string lights
     const dz = FRONT - 0.2;
     b.box(0.5, 0.012, 0.22, 0, rt, dz, 0xa27a54);
@@ -1346,6 +1347,19 @@ function apartment(b: GeoBuilder, r: () => number) {
       b.box(0.012, 0.012, 0.012, -0.2 + u * 0.4, rt + 0.13 - Math.sin(u * Math.PI) * 0.025, dz + 0.1, [2.2, 1.7, 0.9], true);
     }
     beam(b, [-0.2, rt + 0.13, dz + 0.1], [0.2, rt + 0.13, dz + 0.1], 0.003, 0.003, IRON);
+  } else if (deckRoll < 0.62) {
+    // A TV mast, a satellite dish and a row of potted plants
+    const ax = (r() - 0.5) * 0.5;
+    b.cylinder(0.004, 0.004, 0.2, ax, rt, FRONT - 0.15, 0x9aa0a8, 4);
+    for (let k = 0; k < 3; k++) b.box(0.09 - k * 0.022, 0.004, 0.004, ax, rt + 0.12 + k * 0.03, FRONT - 0.15, 0x9aa0a8);
+    const dish = new THREE.ConeGeometry(0.03, 0.014, 8, 1, true);
+    dish.rotateX(-1.1);
+    dish.translate(ax + 0.12, rt + 0.04, FRONT - 0.12);
+    add(b, dish, 0xe8e6e0);
+    for (let k = 0; k < 4; k++) {
+      b.cylinder(0.016, 0.012, 0.024, -0.3 + k * 0.08, rt, FRONT - 0.07, 0xc0643c, 6);
+      shrub(b, -0.3 + k * 0.08, rt + 0.02, FRONT - 0.07, 0.022, k % 2 ? 0x4f9a3a : 0x6fb84a, 1.2);
+    }
   }
 }
 
@@ -1632,9 +1646,9 @@ function pocketPark(b: GeoBuilder, r: () => number, x0: number, x1: number, z0: 
   } else if (v === 1) {
     // Canary palms over a flower meadow
     for (let k = 0; k < 10; k++) shrub(b, x0 + 0.1 + r() * (w - 0.2), y, z0 + 0.1 + r() * (d - 0.2), 0.03, pick(r, FLOWERS));
-    palm(b, r, cx - sx * 0.12, cz - sz * 0.15, 1.0, y);
-    palm(b, r, cx + sx * 0.05, cz - sz * 0.3, 0.85, y);
-    palm(b, r, cx - sx * 0.3, cz + sz * 0.02, 0.9, y);
+    palm(b, r, cx - sx * 0.12, cz - sz * 0.15, 0.8, y);
+    palm(b, r, cx + sx * 0.05, cz - sz * 0.3, 0.65, y);
+    palm(b, r, cx - sx * 0.3, cz + sz * 0.02, 0.7, y);
     bench(b, ox + sx * 0.05, y, oz + sz * 0.08, sz > 0 ? Math.PI : 0);
   } else {
     // Parklet: picnic lawn, a pair of ficus, a bike rack and a painted heart

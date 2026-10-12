@@ -576,7 +576,7 @@ export class Hud {
     const values = s.map((x) => (useMrr ? x.mrr : x.commits));
     const max = Math.max(1, ...values) * 1.04;
     const n = Math.max(1, s.length - 1);
-    const top = 10 * dpr;
+    const top = 7 * dpr;
     const base = H - 9 * dpr;
     const x = (i: number) => (i / n) * W;
     // Square-root scale: early milestones ($10, $100, $1k) stay readable next to later growth.
@@ -595,7 +595,7 @@ export class Hud {
       const ctx = cv.getContext('2d')!;
       // Baseline and quarter guides
       ctx.fillStyle = grid;
-      for (const k of [0.25, 0.5, 0.75]) ctx.fillRect(0, Math.round(base - (base - top) * k), W, Math.max(1, dpr * 0.6));
+      for (const k of [0.5]) ctx.fillRect(0, Math.round(base - (base - top) * k), W, Math.max(1, dpr * 0.6));
       const path = new Path2D();
       values.forEach((v, i) => (i ? path.lineTo(x(i), y(v)) : path.moveTo(x(i), y(v))));
       const area = new Path2D(path);

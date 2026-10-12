@@ -16,7 +16,9 @@ import { pick, rng } from '../world/rng.ts';
  */
 
 const NEON = [0xff3fa4, 0x3ff2ff, 0x9d7bff, 0x5dffa0, 0xffb347] as const;
-const POOL: ColorLike = [0.42, 1.45, 1.85];
+const POOL: ColorLike = [0.24, 0.85, 1.12];
+/** Interior light behind floor-to-ceiling glass: softer than a punched window. */
+const GLASS_HOME: ColorLike = [1.35, 0.92, 0.5];
 const BRICK = [0xa8553e, 0xb5654a, 0x9a4a36, 0xb86a4e] as const;
 const STEEL_DARK = 0x2b3038;
 
@@ -1145,8 +1147,21 @@ function cafe(b: GeoBuilder, r: () => number, x: number, z: number) {
   for (const dx of [-0.6, 0, 0.6]) {
     for (let f = 0; f < 2; f++) punch(b, r, cx + W / 2, 0.035 + gh + f * fh + 0.1, cz + dx * 0.5, 1, 0, 0.08, 0.12, trim, warmth(r), TINT.sky);
   }
+  // Back and side: sash windows, a back door, a fire escape, a flat roof
+  for (let f = 0; f < 2; f++) {
+    for (const dx of [-0.5, -0.17, 0.17, 0.5]) punch(b, r, cx + dx, 0.035 + gh + f * fh + 0.1, cz - D / 2, 0, -1, 0.08, 0.12, trim, warmth(r), TINT.sky);
+    for (const dz of [-0.2, 0.15]) punch(b, r, cx - W / 2, 0.035 + gh + f * fh + 0.1, cz + dz, -1, 0, 0.08, 0.12, trim, warmth(r), TINT.sky);
+  }
+  for (const dx of [-0.45, 0.3]) punch(b, r, cx + dx, 0.035 + 0.13, cz - D / 2, 0, -1, 0.12, 0.1, trim, warmth(r), TINT.shop, 0.9);
+  wall(b, 'solid', cx - 0.05, 0.035 + 0.09, cz - D / 2 - 0.003, 0, -1, 0.07, 0.16, 0x6b4a3a);
+  for (let f = 0; f < 2; f++) {
+    b.box(0.3, 0.008, 0.06, cx + 0.3, 0.035 + gh + f * fh, cz - D / 2 - 0.03, STEEL_DARK);
+    b.box(0.3, 0.04, 0.004, cx + 0.3, 0.035 + gh + f * fh, cz - D / 2 - 0.06, STEEL_DARK);
+  }
+  b.box(W - 0.05, 0.006, D - 0.05, cx, 0.035 + H, cz, 0x8e8a84);
   cornice(b, cx, 0.035 + H, front, 0, 1, W, trim);
   b.box(0.08, 0.12, 0.08, cx - 0.4, 0.035 + H, cz - 0.15, 0xa8553e);
+  b.box(0.14, 0.07, 0.1, cx + 0.3, 0.035 + H, cz - 0.1, 0x9aa3ad);
   // Parklet: a platform with planters, tables and string lights
   const px = x + 0.1;
   const pz = z + 0.72;
@@ -1687,7 +1702,7 @@ function hillsModern(b: Kit, r: () => number) {
   const ph = 0.3;
   const y0 = 0.052;
   prism(b, rectPts(pw, pd, px, pz), y0, ph, 0x3a4656, 'glass');
-  facade(b, r, rectPts(pw, pd, px, pz), y0, null, y0 + ph, { floors: 1, bay: 0.14, winH: 0.94, winW: 0.94, lit: 0.9, light: [2.2, 1.5, 0.8], tint: TINT.sky, fins: { color: 0x2a2f38, depth: 0.01, width: 0.01 } });
+  facade(b, r, rectPts(pw, pd, px, pz), y0, null, y0 + ph, { floors: 1, bay: 0.14, winH: 0.94, winW: 0.94, lit: 0.9, light: GLASS_HOME, tint: TINT.sky, fins: { color: 0x2a2f38, depth: 0.01, width: 0.01 } });
   b.box(0.12, ph + 0.06, 0.2, px - 0.2, y0, pz - 0.12, stone); // stone fireplace wall
   b.box(pw + 0.3, 0.035, pd + 0.26, px + 0.05, y0 + ph, pz + 0.04, white);
   b.box(pw + 0.3, 0.012, pd + 0.26, px + 0.05, y0 + ph - 0.012, pz + 0.04, wood);
@@ -1696,7 +1711,7 @@ function hillsModern(b: Kit, r: () => number) {
   const cx = px + 0.62;
   const cz = pz + 0.48;
   prism(b, rectPts(0.5, 0.6, cx, cz), y0, ph * 0.9, 0x3a4656, 'glass');
-  facade(b, r, rectPts(0.5, 0.6, cx, cz), y0, null, y0 + ph * 0.9, { floors: 1, bay: 0.14, winH: 0.94, winW: 0.94, lit: 0.9, light: [2.2, 1.5, 0.8], tint: TINT.sky, fins: { color: 0x2a2f38, depth: 0.01, width: 0.01 } });
+  facade(b, r, rectPts(0.5, 0.6, cx, cz), y0, null, y0 + ph * 0.9, { floors: 1, bay: 0.14, winH: 0.94, winW: 0.94, lit: 0.9, light: GLASS_HOME, tint: TINT.sky, fins: { color: 0x2a2f38, depth: 0.01, width: 0.01 } });
   b.box(0.6, 0.03, 0.72, cx + 0.03, y0 + ph * 0.9, cz + 0.03, white);
   b.box(0.6, 0.008, 0.72, cx + 0.03, y0 + ph * 0.9 - 0.008, cz + 0.03, wood);
   modernRoof(b, cx + 0.03, y0 + ph * 0.9 + 0.03, cz + 0.03, 0.5, 0.62, false);
@@ -1800,7 +1815,7 @@ function cliffside(b: Kit, r: () => number) {
   b.box(1.6, 0.012, 0.9, -0.25, 0.04, -0.35, 0xd8d2c4);
   const glass = 0x3a4656;
   const white = 0xf6f4ee;
-  const light: ColorLike = [2.2, 1.5, 0.8];
+  const light: ColorLike = GLASS_HOME;
   const y0 = 0.052;
   // Lower box, anchored on the rock
   const lo = rectPts(1.1, 0.6, -0.3, -0.4);
@@ -1835,7 +1850,7 @@ function cliffside(b: Kit, r: () => number) {
 function compound(b: Kit, r: () => number) {
   const white = 0xf6f4ee;
   const wood = 0xb9824f;
-  const light: ColorLike = [2.2, 1.5, 0.8];
+  const light: ColorLike = GLASS_HOME;
   plinth(b, rectPts(2.3, 1.9), 0.04, 0.45, 0xd8d2c4);
   b.box(2.3, 0.012, 1.9, 0, 0.04, 0, 0xe8e2d6);
   b.box(1.0, 0.01, 0.7, 0.2, 0.052, -0.05, PALETTE.lawn);
@@ -1893,7 +1908,7 @@ function helicopter(b: GeoBuilder, x: number, y: number, z: number, color: Color
 function islandEstate(b: Kit, r: () => number) {
   const white = 0xf6f4ee;
   const stone = 0xd8cdb4;
-  const light: ColorLike = [2.2, 1.5, 0.8];
+  const light: ColorLike = GLASS_HOME;
   b.box(2.6, 0.04, 2.2, 0, 0, 0, PALETTE.lawn);
   b.box(1.9, 0.012, 1.0, 0.0, 0.04, -0.45, 0xe8e2d6);
   const y0 = 0.052;

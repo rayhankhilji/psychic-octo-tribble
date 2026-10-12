@@ -325,7 +325,8 @@ class App {
 
     /** A postcard: the city framed on warm sand, the mark, the name, the day and a few numbers. */
     const compose = (src: HTMLCanvasElement, withMetrics: boolean) => {
-      const OW = 1600;
+      // Never upscale a small (phone) capture much: blur reads worse than a smaller card.
+      const OW = Math.round(Math.min(1600, Math.max(960, src.width * 1.12)));
       const K = OW / 1600;
       const pad = 44 * K;
       const band = 168 * K;

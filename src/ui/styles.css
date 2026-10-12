@@ -58,7 +58,7 @@
   --shadow-3: 0 2px 6px rgba(27, 34, 54, 0.06), 0 30px 80px -24px rgba(27, 34, 54, 0.5);
   --scrim: rgba(27, 34, 54, 0.32);
   --chart-line: #e5512b;
-  --chart-fill: rgba(229, 81, 43, 0.3);
+  --chart-fill: rgba(229, 81, 43, 0.42);
   --chart-muted: rgba(27, 34, 54, 0.24);
   --chart-grid: rgba(27, 34, 54, 0.07);
 
@@ -137,7 +137,7 @@
   --shadow-3: 0 30px 80px -20px rgba(0, 0, 0, 0.7);
   --scrim: rgba(5, 8, 20, 0.5);
   --chart-line: #ff7a50;
-  --chart-fill: rgba(255, 122, 80, 0.32);
+  --chart-fill: rgba(255, 122, 80, 0.4);
   --chart-muted: rgba(245, 236, 219, 0.22);
   --chart-grid: rgba(245, 236, 219, 0.06);
   color-scheme: dark;
@@ -1592,7 +1592,7 @@ code {
   position: relative;
   flex: 1;
   align-self: stretch;
-  margin: 8px 6px;
+  margin: 6px 6px 7px;
   min-width: 0;
   border-radius: var(--r-sm);
 }

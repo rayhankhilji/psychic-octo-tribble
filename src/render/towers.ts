@@ -1371,6 +1371,19 @@ export function deco(b: GeoBuilder, r: () => number, x: number, z: number, neon:
     for (const s of [-1, 1]) b.box(0.05, 0.9, 0.03, x + s * 0.69, 0.035, z - 0.82 + k * 0.17, shade(wall0, 0.8));
   }
   b.box(1.4, 0.04, 1.09, x, 0.985, z - 0.38, trim);
+  b.box(1.3, 0.006, 1.0, x, 1.025, z - 0.38, 0x8e8a84);
+  b.box(0.22, 0.1, 0.16, x - 0.35, 1.025, z - 0.6, 0x9aa3ad);
+  b.box(0.16, 0.08, 0.14, x + 0.3, 1.025, z - 0.7, 0x9aa3ad);
+  // Exit doors and their lamps on the sides and back
+  for (const s of [-1, 1]) {
+    for (const dz of [-0.75, -0.2]) {
+      wall(b, 'solid', x + s * 0.682, 0.13, z + dz, s, 0, 0.1, 0.19, 0x5a3a4a);
+      quadBlob(neonOf(b), x + s * 0.69, 0.25, z + dz, 0.01, [2.4, 1.8, 1.0]);
+    }
+  }
+  wall(b, 'solid', x, 0.13, z - 0.906, 0, -1, 0.3, 0.19, 0x5a3a4a);
+  wall(b, 'solid', x, 0.62, z - 0.906, 0, -1, 0.8, 0.22, shade(wall0, 0.8));
+  pixelText(b, 'solid', name, x, 0.62, z - 0.909, 0, -1, 0.03, trim);
   // Front facade: a tall stepped deco front
   const fz = z + 0.18;
   b.box(1.5, 1.1, 0.14, x, 0.035, fz, wall0);
@@ -1625,8 +1638,12 @@ function garage(b: Kit, r: () => number, signs: SignSpot[]): number {
   b.box(0.08, 0.06, 0.06, -0.4, y0, zf + 0.3, 0xb08a5a, 'solid', 0.4);
   for (let k = 0; k <= 8; k++) quadBlob(neonOf(b), -0.38 + k * 0.06, y0 + gh - 0.02 - Math.sin((k / 8) * Math.PI) * 0.04, zf + 0.06, 0.008, LAMP, FX.shimmer + k * 0.13);
   // The hand-painted sign over the garage
-  b.box(0.5, 0.11, 0.02, gx, y0 + gh - 0.005, zf + 0.012, 0x6a4a32);
-  signs.push({ x: gx, y: y0 + gh + 0.05, z: zf + 0.024, ry: 0, h: 0.09, maxW: 0.47 });
+  // Hung from the bay window on two chains, right over the garage door
+  const sy = y0 + gh - 0.07;
+  b.box(0.44, 0.1, 0.016, gx, sy - 0.05, zf + 0.13, 0x6a4a32);
+  for (const s of [-1, 1]) rod(b, gx + s * 0.18, sy + 0.05, zf + 0.13, gx + s * 0.18, sy + 0.07, zf + 0.13, 0.003, 0x3a3f4a, 3);
+  signs.push({ x: gx, y: sy, z: zf + 0.139, ry: 0, h: 0.085, maxW: 0.41 });
+  rod(b, -0.25, yTop + 0.2, -0.35, -0.25, yTop + 0.5, -0.35, 0.006, PALETTE.steel, 4);
   return yTop + 0.42;
 }
 

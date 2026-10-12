@@ -1199,6 +1199,7 @@ export class Traffic {
     this.people = new Pedestrians();
     this.object.add(this.people.object);
     this.object.name = 'traffic';
+    (globalThis as unknown as { __traffic: Traffic }).__traffic = this; // TEMP-DEBUG
   }
 
   /** For tests and debugging: the live cars and the graph. */
