@@ -9,6 +9,7 @@ import { Moon } from './moon.ts';
 import { Traffic } from './traffic.ts';
 import { Life, SHADOW_ONLY_LAYER } from './life.ts';
 import { Construction } from './construction.ts';
+import { festival, protest, protestBanner } from './mood.ts';
 import { Batch } from './batch.ts';
 import { AIRPORT_SLOTS, DOWNTOWN_HOME, HILLS_HOME, ISLAND, LAUNCH, MARINA_SLOTS, SUPERYACHT, Scenery, hillHeight } from './scenery.ts';
 import { BUILD_BLOCKS, HOME_TIERS, HQ_FLOOR_CAP, ITEMS } from '../game/catalog.ts';
@@ -102,6 +103,8 @@ export class City {
   private fades = new Set<Fade>();
   private homeFades = new Map<string, Fade>();
   private beaconLevel = 0;
+  /** The festival or protest on Civic Center Plaza, if the mood calls for one. */
+  private mood: { key: string; proxy: THREE.Object3D } | null = null;
   /** Fireworks waiting their turn in a show. */
   private volleys: { at: THREE.Vector3; count: number; spread: number; delay: number }[] = [];
   private sun: THREE.DirectionalLight;
@@ -180,6 +183,7 @@ export class City {
     this.syncFounder(game, animate);
     this.syncVehicles(game, animate);
     this.syncTents(game.unhoused);
+    this.syncMood(game, animate);
 
     const decay = decayOf(game.maintenance);
     this.trainStopped = decay.trainStopped;
@@ -766,6 +770,27 @@ export class City {
     }
   }
 
+  /** A street festival when the city is happy, a protest at City Hall when it isn't. */
+  private syncMood(game: GameState, animate: boolean) {
+    const sat = game.satisfaction;
+    const parts = (['housing', 'upkeep', 'amenities', 'momentum'] as const).map((k) => [k, sat[k]] as const);
+    const weakest = parts.reduce((a, b) => (b[1] < a[1] ? b : a))[0];
+    const want = sat.score >= MOOD.festival ? 'festival' : sat.score < MOOD.protest ? `protest:${weakest}` : null;
+    if (this.mood?.key === want) {
+      if (this.mood) this.homeBatch.setTip(this.batched.get(this.mood.proxy)!, moodTip(game, weakest));
+      return;
+    }
+    if (this.mood) {
+      this.remove(this.mood.proxy, animate);
+      this.mood = null;
+    }
+    if (!want) return;
+    const built = want === 'festival' ? festival(hash(this.seed, 'festival')) : protest(hash(this.seed, 'protest'), protestBanner(weakest));
+    const { proxy } = this.place(`mood|${want}`, built, moodTip(game, weakest), animate ? 0 : 1);
+    this.grow(proxy, animate, 'y', 0.8);
+    this.mood = { key: want, proxy };
+  }
+
   /** Tents for the people your city can't house. More people, more tents (up to a point). */
   private syncTents(unhoused: number) {
     const count = unhoused <= 0 ? 0 : Math.min(TENT_SPOTS.length, Math.max(2, Math.round(Math.sqrt(unhoused) * 1.4)));
@@ -1012,6 +1037,22 @@ export class City {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
+
+/** Satisfaction scores that bring people out onto Civic Center Plaza. */
+const MOOD = { festival: 85, protest: 40 };
+
+/** The mood's tooltip always quotes the real score, and the real reason behind a protest. */
+function moodTip(game: GameState, weakest: 'housing' | 'upkeep' | 'amenities' | 'momentum'): Tip {
+  const score = game.satisfaction.score;
+  if (score >= MOOD.festival) return { title: 'Street festival', detail: `Satisfaction ${score}/100. People love living here.` };
+  const why = {
+    housing: `${game.unhoused.toLocaleString('en-US')} people have no home. Housing needs $0.20 MRR per user`,
+    upkeep: `Upkeep is only ${Math.round(game.maintenance)}% funded`,
+    amenities: 'Too few parks and places to go for the people here',
+    momentum: game.satisfaction.momentum < 0.5 ? 'MRR fell over the last four weeks' : 'MRR has barely grown in four weeks',
+  }[weakest];
+  return { title: 'Protest at City Hall', detail: `Satisfaction ${score}/100. ${why}.` };
+}
 
 /** Paying-customer counts worth a fireworks show. */
 const CUSTOMER_MILESTONES = [10, 100, 1_000, 10_000, 100_000];
