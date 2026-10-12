@@ -304,6 +304,23 @@ export function obox(b: GeoBuilder, cx: number, cy: number, cz: number, yx: numb
   b.transformed(new THREE.BoxGeometry(w, len, d), m, color, bucket);
 }
 
+/**
+ * A fin or slat standing proud of a wall: like `obox`, but only the faces
+ * the camera can ever see (front, both sides, top). The back sits against
+ * the wall and the camera never looks up at the bottom, so this is 8
+ * triangles instead of 12. Y is the fin's long axis, Z points out of the wall.
+ */
+export function fin(b: GeoBuilder, cx: number, cy: number, cz: number, yx: number, yy: number, yz: number, zx: number, zy: number, zz: number, w: number, len: number, d: number, color: ColorLike, bucket: Bucket = 'solid') {
+  const Y = va.set(yx, yy, yz).normalize();
+  const Z = vb.set(zx, zy, zz);
+  Z.addScaledVector(Y, -Z.dot(Y)).normalize();
+  const X = vc.crossVectors(Y, Z).normalize();
+  const [Xx, Xy, Xz, Yx, Yy, Yz, Zx, Zy, Zz] = [X.x, X.y, X.z, Y.x, Y.y, Y.z, Z.x, Z.y, Z.z];
+  quad3(b, bucket, cx + (Zx * d) / 2, cy + (Zy * d) / 2, cz + (Zz * d) / 2, Xx, Xy, Xz, Yx, Yy, Yz, w, len, color);
+  for (const s of [-1, 1]) quad3(b, bucket, cx + (s * Xx * w) / 2, cy + (s * Xy * w) / 2, cz + (s * Xz * w) / 2, -s * Zx, -s * Zy, -s * Zz, Yx, Yy, Yz, d, len, color);
+  quad3(b, bucket, cx + (Yx * len) / 2, cy + (Yy * len) / 2, cz + (Yz * len) / 2, Xx, Xy, Xz, -Zx, -Zy, -Zz, w, d, color);
+}
+
 /** A square-section beam from a to c. */
 export function beam(b: GeoBuilder, ax: number, ay: number, az: number, cx: number, cy: number, cz: number, w: number, color: ColorLike, bucket: Bucket = 'solid', d = w) {
   const dx = cx - ax;
@@ -575,7 +592,7 @@ export function facade(b: GeoBuilder, r: () => number, A: readonly XZ[], yA: num
         const lo = at(u, 0);
         const hi = at(u, 1);
         const d = o.fins.depth;
-        obox(b, (lo[0] + hi[0]) / 2 + (hx * d) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2 + (hz * d) / 2, hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], hx, 0, hz, fw, Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]), d, o.fins.color, o.fins.bucket ?? 'solid');
+        fin(b, (lo[0] + hi[0]) / 2 + (hx * d) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2 + (hz * d) / 2, hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], hx, 0, hz, fw, Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]), d, o.fins.color, o.fins.bucket ?? 'solid');
       }
     }
     if (o.bands) {
@@ -1159,7 +1176,7 @@ export function spire(b: GeoBuilder, r: () => number, x: number, z: number, neon
   const y0 = 0.035;
   const lob = 0.5;
   const glass = 0x9fb3c4;
-  const fin = 0xdcdcd6;
+  const finC = 0xdcdcd6;
   const light = officeLight(r);
   const ring = (k: number, y: number) => ({ pts: roundPts(1.58 * k, 1.58 * k, 0.48 * k + (1 - k) * 0.9, 4, tx, tz), y });
   // Lobby: a tall glass base with a wide canopy
@@ -1174,14 +1191,14 @@ export function spire(b: GeoBuilder, r: () => number, x: number, z: number, neon
     const a = stations[i]!;
     const c = stations[i + 1]!;
     facade(b, r, a.pts, a.y, c.pts, c.y, {
-      floors: Math.round((c.y - a.y) / 0.17),
-      bay: 0.13,
+      floors: Math.round((c.y - a.y) / 0.19),
+      bay: 0.16,
       winH: 0.8,
       winW: 0.78,
       lit: 0.6,
       light,
       tint: TINT.silver,
-      fins: { color: fin, depth: 0.026, width: 0.016, every: 1 },
+      fins: { color: finC, depth: 0.026, width: 0.016, every: 1 },
     });
   }
   // Crown: the facade continues past the roof as an open lattice, lit by the LED screen
@@ -1226,15 +1243,15 @@ export function spire(b: GeoBuilder, r: () => number, x: number, z: number, neon
       tri(A0, B1, A1, u0, u1, u1);
       tri(A0, B0, B1, u0, u0, u1);
       // Fins of the lattice
-      if (j % 2 === 0) beam(b, p0[0], a.y, p0[1], q0[0], c.y, q0[1], 0.016, fin);
+      if (j % 2 === 0) beam(b, p0[0], a.y, p0[1], q0[0], c.y, q0[1], 0.016, finC);
     }
-    loft(b, [{ pts: c.pts, y: c.y - 0.03 }, { pts: c.pts, y: c.y }], fin, 'solid', false);
+    loft(b, [{ pts: c.pts, y: c.y - 0.03 }, { pts: c.pts, y: c.y }], finC, 'solid', false);
   }
   // A roof deep inside the crown with a glowing core
   prism(b, scalePts(c0.pts, 0.9, 0.9, tx, tz), c0.y - 0.02, 0.03, 0x3a4250);
   b.box(0.4, 0.16, 0.3, tx - 0.1, c0.y, tz - 0.1, 0x59616c);
   b.cylinder(0.12, 0.12, 0.1, tx + 0.22, c0.y, tz + 0.15, 0x8a929c, 10);
-  rod(b, tx, 9.3, tz, tx, 9.75, tz, 0.012, fin, 5, 'solid', 0.005);
+  rod(b, tx, 9.3, tz, tx, 9.75, tz, 0.012, finC, 5, 'solid', 0.005);
   quadBlob(neonOf(b), tx, 9.77, tz, 0.04, RED_LIGHT, FX.blink + 0.5);
   for (const [px, pz] of [[0.55, 0.55], [-0.55, -0.55], [0.55, -0.55], [-0.55, 0.55]] as const) quadBlob(neonOf(b), tx + px * 0.75, 9.36, tz + pz * 0.75, 0.025, RED_LIGHT, FX.blink + 0.5);
 
@@ -1245,18 +1262,21 @@ export function spire(b: GeoBuilder, r: () => number, x: number, z: number, neon
   const pd = 1.4;
   const ph = 0.5;
   b.box(pw - 0.08, ph, pd - 0.08, px0, y0, pz0, 0xe9e7e1);
-  for (let k = 0; k <= 64; k++) {
-    const u = k / 64;
+  // Slats only show their front, sides and top, so they're fins, not boxes
+  const sh = ph - 0.06;
+  const sy = y0 + 0.03 + sh / 2;
+  for (let k = 0; k <= 48; k++) {
+    const u = k / 48;
     const sx = px0 - pw / 2 + u * pw;
     const depth = 0.02 + 0.035 * (0.5 + 0.5 * Math.sin(u * Math.PI * 7));
-    b.box(0.025, ph - 0.06, depth, sx, y0 + 0.03, pz0 + pd / 2 - 0.04 + depth / 2, 0xf6f5f0);
-    if (k % 2 === 0) b.box(0.025, ph - 0.06, depth, sx, y0 + 0.03, pz0 - pd / 2 + 0.04 - depth / 2, 0xf6f5f0);
+    fin(b, sx, sy, pz0 + pd / 2 - 0.04, 0, 1, 0, 0, 0, 1, 0.028, sh, depth, 0xf6f5f0);
+    if (k % 2 === 0) fin(b, sx, sy, pz0 - pd / 2 + 0.04, 0, 1, 0, 0, 0, -1, 0.028, sh, depth, 0xf6f5f0);
   }
-  for (let k = 0; k <= 16; k++) {
-    const u = k / 16;
+  for (let k = 0; k <= 14; k++) {
+    const u = k / 14;
     const sz = pz0 - pd / 2 + u * pd;
     const depth = 0.02 + 0.035 * (0.5 + 0.5 * Math.sin(u * Math.PI * 3));
-    for (const s of [-1, 1]) b.box(depth, ph - 0.06, 0.025, px0 + s * (pw / 2 - 0.04 + depth / 2), y0 + 0.03, sz, 0xf6f5f0);
+    for (const s of [-1, 1]) fin(b, px0 + s * (pw / 2 - 0.04), sy, sz, 0, 1, 0, s, 0, 0, 0.028, sh, depth, 0xf6f5f0);
   }
   // Glowing hall seen between the slats
   for (const s of [-1, 1]) wall(winOf(b), 'glow', px0, y0 + 0.25, pz0 + s * (pd / 2 - 0.035), 0, s, pw - 0.2, 0.36, warmth(r), wr(r, 1, TINT.smoke));
@@ -1267,18 +1287,18 @@ export function spire(b: GeoBuilder, r: () => number, x: number, z: number, neon
   // Winding path
   for (let k = 0; k < 12; k++) {
     const u = k / 11;
-    b.box(0.34, 0.006, 0.07, px0 - pw / 2 + 0.2 + u * (pw - 0.4), ry + 0.062, pz0 + Math.sin(u * Math.PI * 3) * 0.35, 0xe8dcc4, false, Math.cos(u * Math.PI * 3) * 0.6);
+    flat(b, 'solid', px0 - pw / 2 + 0.2 + u * (pw - 0.4), ry + 0.064, pz0 + Math.sin(u * Math.PI * 3) * 0.35, 0.34, 0.07, 0xe8dcc4, Math.cos(u * Math.PI * 3) * 0.6);
   }
   // Amphitheatre and the bus fountain
   for (let k = 0; k < 3; k++) b.box(0.42 - k * 0.08, 0.02 + k * 0.02, 0.06, px0 + 1.25, ry + 0.06, pz0 - 0.4 + k * 0.06, 0xcfc8b8);
   b.box(1.2, 0.012, 0.06, px0 - 0.4, ry + 0.062, pz0 - 0.5, 0x6fb9d6);
   for (let k = 0; k < 10; k++) quadBlob(neonOf(b), px0 - 0.95 + k * 0.12, ry + 0.1, pz0 - 0.5, 0.012, [0.7, 1.4, 2.2], FX.shimmer + k * 0.1);
-  for (let k = 0; k < 9; k++) {
-    const u = k / 8;
-    tree(b, r, px0 - pw / 2 + 0.25 + u * (pw - 0.5), pz0 + (k % 2 ? 0.45 : 0.1) + (r() - 0.5) * 0.1, 0.6, ry + 0.06, k % 3 === 0 ? 'cypress' : 'round');
+  for (let k = 0; k < 8; k++) {
+    const u = k / 7;
+    tree(b, r, px0 - pw / 2 + 0.25 + u * (pw - 0.5), pz0 + (k % 2 ? 0.45 : 0.1) + (r() - 0.5) * 0.1, 0.62, ry + 0.06, k % 3 === 0 ? 'cypress' : 'round');
   }
-  for (let k = 0; k < 5; k++) lamp(b, px0 - 1.6 + k * 0.8, pz0 + 0.62, ry + 0.06, 0.18);
-  people(b, r, px0, pz0, 10, pw - 0.6, pd - 0.6, ry + 0.06);
+  for (let k = 0; k < 4; k++) lamp(b, px0 - 1.5 + k * 1.0, pz0 + 0.62, ry + 0.06, 0.18);
+  people(b, r, px0, pz0, 8, pw - 0.6, pd - 0.6, ry + 0.06);
   // The little gondola from the street
   rod(b, px0 - 1.75, 0.035, pz0 - 0.78, px0 - 1.75, ry + 0.25, pz0 - 0.78, 0.012, 0xe9e7e1, 5);
   beam(b, px0 - 1.75, ry + 0.25, pz0 - 0.78, px0 - 1.45, ry + 0.25, pz0 - 0.55, 0.008, 0x3a4048);
@@ -1288,12 +1308,12 @@ export function spire(b: GeoBuilder, r: () => number, x: number, z: number, neon
   b.box(0.62, 0.012, 0.42, x + 1.3, 0.065, z - 1.2, PALETTE.pool);
   b.box(0.06, 0.32, 0.06, x + 1.3, 0.035, z - 0.6, 0xd8402e);
   put(b, new THREE.TorusGeometry(0.1, 0.018, 6, 16), x + 1.3, 0.42, z - 0.6, 0xd8402e, 'smooth', Math.PI / 4);
-  for (const [dx, dz] of [[1.75, -1.75], [1.75, -0.2], [0.4, -1.75], [-1.0, -1.75], [-1.75, -1.0], [-1.75, 0.2]] as const) {
+  for (const [dx, dz] of [[1.75, -1.75], [1.75, -0.2], [0.4, -1.75], [-1.75, -0.4]] as const) {
     planter(b, r, x + dx, z + dz, 0.14, 0.14, 0.035);
     tree(b, r, x + dx, z + dz, 0.55, 0.09, 'round');
   }
-  for (const [dx, dz] of [[1.75, -1.0], [0.9, -1.75], [-1.75, -0.4]] as const) lamp(b, x + dx, z + dz, 0.035);
-  people(b, r, x + 1.1, z - 0.5, 6, 0.8, 1.6, 0.035);
+  for (const [dx, dz] of [[1.75, -1.0], [0.9, -1.75], [-1.75, 0.3]] as const) lamp(b, x + dx, z + dz, 0.035);
+  people(b, r, x + 1.1, z - 0.5, 5, 0.8, 1.6, 0.035);
 }
 
 // ─── Campus and theatre ────────────────────────────────────────────────────
@@ -1692,7 +1712,7 @@ function campusHQ(b: Kit, r: () => number, floors: number, signs: SignSpot[], br
   const wing = (pts: XZ[], n: number) => {
     const h = n * 0.25;
     prism(b, pts, y0, h, 0xa7bfcc, 'glass');
-    facade(b, r, pts, y0, null, y0 + h, { floors: n, bay: 0.15, winH: 0.82, winW: 0.9, lit: 0.7, light, tint: TINT.blue, fins: { color: 0xc08a5a, depth: 0.03, width: 0.016 }, bands: { color: white, every: 1, depth: 0.06 } });
+    facade(b, r, pts, y0, null, y0 + h, { floors: n, bay: 0.18, winH: 0.82, winW: 0.9, lit: 0.7, light, tint: TINT.blue, fins: { color: 0xc08a5a, depth: 0.03, width: 0.018, every: 2 }, bands: { color: white, every: 1, depth: 0.06 } });
     prism(b, scalePts(pts, 1.03), y0 + h, 0.03, white);
     const [cx, cz] = centroid(pts);
     b.box(Math.abs(pts[1]![0] - pts[0]![0]) - 0.06, 0.02, Math.abs(pts[2]![1] - pts[1]![1]) - 0.06, cx, y0 + h + 0.03, cz, PALETTE.lawn);
@@ -1700,8 +1720,8 @@ function campusHQ(b: Kit, r: () => number, floors: number, signs: SignSpot[], br
   };
   const yn = wing(rectPts(2.6, 0.6, -0.2, -1.25), 2);
   const yw = wing(rectPts(0.6, 1.5, -1.25, -0.2), 2);
-  for (let k = 0; k < 5; k++) bush(b, r, -1.2 + k * 0.45, yn + 0.03, -1.25 + (k % 2 ? 0.1 : -0.12), 0.06);
-  for (let k = 0; k < 3; k++) bush(b, r, -1.25 + (k % 2 ? 0.12 : -0.1), yw + 0.03, -0.6 + k * 0.4, 0.06);
+  for (let k = 0; k < 3; k++) bush(b, r, -1.2 + k * 0.6, yn + 0.03, -1.25 + (k % 2 ? 0.1 : -0.12), 0.065);
+  for (let k = 0; k < 2; k++) bush(b, r, -1.25 + (k % 2 ? 0.12 : -0.1), yw + 0.03, -0.5 + k * 0.5, 0.065);
   for (let i = 0; i < 4; i++) {
     put(b, new THREE.BoxGeometry(0.28, 0.012, 0.16), 0.4 + i * 0.3, yn + 0.08, -1.25, 0x23345a, 'glass', 0, -0.35);
   }
@@ -1733,7 +1753,7 @@ function campusHQ(b: Kit, r: () => number, floors: number, signs: SignSpot[], br
       const noz = oz - 0.1;
       b.box(w - 0.04, 0.02, 0.18, ox, y + 0.035, oz + w / 2 - 0.11, PALETTE.lawn);
       b.box(0.18, 0.02, w - 0.04, ox + w / 2 - 0.11, y + 0.035, oz, PALETTE.lawn);
-      for (let k = 0; k < 3; k++) bush(b, r, ox - w / 2 + 0.2 + k * 0.45, y + 0.08, oz + w / 2 - 0.1, 0.05);
+      for (let k = 0; k < 2; k++) bush(b, r, ox - w / 2 + 0.25 + k * 0.7, y + 0.08, oz + w / 2 - 0.1, 0.055);
       neonRing(b, rectPts(w * 1.02, w * 1.02, ox, oz), y + 0.02, 0.01, brand);
       w = nw;
       ox = nox;

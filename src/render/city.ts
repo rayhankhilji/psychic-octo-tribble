@@ -3,7 +3,7 @@ import { disposeGroup, GeoBuilder, GLOW, glassMaterial, glowMaterial, setEnviron
 import { PALETTE } from './palette.ts';
 import { home, neighbourhoodGrounds, tree, type Built } from './buildings.ts';
 import { headquarters, type HQ } from './towers.ts';
-import { cloudBank, encampment, founderHome, itemModel, plane, plotMarker, rocket, yacht } from './models.ts';
+import { cloudBank, encampment, setCloudLight, founderHome, itemModel, plane, plotMarker, rocket, yacht } from './models.ts';
 import { Fireworks, Rain, Train } from './effects.ts';
 import { Moon } from './moon.ts';
 import { Traffic } from './traffic.ts';
@@ -1030,6 +1030,8 @@ export class City {
     GLOW.night.value = a.night;
     GLOW.time.value = time;
     setEnvironment(glassMaterial.envMap, 0.25 + 0.75 * (1 - a.night));
+    // Clouds over locked land go moonlit blue-grey instead of glowing white.
+    setCloudLight(a.night, fog.color);
     if (this.pools) this.pools.opacity = 0.45 * a.night * (this.lampsFailing ? 0.25 : 1);
     if (this.hq) this.hq.sign.color.setScalar(1 + 1.2 * a.night);
     this.warm.intensity = 8 * a.night;

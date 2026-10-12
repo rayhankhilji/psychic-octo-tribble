@@ -269,7 +269,8 @@ export function disposeGroup(obj: THREE.Object3D) {
     if (o instanceof THREE.Mesh || o instanceof THREE.Points || o instanceof THREE.LineSegments) {
       o.geometry.dispose();
       const mats = Array.isArray(o.material) ? o.material : [o.material];
-      for (const m of mats) if (!SHARED.has(m)) m.dispose();
+      // Materials many models share (the buckets, or anything marked `userData.shared`) outlive any one model.
+      for (const m of mats) if (!SHARED.has(m) && !m.userData.shared) m.dispose();
     }
   });
 }

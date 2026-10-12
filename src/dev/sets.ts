@@ -168,3 +168,30 @@ Object.assign(SETS, {
     return [{ label: what, object: make().group, size: Number(p.get('size') ?? 4) }];
   },
 } satisfies Record<string, () => ShowItem[]>);
+
+// Cloud banks with the hour's moonlit tint applied, as the city does each frame: `?set=tt-clouds&time=22`.
+import { setCloudLight } from '../render/models.ts';
+import { atmosphereAt } from '../world/daylight.ts';
+Object.assign(SETS, {
+  'tt-clouds': (): ShowItem[] => {
+    const a = atmosphereAt(Number(new URLSearchParams(location.search).get('time') ?? 13));
+    const fog = new THREE.Color(...a.fog);
+    return [
+      { label: 'clouds', object: group(cloudBank(0, 0, 4.6, 4.6, 9)), size: 5, update: () => setCloudLight(a.night, fog) },
+      { label: 'block cloud', object: group(cloudBank(0, 0, 4.6, 4.6, 21)), size: 5 },
+    ];
+  },
+} satisfies Record<string, () => ShowItem[]>);
+
+// One tall model, centred on its middle rather than its base: `?set=tt-tall&what=rocket&zoom=4` (same `what` as tt-one).
+Object.assign(SETS, {
+  'tt-tall': (): ShowItem[] => {
+    const [item] = SETS['tt-one']!();
+    const h = new THREE.Box3().setFromObject(item!.object).max.y;
+    // The iso camera looks down at atan(√2) from vertical, so a point h/2 up lines up with a ground point h/2·√2 further away.
+    const g = new THREE.Group();
+    item!.object.position.set(h / 2, 0, h / 2);
+    g.add(item!.object);
+    return [{ ...item!, object: g }];
+  },
+} satisfies Record<string, () => ShowItem[]>);

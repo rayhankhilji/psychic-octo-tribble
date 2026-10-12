@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { GeoBuilder, type ColorLike } from './geo.ts';
+import { GeoBuilder, smoothMaterial, type ColorLike } from './geo.ts';
 import { PALETTE } from './palette.ts';
 import { bright, palm, tree, warmth, type Built } from './buildings.ts';
 import {
-  FX, Kit, LAMP, RED_LIGHT, TINT, beam, bench, bush, campus, cypress, deco, facade, flat, lamp, loft, neonOf, neonRing, ngonPts, obox, people,
+  FX, Kit, LAMP, RED_LIGHT, TINT, beam, bench, bush, campus, cypress, deco, facade, fin, flat, lamp, loft, neonOf, neonRing, ngonPts, people,
   pixelText, planter, prism, profile, put, pyramid, quad4, quadBlob, rectPts, rod, scalePts, shade, slab, spire, tower,
   wall, winOf, wr, type Bucket, type XZ,
 } from './towers.ts';
@@ -37,18 +37,23 @@ function awning(b: GeoBuilder, x: number, y: number, z: number, nx: number, nz: 
   const stripes = Math.max(3, Math.round(w / 0.045));
   const sw = w / stripes;
   const tilt = 0.5;
-  const ry = Math.atan2(nx, nz);
   const tx = nz;
   const tz = -nx;
+  const out = Math.cos(tilt) * depth;
+  const drop = Math.sin(tilt) * depth;
+  // A point on the canvas: u across the awning (−0.5…0.5), v from the wall (0) to the edge (1)
+  const P = (u: number, v: number, dy = 0) => [x + tx * u * w + nx * out * v, y - drop * v + dy, z + tz * u * w + nz * out * v] as const;
+  const up = [nx * Math.sin(tilt), Math.cos(tilt), nz * Math.sin(tilt)] as const;
   for (let k = 0; k < stripes; k++) {
-    const u = (k + 0.5) / stripes - 0.5;
-    const g = new THREE.BoxGeometry(sw + 0.001, 0.006, depth);
-    const cx = x + tx * u * w + nx * Math.cos(tilt) * depth * 0.5;
-    const cz = z + tz * u * w + nz * Math.cos(tilt) * depth * 0.5;
-    put(b, g, cx, y - Math.sin(tilt) * depth * 0.5, cz, k % 2 ? c : a, 'solid', ry, tilt);
+    const u0 = k / stripes - 0.5;
+    const u1 = (k + 1) / stripes - 0.5;
+    const color = k % 2 ? c : a;
+    quad4(b, 'solid', [P(u0, 0, 0.003), P(u1, 0, 0.003), P(u1, 1, 0.003), P(u0, 1, 0.003)], color, up);
     // Valance
-    wall(b, 'solid', x + tx * u * w + nx * (Math.cos(tilt) * depth + 0.002), y - Math.sin(tilt) * depth - 0.012, z + tz * u * w + nz * (Math.cos(tilt) * depth + 0.002), nx, nz, sw, 0.024, k % 2 ? c : a);
+    wall(b, 'solid', x + tx * ((u0 + u1) / 2) * w + nx * (out + 0.002), y - drop - 0.012, z + tz * ((u0 + u1) / 2) * w + nz * (out + 0.002), nx, nz, sw, 0.024, color);
   }
+  // One underside for the whole canvas: it casts the awning's shadow on the shopfront
+  quad4(b, 'solid', [P(-0.5, 0), P(0.5, 0), P(0.5, 1), P(-0.5, 1)], shade(a, 0.7), [-up[0], -up[1], -up[2]]);
 }
 
 /** A punched window with a trim surround and a sill. */
@@ -817,7 +822,7 @@ function stadium(b: GeoBuilder, r: () => number, x: number, z: number) {
   const wallSeg = (a0: number, a1: number, h: number, color: ColorLike) => {
     prism(b, sectorPts(hx, hz, R, R + 0.04, a0, a1, Math.max(2, Math.round((a1 - a0) * 12))), y, h, color);
   };
-  wallSeg(-0.02, 1.0, 0.1, 0x2f5a3a);
+  wallSeg(-0.02, 1.0, 0.1, 0x3d6e4c);
   wallSeg(1.0, Math.PI / 2 + 0.02, 0.26, 0x9a4a36);
   for (let k = 0; k < 8; k++) {
     const a = 1.04 + k * 0.064;
@@ -826,7 +831,19 @@ function stadium(b: GeoBuilder, r: () => number, x: number, z: number) {
     wall(b, 'solid', px, y + 0.13, pz, Math.cos(a), Math.sin(a), 0.1, 0.14, 0x3a2420);
   }
   // Left-field bleachers, the giant bottle and the old glove
-  prism(b, sectorPts(hx, hz, R + 0.06, R + 0.36, -0.02, 0.95, 10), y, 0.12, 0x2f5a3a);
+  // Stepped rows in two soft greens rising away from the field, fans dotted along them, a pale concrete back wall
+  for (let t = 0; t < 3; t++) prism(b, sectorPts(hx, hz, R + 0.06 + t * 0.093, R + 0.34, -0.02, 0.95, 8), y, 0.035 + t * 0.035, t % 2 ? 0x4f8a63 : 0x5f9a72);
+  prism(b, sectorPts(hx, hz, R + 0.34, R + 0.37, -0.02, 0.95, 8), y, 0.15, 0xc9c2b4);
+  const fans: XZ[] = [];
+  for (let k = 0; k < 9; k++) {
+    const a = -0.02 + r() * 0.95;
+    const t = Math.floor(r() * 3);
+    fans.push([hx + Math.cos(a) * (R + 0.105 + t * 0.093), hz + Math.sin(a) * (R + 0.105 + t * 0.093)]);
+  }
+  for (const [fx, fz] of fans) {
+    const t = Math.round((Math.hypot(fx - hx, fz - hz) - R - 0.105) / 0.093);
+    figures(b, [[fx, fz]], y + 0.035 + t * 0.035, pick(r, [0xf28c28, 0xf4f1ea, 0x2a2f38, 0xe85a4a] as const), 0x3a3f4a);
+  }
   const bx = x + 1.6;
   const bz = z + 0.12;
   b.lathe([[0.1, 0], [0.11, 0.2], [0.08, 0.35], [0.11, 0.55], [0.1, 0.7], [0.05, 0.85], [0.035, 1.0], [0.04, 1.05], [0, 1.06]], bx, y + 0.12, bz, 0x5a2a1a, 14, 'glass');
@@ -843,7 +860,7 @@ function stadium(b: GeoBuilder, r: () => number, x: number, z: number) {
   const sx = hx + Math.cos(sa) * sr;
   const sz = hz + Math.sin(sa) * sr;
   for (const s of [-1, 1]) b.box(0.04, 0.5, 0.04, sx + s * 0.2 * Math.SQRT1_2, y, sz - s * 0.2 * Math.SQRT1_2, 0x3a4048);
-  b.box(0.62, 0.34, 0.05, sx, y + 0.5, sz, 0x23262e, false, -Math.PI / 4);
+  b.box(0.62, 0.34, 0.05, sx, y + 0.5, sz, 0x23262e, false, Math.PI / 4);
   wall(neonOf(b), 'glow', sx - 0.027, y + 0.68, sz - 0.027, -1, -1, 0.56, 0.24, [0.25, 0.3, 0.35]);
   pixelText(neonOf(b), 'glow', 'HOME 3', sx - 0.03, y + 0.73, sz - 0.03, -1, -1, 0.016, [2.6, 2.1, 0.6]);
   pixelText(neonOf(b), 'glow', 'AWAY 2', sx - 0.03, y + 0.63, sz - 0.03, -1, -1, 0.016, [2.6, 2.6, 2.4]);
@@ -928,8 +945,8 @@ function stadium(b: GeoBuilder, r: () => number, x: number, z: number) {
     for (let row = 0; row < 3; row++) wall(neonOf(b), 'glow', lx - nx * 0.022, y + 1.49 + row * 0.045, lz - nz * 0.022, -nx, -nz, 0.22, 0.03, [3.2, 3.2, 2.9]);
   }
   people(b, r, cx + 0.4, cz + 0.1, 8, 0.4, 0.3, y);
-  people(b, r, hx + 1.2, hz - 0.3, 10, 2.0, 0.2, y + 0.3);
-  people(b, r, hx - 0.35, hz + 1.2, 10, 0.2, 2.0, y + 0.3);
+  people(b, r, hx + 1.2, hz - 0.3, 8, 2.0, 0.2, y + 0.3);
+  people(b, r, hx - 0.35, hz + 1.2, 8, 0.2, 2.0, y + 0.3);
   palm(b, r, x + 1.75, z - 1.75, 0.9, y);
   palm(b, r, x + 1.4, z - 1.75, 0.8, y);
 }
@@ -1195,33 +1212,35 @@ function amusement(b: GeoBuilder, r: () => number, x: number, z: number) {
     pts.push(new THREE.Vector3(x - 0.7 + Math.cos(a) * 1.05, y + hill, z - 0.75 + Math.sin(a) * 0.95));
   }
   const curve = new THREE.CatmullRomCurve3(pts, true, 'centripetal');
-  const frames = curve.computeFrenetFrames(160, true);
+  // Two red rails (a 3-sided tube reads as round at this size), ties as fins, white trestles
   for (const s of [-1, 1]) {
     const railPts: THREE.Vector3[] = [];
-    for (let k = 0; k < 160; k++) {
-      const p = curve.getPointAt(k / 160);
-      const side = new THREE.Vector3().crossVectors(curve.getTangentAt(k / 160), UPV).normalize();
+    for (let k = 0; k < 72; k++) {
+      const p = curve.getPointAt(k / 72);
+      const side = new THREE.Vector3().crossVectors(curve.getTangentAt(k / 72), UPV).normalize();
       railPts.push(p.add(side.multiplyScalar(s * 0.03)));
     }
-    b.transformed(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts, true), 160, 0.008, 4, true), new THREE.Matrix4(), 0xd8402e);
+    b.transformed(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts, true), 72, 0.008, 3, true), new THREE.Matrix4(), 0xd8402e);
   }
-  void frames;
-  for (let k = 0; k < 64; k++) {
-    const t = k / 64;
+  for (let k = 0; k < 48; k++) {
+    const t = k / 48;
     const p = curve.getPointAt(t);
     const tan = curve.getTangentAt(t);
-    obox(b, p.x, p.y - 0.008, p.z, -tan.z, 0, tan.x, tan.x, 0, tan.z, 0.012, 0.08, 0.012, 0x5a4a3a);
-    if (k % 3 === 0) {
-      rod(b, p.x, y, p.z, p.x, p.y - 0.01, p.z, 0.008, 0xf4f1ea, 4);
+    fin(b, p.x, p.y - 0.008, p.z, -tan.z, 0, tan.x, 0, 1, 0, 0.012, 0.08, 0.012, 0x5a4a3a);
+    if (k % 2 === 0) {
+      rod(b, p.x, y, p.z, p.x, p.y - 0.01, p.z, 0.008, 0xf4f1ea, 3);
       if (p.y > 0.6) beam(b, p.x - 0.06, y, p.z, p.x, p.y * 0.6, p.z, 0.008, 0xf4f1ea);
     }
-    if (k % 2 === 0) quadBlob(neonOf(b), p.x, p.y + 0.012, p.z, 0.007, [2.8, 2.2, 1.2], FX.chase + (k % 3) / 3);
+    if (k % 3 !== 1) quadBlob(neonOf(b), p.x, p.y + 0.012, p.z, 0.007, [2.8, 2.2, 1.2], FX.chase + (k % 3) / 3);
   }
+  // The train: four cars, each a painted tub with a dark seat well and a lap bar
   for (let k = 0; k < 4; k++) {
     const t = 0.62 + k * 0.012;
     const p = curve.getPointAt(t);
     const tan = curve.getTangentAt(t);
-    b.rbox(0.07, 0.04, 0.06, p.x, p.y + 0.004, p.z, pick(r, [0xf2c84b, 0x3aa3c8, 0x3aa36a] as const), 0.012, 'smooth', -Math.atan2(tan.z, tan.x));
+    const rot = -Math.atan2(tan.z, tan.x);
+    b.box(0.07, 0.035, 0.06, p.x, p.y + 0.004, p.z, pick(r, [0xf2c84b, 0x3aa3c8, 0x3aa36a] as const), false, rot);
+    flat(b, 'solid', p.x, p.y + 0.0395, p.z, 0.05, 0.044, 0x2a2f38, rot);
   }
   // Carousel: striped canopy, horses on poles, a glowing crown
   const cx = x + 1.05;
@@ -1257,15 +1276,15 @@ function amusement(b: GeoBuilder, r: () => number, x: number, z: number) {
     const a = (k / 5) * Math.PI * 2;
     const px = ux + Math.cos(a) * 0.26;
     const pz = uz + Math.sin(a) * 0.26;
-    b.lathe([[0.05, 0], [0.075, 0.02], [0.08, 0.07], [0.075, 0.075]], px, y + 0.03, pz, pick(r, [0xf2c84b, 0x3aa3c8, 0xe86a9a, 0x5dd0a0] as const), 10, 'smooth');
+    b.lathe([[0.05, 0], [0.075, 0.02], [0.08, 0.07], [0.075, 0.075]], px, y + 0.03, pz, pick(r, [0xf2c84b, 0x3aa3c8, 0xe86a9a, 0x5dd0a0] as const), 9, 'smooth');
   }
   // Log flume: a water channel with a big drop and a splash pool
   b.box(1.2, 0.04, 0.16, x - 1.2, y, z + 1.55, 0x8a6446);
   b.box(1.16, 0.01, 0.12, x - 1.2, y + 0.04, z + 1.55, 0x3aa3c8, 'glass');
   put(b, new THREE.BoxGeometry(0.6, 0.04, 0.16), x - 1.6, y + 0.3, z + 1.1, 0x8a6446, 'solid', Math.PI / 2, 0, 0.0);
   put(b, new THREE.BoxGeometry(0.16, 0.04, 0.7), x - 1.6, y + 0.24, z + 1.2, 0x8a6446, 'solid', 0, 0.75);
-  b.rbox(0.1, 0.035, 0.06, x - 1.0, y + 0.05, z + 1.55, 0x6a4a34, 0.015);
-  for (let k = 0; k < 5; k++) b.blob(0.03, x - 1.65 + r() * 0.1, y + 0.08, z + 1.62 + r() * 0.05, 0xe6f6fa, 'smooth');
+  b.box(0.1, 0.035, 0.06, x - 1.0, y + 0.05, z + 1.55, 0x6a4a34);
+  for (let k = 0; k < 3; k++) b.blob(0.035, x - 1.65 + r() * 0.1, y + 0.08, z + 1.62 + r() * 0.05, 0xe6f6fa, 'smooth');
   // Entrance gate with the sign
   const gx = x + 0.2;
   const gz = z + 1.85;
@@ -1286,12 +1305,12 @@ function amusement(b: GeoBuilder, r: () => number, x: number, z: number) {
   for (let k = 0; k < 6; k++) {
     const bx = x + 0.6 + k * 0.05;
     rod(b, bx, y + 0.06, z + 0.75, bx + (k - 2.5) * 0.02, y + 0.3, z + 0.75, 0.001, 0xf4f1ea, 3);
-    b.blob(0.025, bx + (k - 2.5) * 0.02, y + 0.32, z + 0.75, pick(r, [0xe85a4a, 0xf2c84b, 0x3aa3c8, 0xe86a9a] as const), 'smooth', 1);
+    b.blob(0.025, bx + (k - 2.5) * 0.02, y + 0.32, z + 0.75, pick(r, [0xe85a4a, 0xf2c84b, 0x3aa3c8, 0xe86a9a] as const), 'smooth');
   }
-  bulbs(b, x - 1.8, 0.4, z + 0.6, x + 1.8, 0.4, z + 0.6, 28, 0.08);
+  bulbs(b, x - 1.8, 0.4, z + 0.6, x + 1.8, 0.4, z + 0.6, 22, 0.08);
   for (const [px, pz] of [[-1.8, -1.8], [1.8, -1.8], [-1.8, 0.9], [1.8, 0.75]] as const) palm(b, r, x + px, z + pz, 0.9, y);
-  people(b, r, x + 0.2, z + 0.6, 14, 3.4, 0.2, y);
-  people(b, r, x + 0.2, z + 0.2, 8, 0.2, 2.6, y);
+  people(b, r, x + 0.2, z + 0.6, 9, 3.4, 0.2, y);
+  people(b, r, x + 0.2, z + 0.2, 5, 0.2, 2.6, y);
 }
 
 const UPV = new THREE.Vector3(0, 1, 0);
@@ -1434,6 +1453,23 @@ function hackerHouse(b: Kit, r: () => number, museum: boolean) {
   const top = 0.03 + base + fh * 2;
   // Peeling patches
   for (let k = 0; k < 4; k++) wall(b, 'solid', W / 2 + 0.002, 0.2 + r() * 0.35, zc + (r() - 0.5) * 0.4, 1, 0, 0.04 + r() * 0.04, 0.03, shade(paint, 1.12));
+  // Tall sash windows down both sides and across the back, one with a bedsheet for a curtain
+  const warm: ColorLike = [1.6, 1.3, 0.8];
+  for (let f = 0; f < 2; f++) {
+    const wy = 0.03 + base + f * fh + 0.14;
+    for (const dz of [-0.06, 0.14]) {
+      punch(b, r, W / 2, wy, zc + dz, 1, 0, 0.07, 0.13, trim, warm, TINT.sky, 0.7);
+      punch(b, r, -W / 2, wy, zc + dz, -1, 0, 0.07, 0.13, trim, warm, TINT.sky, 0.7);
+    }
+    for (const dx of [-0.13, 0.11]) punch(b, r, dx, wy, zc - D / 2, 0, -1, 0.08, 0.13, trim, warm, TINT.sky, 0.7);
+  }
+  wall(b, 'solid', -0.13, 0.03 + base + fh + 0.15, zc - D / 2 - 0.008, 0, -1, 0.07, 0.1, 0xe8e4da);
+  // Back door at garden level, a bare bulb over it, a few steps and a dead plant
+  wall(b, 'solid', 0.12, 0.03 + 0.1, zc - D / 2 - 0.004, 0, -1, 0.07, 0.17, 0x5a4a3a);
+  quadBlob(neonOf(b), 0.12, 0.03 + 0.22, zc - D / 2 - 0.012, 0.008, LAMP);
+  for (let k = 0; k < 2; k++) b.box(0.1, 0.03 + k * 0.03, 0.04, 0.12, 0.03, zc - D / 2 - 0.06 + k * 0.03, 0xb9a88a);
+  b.cylinder(0.018, 0.014, 0.03, 0.22, 0.03, zc - D / 2 - 0.05, 0xc0603a, 6);
+  b.box(0.004, 0.04, 0.004, 0.22, 0.06, zc - D / 2 - 0.05, 0x8a7a50);
   bayWindow(b, r, -0.1, 0.03 + base + 0.02, front, 0, 1, 0.26, 0.07, fh, 2, paint, trim, [1.6, 1.3, 0.8]);
   cornice(b, 0, top, front, 0, 1, W, trim);
   b.box(W + 0.04, 0.03, D + 0.02, 0, top, zc, trim);
@@ -1443,12 +1479,38 @@ function hackerHouse(b: Kit, r: () => number, museum: boolean) {
   put(b, new THREE.ExtrudeGeometry(tri, { depth: 0.01, bevelEnabled: false }), 0, top + 0.03, front + 0.022, shade(pick(r, PALETTE.victorian), 0.8));
   for (let k = 0; k < 3; k++) wall(b, 'solid', 0, top + 0.06 + k * 0.045, front + 0.034, 0, 1, W * (0.85 - k * 0.22), 0.006, trim);
   punch(b, r, 0, top + 0.11, front + 0.03, 0, 1, 0.07, 0.07, trim, [1.6, 1.3, 0.8], TINT.sky, 0.9);
-  // Blue tarp over a leak
-  put(b, new THREE.BoxGeometry(0.18, 0.004, 0.2), 0.12, top + 0.15, zc - 0.05, 0x2f6fd8, 'solid', 0, 0, -0.75);
-  // Antenna and a satellite dish
-  rod(b, -0.15, top + 0.2, zc - 0.2, -0.15, top + 0.42, zc - 0.2, 0.004, PALETTE.steel, 3);
-  for (let k = 0; k < 3; k++) b.box(0.1 - k * 0.025, 0.004, 0.004, -0.15, top + 0.32 + k * 0.03, zc - 0.2, PALETTE.steel);
-  put(b, new THREE.SphereGeometry(0.035, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), 0.2, top + 0.02, zc - 0.25, 0xe8e8e8, 'smooth', 0, -1.1);
+  // The back gable is plain siding with an attic vent
+  put(b, new THREE.ExtrudeGeometry(tri, { depth: 0.01, bevelEnabled: false }), 0, top + 0.03, zc - D / 2 - 0.041, paint);
+  wall(b, 'solid', 0, top + 0.1, zc - D / 2 - 0.043, 0, -1, 0.06, 0.05, 0x6a6560);
+  for (let k = 0; k < 3; k++) wall(b, 'solid', 0, top + 0.085 + k * 0.015, zc - D / 2 - 0.045, 0, -1, 0.06, 0.004, trim);
+  // The roof: both slopes rise 0.24 over half the width plus the eave
+  const eave = W / 2 + 0.03;
+  const pitch = Math.atan2(0.24, eave);
+  const roofY = (dx: number) => top + 0.03 + 0.24 * (1 - Math.abs(dx) / eave);
+  // On the east slope: a DIY solar array bolted on in two rows, and a blue tarp over the leak by the gable
+  for (let i = 0; i < 2; i++) {
+    for (let j = 0; j < 2; j++) {
+      const px = 0.07 + i * 0.1;
+      const pz = zc - 0.24 + j * 0.15;
+      put(b, new THREE.BoxGeometry(0.095, 0.008, 0.14), px, roofY(px) + 0.012, pz, 0x1f2f52, 'glass', 0, 0, -pitch);
+      put(b, new THREE.BoxGeometry(0.004, 0.0085, 0.14), px, roofY(px) + 0.0125, pz, 0x8a96a8, 'solid', 0, 0, -pitch);
+    }
+  }
+  put(b, new THREE.BoxGeometry(0.17, 0.004, 0.16), 0.12, roofY(0.12) + 0.008, zc + 0.16, 0x2f6fd8, 'solid', 0, 0, -pitch);
+  for (const [dx, dz] of [[0.05, 0.09], [0.19, 0.23]] as const) b.box(0.016, 0.012, 0.016, dx, roofY(dx), zc + dz, 0x8a8a84); // bricks holding the tarp down
+  // On the west slope: a brick chimney, the plumbing vent, and the old TV antenna
+  b.box(0.07, 0.2, 0.07, -0.14, roofY(-0.14) - 0.06, zc - 0.18, 0x9a4a36);
+  b.box(0.08, 0.014, 0.08, -0.14, roofY(-0.14) + 0.14, zc - 0.18, 0x7a3a2a);
+  b.cylinder(0.009, 0.009, 0.07, -0.2, roofY(-0.2) - 0.01, zc + 0.08, 0x3a3f4a, 5);
+  rod(b, -0.06, roofY(-0.06), zc + 0.05, -0.06, roofY(-0.06) + 0.24, zc + 0.05, 0.004, PALETTE.steel, 3);
+  for (let k = 0; k < 3; k++) b.box(0.1 - k * 0.025, 0.004, 0.004, -0.06, roofY(-0.06) + 0.14 + k * 0.035, zc + 0.05, PALETTE.steel);
+  // A satellite dish on a wall bracket under the east eave, aimed at the southern sky
+  b.box(0.04, 0.008, 0.012, W / 2 + 0.02, top - 0.08, zc - 0.2, PALETTE.steel);
+  put(b, new THREE.LatheGeometry([new THREE.Vector2(0.001, 0), new THREE.Vector2(0.022, 0.006), new THREE.Vector2(0.04, 0.018)], 10), W / 2 + 0.045, top - 0.07, zc - 0.21, 0xe8e8e4, 'smooth', Math.PI, 0.9);
+  rod(b, W / 2 + 0.045, top - 0.07, zc - 0.21, W / 2 + 0.045, top - 0.05, zc - 0.25, 0.002, PALETTE.steel, 3);
+  // String lights from the chimney to the antenna mast: someone's idea of a roof party
+  bulbs(b, -0.14, roofY(-0.14) + 0.15, zc - 0.18, -0.06, roofY(-0.06) + 0.22, zc + 0.05, 5, 0.03);
+  bulbs(b, -0.06, roofY(-0.06) + 0.22, zc + 0.05, W / 2, top + 0.02, front, 6, 0.05);
   // Front: stairs up to the porch, the door, the old couch
   for (let k = 0; k < 4; k++) b.box(0.14, 0.03, 0.04, 0.16, 0.03 + k * 0.03, front + 0.16 - k * 0.04, 0xb9a88a);
   b.box(0.22, 0.012, 0.14, 0.16, 0.03 + base, front + 0.06, 0x8a6a4a);
@@ -1526,6 +1588,15 @@ function studio(b: Kit, r: () => number) {
   b.box(0.004, 0.004, 0.2, W / 2 + 0.08, yy + 0.06, zc + 0.2, 0x3a3f4a);
   wall(winOf(b), 'glow', W / 2 + 0.004, yy + 0.1, zc + 0.2, 1, 0, 0.12, 0.13, [2.2, 1.5, 0.8], 0.13);
   pixelText(neonOf(b), 'glow', '*', W / 2 + 0.008, yy + 0.12, zc + 0.2, 1, 0, 0.008, [2.8, 0.6, 1.2]);
+  // Back: a column of kitchen windows per flat, the service door and the gas meters
+  for (let f = 0; f < floors; f++) {
+    for (const dx of [-0.22, 0.0, 0.22]) punch(b, r, dx, 0.03 + gh + f * fh + 0.1, zc - D / 2, 0, -1, 0.07, 0.11, trim, warmth(r), TINT.sky, 0.55);
+  }
+  wall(b, 'solid', -0.18, 0.03 + 0.09, zc - D / 2 - 0.004, 0, -1, 0.08, 0.16, 0x4a5a6a);
+  quadBlob(neonOf(b), -0.18, 0.03 + 0.2, zc - D / 2 - 0.012, 0.008, LAMP);
+  b.box(0.12, 0.08, 0.03, 0.12, 0.05, zc - D / 2 - 0.015, 0x9aa3ad);
+  for (let k = 0; k < 3; k++) b.cylinder(0.012, 0.012, 0.02, 0.08 + k * 0.04, 0.09, zc - D / 2 - 0.035, 0xd8d2c4, 6);
+  for (const dx of [0.0, 0.22]) punch(b, r, dx, 0.03 + 0.12, zc - D / 2, 0, -1, 0.09, 0.08, trim, warmth(r), TINT.sky, 0.6);
   // Fire escape on the other side
   for (let f = 0; f < floors; f++) {
     const fy = 0.03 + gh + f * fh;
@@ -1535,11 +1606,56 @@ function studio(b: Kit, r: () => number) {
   }
   cornice(b, 0, 0.03 + H, front, 0, 1, W, trim);
   b.box(W + 0.04, 0.03, D + 0.02, 0, 0.03 + H, zc, trim);
-  b.box(0.12, 0.08, 0.1, -0.18, 0.06 + H, zc - 0.15, 0x9aa3ad);
-  b.box(0.24, 0.012, 0.2, 0.15, 0.06 + H, zc - 0.05, PALETTE.wood);
+  studioRoof(b, r, W, D, zc, 0.06 + H);
   bins(b, -0.42, 0.38);
   tree(b, r, -0.35, 0.36, 0.5, 0.03, 'round');
   bike(b, r, 0.36, 0.38, 0, 0.03);
+}
+
+/** The studio's flat roof, where the founder actually lives: a deck with lights, solar, a dish, the stair hatch. */
+function studioRoof(b: Kit, r: () => number, W: number, D: number, zc: number, y: number) {
+  const x0 = -W / 2 + 0.02;
+  const x1 = W / 2 - 0.02;
+  const z0 = zc - D / 2 + 0.02;
+  const z1 = zc + D / 2 - 0.02;
+  // Tar-and-gravel roof inside a low parapet
+  b.box(W - 0.04, 0.004, D - 0.04, 0, y, zc, 0x77736c);
+  for (const [cx, cz, w, d] of [[0, z1, W - 0.02, 0.02], [0, z0, W - 0.02, 0.02], [x1, zc, 0.02, D - 0.02], [x0, zc, 0.02, D - 0.02]] as const) b.box(w, 0.035, d, cx, y, cz, 0xe8e2d6);
+  // Stair hatch: a little shed with a door and a vent hood
+  b.box(0.16, 0.14, 0.13, x0 + 0.1, y, z0 + 0.09, 0xd8d2c6);
+  b.box(0.18, 0.012, 0.15, x0 + 0.1, y + 0.14, z0 + 0.09, 0x5a5f68);
+  wall(b, 'solid', x0 + 0.1, y + 0.055, z0 + 0.156, 0, 1, 0.055, 0.105, 0x3a5a7a);
+  b.cylinder(0.012, 0.012, 0.06, x0 + 0.05, y + 0.152, z0 + 0.06, 0x8a929c, 6);
+  b.cylinder(0.022, 0.016, 0.014, x0 + 0.05, y + 0.212, z0 + 0.06, 0x8a929c, 6);
+  // Three solar panels on a rack along the back, tilted to the morning sun
+  for (let k = 0; k < 3; k++) {
+    const px = x0 + 0.27 + k * 0.12;
+    put(b, new THREE.BoxGeometry(0.1, 0.008, 0.16), px, y + 0.05, z0 + 0.1, 0x1f2f52, 'glass', 0, 0, -0.45);
+    b.box(0.008, 0.045, 0.008, px - 0.03, y, z0 + 0.04, 0x9aa3ad);
+    b.box(0.008, 0.045, 0.008, px - 0.03, y, z0 + 0.16, 0x9aa3ad);
+  }
+  // Satellite dish on a short mast in the corner
+  b.cylinder(0.006, 0.006, 0.09, x1 - 0.04, y, z0 + 0.04, 0x9aa3ad, 5);
+  put(b, new THREE.LatheGeometry([new THREE.Vector2(0.001, 0), new THREE.Vector2(0.025, 0.007), new THREE.Vector2(0.045, 0.02)], 10), x1 - 0.04, y + 0.09, z0 + 0.04, 0xeeeeea, 'smooth', Math.PI * 0.9, 0.8);
+  // The deck at the front: boards, two chairs, a low table, potted plants, lights on two posts
+  const dx = 0.08;
+  const dz = zc + 0.12;
+  b.box(0.42, 0.012, 0.26, dx, y, dz, PALETTE.wood);
+  for (let k = 0; k < 5; k++) b.box(0.42, 0.002, 0.003, dx, y + 0.012, dz - 0.1 + k * 0.05, shade(PALETTE.wood, 0.8));
+  for (const [cx, rot] of [[dx - 0.12, 0.3], [dx + 0.04, -0.25]] as const) {
+    const col = pick(r, [0xe85a4a, 0x2f8a6a, 0xf2c84b, 0x2f6fa8] as const);
+    b.box(0.06, 0.02, 0.055, cx, y + 0.012, dz + 0.03, col, false, rot);
+    b.box(0.06, 0.045, 0.012, cx - Math.sin(rot) * 0.025, y + 0.032, dz + 0.03 - Math.cos(rot) * 0.025, shade(col, 0.85), false, rot);
+  }
+  b.cylinder(0.025, 0.025, 0.006, dx - 0.04, y + 0.035, dz + 0.08, 0xf4f1ea, 8);
+  b.cylinder(0.004, 0.004, 0.023, dx - 0.04, y + 0.012, dz + 0.08, 0x3a3f4a, 4);
+  for (const [px, pz] of [[dx + 0.18, dz + 0.1], [dx + 0.18, dz - 0.08], [dx - 0.18, dz + 0.1]] as const) {
+    b.cylinder(0.018, 0.014, 0.03, px, y + 0.012, pz, 0xc0603a, 6);
+    b.blob(0.026, px, y + 0.06, pz, pick(r, PALETTE.leaves), 'smooth');
+  }
+  for (const s of [-1, 1]) rod(b, dx + s * 0.2, y + 0.012, dz - 0.12, dx + s * 0.2, y + 0.16, dz - 0.12, 0.003, STEEL_DARK, 3);
+  bulbs(b, dx - 0.2, y + 0.16, dz - 0.12, dx + 0.2, y + 0.16, dz - 0.12, 7, 0.03);
+  bulbs(b, dx - 0.2, y + 0.16, dz - 0.12, x1 - 0.01, y + 0.04, z1 - 0.01, 6, 0.03);
 }
 
 function bungalow(b: Kit, r: () => number) {
@@ -1578,6 +1694,12 @@ function bungalow(b: Kit, r: () => number) {
   for (const [nx, dz] of [[1, -0.12], [1, 0.08], [-1, -0.12], [-1, 0.08]] as const) punch(b, r, (nx * W) / 2, 0.2, zc + dz, nx, 0, 0.1, 0.12, trim, warmth(r), TINT.sky, 0.6);
   // Stone chimney
   b.box(0.08, 0.5, 0.1, -W / 2 - 0.02, 0.03, zc - 0.1, 0x9a8a7a);
+  // Back: kitchen windows, a screen door on a little stoop, the rear gable in shingle with a vent
+  for (const dx of [-0.15, 0.16]) punch(b, r, dx, 0.22, zc - D / 2, 0, -1, 0.1, 0.1, trim, warmth(r), TINT.sky, 0.7);
+  wall(b, 'solid', 0.0, 0.08 + 0.085, zc - D / 2 - 0.004, 0, -1, 0.07, 0.16, 0x7a4a2a);
+  b.box(0.12, 0.05, 0.08, 0.0, 0.03, zc - D / 2 - 0.04, 0x9a948a);
+  put(b, new THREE.ExtrudeGeometry(tri, { depth: 0.01, bevelEnabled: false }), 0, 0.08 + H, zc + 0.02 - (D + 0.26) / 2 - 0.011, shade(wallC, 0.85));
+  wall(b, 'solid', 0, 0.08 + H + 0.06, zc + 0.02 - (D + 0.26) / 2 - 0.013, 0, -1, 0.07, 0.04, trim);
   // Path, picket fence, flower beds, the lemon tree, a mailbox
   b.box(0.1, 0.006, 0.26, 0.08, 0.03, 0.37, 0xd8d2c4);
   for (let k = 0; k <= 18; k++) {
@@ -1959,50 +2081,151 @@ function islandEstate(b: Kit, r: () => number) {
 
 // ─── City state: tents, clouds, plots ──────────────────────────────────────
 
-/** Tents, tarps and carts at the given spots: people making do. */
+/**
+ * Tents, tarps and carts at the given spots: people making a home with what
+ * they have. Shown plainly and with care: tidy pitches, a chair out front,
+ * a lantern at night. Never a joke.
+ */
 export function encampment(spots: { x: number; z: number; rot: number }[], seed: number): Built {
   const r = rng(seed);
   const b = new Kit();
-  for (const s of spots) {
-    const tarp = pick(r, [0x3a6ad8, 0x2f8a6a, 0xe8873a, 0x8a8f99, 0xc84a4a, 0x6a5ac8] as const);
+  const pole = 0x3a3f4a;
+  // Mostly tents, a few tarps, the odd cart: the same mix however many spots there are
+  const KINDS = [0.2, 0.6, 0.3, 0.9, 0.1, 0.7, 0.4, 0.85] as const;
+  const shift = Math.floor(r() * KINDS.length);
+  spots.forEach((s, i) => {
+    const tarp = pick(r, [0x3a6ad8, 0x2f8a6a, 0xe8873a, 0x7a8290, 0xc84a4a, 0x5a6a3a] as const);
     const c = Math.cos(s.rot);
     const sn = Math.sin(s.rot);
-    const roll = r();
-    if (roll < 0.55) {
-      // Dome tent with a flysheet and an open door
-      const g = new THREE.SphereGeometry(0.1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
-      put(b, g, s.x, 0.005, s.z, tarp, 'smooth', s.rot, 0, 0, 1.3, 0.75, 1);
-      put(b, new THREE.CircleGeometry(0.045, 6, 0, Math.PI), s.x + c * 0.128, 0.006, s.z - sn * 0.128, 0x2a2f38, 'solid', s.rot + Math.PI / 2);
-      rod(b, s.x - c * 0.12, 0.005, s.z + sn * 0.12, s.x + c * 0.12, 0.005, s.z - sn * 0.12, 0.002, 0x2a2f38, 3);
-    } else if (roll < 0.8) {
-      // A tarp lean-to on two poles over a sleeping bag
-      for (const k of [-1, 1]) rod(b, s.x - sn * k * 0.1, 0, s.z - c * k * 0.1, s.x - sn * k * 0.1, 0.12, s.z - c * k * 0.1, 0.004, 0x8a6a4a, 3);
-      put(b, new THREE.BoxGeometry(0.22, 0.004, 0.18), s.x + c * 0.04, 0.07, s.z - sn * 0.04, tarp, 'solid', s.rot + Math.PI / 2, 0.7);
-      b.rbox(0.16, 0.02, 0.06, s.x + c * 0.04, 0.005, s.z - sn * 0.04, pick(r, [0x4a6a3a, 0x8a3a3a, 0x3a4a7a] as const), 0.01, 'smooth', s.rot + Math.PI / 2);
-    } else {
-      // A shopping cart with belongings and a bedroll
-      const cx = s.x;
-      const cz = s.z;
-      b.box(0.1, 0.004, 0.07, cx, 0.03, cz, 0x9aa3ad, false, s.rot);
-      for (const [dx, dz] of [[0.05, 0.035], [-0.05, 0.035], [0.05, -0.035], [-0.05, -0.035]] as const) {
-        b.box(0.004, 0.07, 0.004, cx + c * dx + sn * dz, 0.03, cz - sn * dx + c * dz, 0x9aa3ad);
-        b.cylinder(0.008, 0.008, 0.006, cx + c * dx + sn * dz, 0.005, cz - sn * dx + c * dz, 0x2a2f38, 5);
+    // Local (u along the pitch, v across) to world
+    const P = (u: number, v: number) => [s.x + c * u + sn * v, s.z - sn * u + c * v] as const;
+    const roll = KINDS[(i + shift) % KINDS.length]!;
+    // A groundsheet under everything
+    const [gx, gz] = P(0.02, 0);
+    flat(b, 'solid', gx, 0.004, gz, 0.27, 0.19, pick(r, [0x5a5a52, 0x4a5058, 0x5a5040] as const), s.rot);
+    if (roll < 0.5) {
+      // Dome tent: the body, two crossing poles, a zipped door with its flap rolled back
+      put(b, new THREE.SphereGeometry(0.1, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2), s.x, 0.005, s.z, tarp, 'smooth', s.rot, 0, 0, 1.25, 0.92, 1);
+      for (const [ry, sx] of [[s.rot, 1.25], [s.rot + Math.PI / 2, 1.0]] as const) {
+        put(b, new THREE.TorusGeometry(0.101, 0.0028, 3, 10, Math.PI), s.x, 0.005, s.z, pole, 'solid', ry, 0, 0, sx * 0.96, 0.925, 1);
       }
-      b.box(0.1, 0.004, 0.07, cx, 0.1, cz, 0x9aa3ad, false, s.rot);
-      b.blob(0.035, cx, 0.12, cz, pick(r, [0x3a6ad8, 0x2a2f38, 0xe8873a] as const), 'smooth');
-      b.rbox(0.14, 0.03, 0.05, cx + sn * 0.1, 0.005, cz + c * 0.1, pick(r, [0x4a6a3a, 0x8a3a3a] as const), 0.012, 'smooth', s.rot);
+      const [dx, dz] = P(0.12, 0);
+      put(b, new THREE.CircleGeometry(0.04, 8, 0, Math.PI), dx, 0.006, dz, 0x23262e, 'solid', s.rot + Math.PI / 2);
+      const [fx, fz] = P(0.126, 0.034);
+      b.box(0.012, 0.045, 0.012, fx, 0.006, fz, shade(tarp, 0.8), false, s.rot);
+      // Guy lines to stakes at the corners
+      for (const [u, v] of [[0.16, 0.12], [0.16, -0.12], [-0.16, 0.12], [-0.16, -0.12]] as const) {
+        const [ax, az] = P(u * 0.6, v * 0.6);
+        const [kx, kz] = P(u, v);
+        rod(b, ax, 0.05, az, kx, 0.004, kz, 0.0012, 0xd8d2c4, 3);
+      }
+    } else if (roll < 0.75) {
+      // A-frame tarp over a ridge line between two poles, a sleeping bag and a pillow beneath
+      const [ax, az] = P(-0.11, 0);
+      const [cx, cz] = P(0.11, 0);
+      for (const [px, pz] of [[ax, az], [cx, cz]] as const) rod(b, px, 0, pz, px, 0.11, pz, 0.003, 0x8a6a4a, 3);
+      rod(b, ax, 0.11, az, cx, 0.11, cz, 0.0015, 0xd8d2c4, 3);
+      for (const side of [-1, 1]) {
+        const [mx, mz] = P(0, side * 0.055);
+        put(b, new THREE.BoxGeometry(0.24, 0.004, 0.13), mx, 0.058, mz, tarp, 'solid', s.rot, side * 0.95);
+      }
+      const [bx, bz] = P(0.0, 0.0);
+      b.box(0.17, 0.02, 0.065, bx, 0.005, bz, pick(r, [0x4a6a3a, 0x8a3a3a, 0x3a4a7a, 0x6a5a8a] as const), false, s.rot);
+      const [px, pz] = P(-0.075, 0);
+      b.box(0.035, 0.016, 0.05, px, 0.025, pz, 0xe8e4da, false, s.rot);
+    } else {
+      // A shopping cart holding someone's things, a rolled sleeping mat beside it
+      const steel = 0xb8c0c8;
+      const [cx, cz] = P(0, 0);
+      for (const [u, v] of [[0.055, 0.04], [-0.055, 0.04], [0.055, -0.04], [-0.055, -0.04]] as const) {
+        const [wx, wz] = P(u, v);
+        b.cylinder(0.009, 0.009, 0.006, wx, 0.006, wz, 0x1e2026, 6, false, s.rot);
+        b.box(0.004, 0.035, 0.004, wx, 0.008, wz, steel);
+      }
+      b.box(0.12, 0.004, 0.085, cx, 0.04, cz, steel, false, s.rot);
+      // The basket: four wire walls (light, so they read as mesh), a top rim, the handle
+      for (const side of [-1, 1]) {
+        const [sx, sz] = P(0, side * 0.044);
+        wall(b, 'solid', sx, 0.075, sz, sn * side, c * side, 0.13, 0.065, shade(steel, 0.9));
+        const [ex, ez] = P(side * 0.066, 0);
+        wall(b, 'solid', ex, 0.075, ez, c * side, -sn * side, 0.088, 0.065, shade(steel, 0.9));
+      }
+      b.box(0.135, 0.004, 0.092, cx, 0.108, cz, steel, false, s.rot);
+      const [h0x, h0z] = P(-0.08, -0.045);
+      const [h1x, h1z] = P(-0.08, 0.045);
+      rod(b, h0x, 0.13, h0z, h1x, 0.13, h1z, 0.004, 0xd8402e, 4);
+      const [lx, lz] = P(-0.068, 0);
+      b.box(0.006, 0.03, 0.09, lx, 0.105, lz, steel, false, s.rot);
+      const [ix, iz] = P(0.01, 0);
+      b.box(0.09, 0.03, 0.06, ix, 0.095, iz, pick(r, [0x3a6ad8, 0x2a2f38, 0x5a6a3a, 0x6a5a8a] as const), false, s.rot);
+      const [qx, qz] = P(0.03, 0.01);
+      b.box(0.05, 0.025, 0.04, qx, 0.125, qz, pick(r, [0x8a3a3a, 0x4a6a3a, 0xd8c8a8] as const), false, s.rot + 0.4);
+      const [mx, mz] = P(0.0, 0.1);
+      put(b, new THREE.CylinderGeometry(0.018, 0.018, 0.13, 8), mx, 0.022, mz, pick(r, [0x2f8a6a, 0x3a6ad8, 0xc84a4a] as const), 'smooth', s.rot, 0, Math.PI / 2);
     }
-    if (r() < 0.35) b.box(0.07, 0.06, 0.07, s.x + 0.13, 0.005, s.z + 0.1, 0xa88a5a, false, r()); // a cardboard box
+    // Out front: a folding camp chair, a milk crate used as a table, a water jug, a plant, a lantern
+    if (r() < 0.55) {
+      const [chx, chz] = P(0.22, -0.07);
+      const col = pick(r, [0x2f6fa8, 0x3aa36a, 0xd8402e, 0x2a2f38] as const);
+      const yaw = s.rot + Math.PI / 2 + (r() - 0.5) * 0.6;
+      b.box(0.045, 0.006, 0.04, chx, 0.03, chz, col, false, yaw);
+      put(b, new THREE.BoxGeometry(0.045, 0.045, 0.005), chx - Math.sin(yaw) * 0.02, 0.055, chz - Math.cos(yaw) * 0.02, col, 'solid', yaw, -0.25);
+      for (const k of [-1, 1]) put(b, new THREE.BoxGeometry(0.003, 0.042, 0.003), chx + Math.cos(yaw) * k * 0.02, 0.016, chz - Math.sin(yaw) * k * 0.02, pole, 'solid', yaw, 0.5);
+    }
+    if (r() < 0.5) {
+      const [kx, kz] = P(0.2, 0.08);
+      b.box(0.045, 0.035, 0.035, kx, 0.004, kz, pick(r, [0x2f6fa8, 0xd8402e, 0x3a8a4a] as const), false, s.rot);
+      flat(b, 'solid', kx, 0.04, kz, 0.04, 0.03, 0x2a2f38, s.rot);
+      quadBlob(neonOf(b), kx, 0.052, kz, 0.009, [2.6, 1.8, 0.8], FX.shimmer + r()); // a camp lantern
+    }
+    if (r() < 0.35) {
+      const [jx, jz] = P(-0.15, 0.1);
+      b.cylinder(0.014, 0.016, 0.04, jx, 0.004, jz, 0x9fc8e0, 6, 'glass');
+      b.cylinder(0.006, 0.006, 0.008, jx, 0.044, jz, 0x2f6fa8, 5);
+    }
     if (r() < 0.3) {
-      // A folding chair and a little potted plant: home is where you make it
-      b.box(0.04, 0.004, 0.04, s.x - 0.14, 0.03, s.z + 0.06, pick(r, [0x2f6fa8, 0x3aa36a] as const));
-      b.box(0.04, 0.035, 0.004, s.x - 0.14, 0.03, s.z + 0.04, pick(r, [0x2f6fa8, 0x3aa36a] as const));
-      b.cylinder(0.012, 0.01, 0.02, s.x - 0.1, 0.005, s.z + 0.12, 0xc0603a, 6);
-      b.blob(0.015, s.x - 0.1, 0.035, s.z + 0.12, 0x4f9d3b, 'smooth');
+      const [tx, tz] = P(0.17, 0.13);
+      b.cylinder(0.013, 0.01, 0.022, tx, 0.004, tz, 0xc0603a, 6);
+      b.blob(0.016, tx, 0.036, tz, 0x4f9d3b, 'smooth');
     }
-    if (r() < 0.25) quadBlob(neonOf(b), s.x + c * 0.05, 0.03, s.z - sn * 0.05, 0.01, [2.4, 1.6, 0.7], FX.shimmer + r());
-  }
+  });
   return b.build();
+}
+
+/**
+ * Every cloud bank shares this material, so the city can turn them all
+ * moonlit at once (see `setCloudLight`). Smooth, matte, vertex-coloured,
+ * like the smooth bucket.
+ */
+export const cloudMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.05, envMapIntensity: 0 });
+// Shared by every cloud bank: disposing one bank must not dispose it.
+cloudMaterial.userData.shared = true;
+
+/**
+ * What white cloud becomes under a full moon: a fixed, slightly cool grey.
+ * It deliberately ignores the haze colour, which tinted the clouds mauve
+ * in-game under the warm night fill. Kept a touch lighter than the land so
+ * locked ground still reads as "under cloud".
+ */
+const MOONLIT_CLOUD = new THREE.Color(0.4, 0.56, 0.56);
+
+/**
+ * Tints the cloud banks with the hour. By day (`night` 0) they are exactly
+ * the smooth bucket's white; as night falls they ease into the moonlit
+ * blue-grey so they sit back behind the lit city instead of glowing over
+ * it. Call every frame with the atmosphere's `night`; `fog` is accepted for
+ * API stability but not used for the tint.
+ */
+export function setCloudLight(night: number, fog: THREE.Color) {
+  void fog;
+  const n = Math.min(1, Math.max(0, night));
+  cloudMaterial.color.setRGB(1, 1, 1).lerp(MOONLIT_CLOUD, n);
+  // Share the sky reflection the smooth bucket gets by day, and let it go at night (it would light them up again).
+  if (cloudMaterial.envMap !== smoothMaterial.envMap) {
+    cloudMaterial.envMap = smoothMaterial.envMap;
+    cloudMaterial.needsUpdate = true;
+  }
+  cloudMaterial.envMapIntensity = smoothMaterial.envMapIntensity * (1 - n);
 }
 
 /** A bank of soft, layered cumulus over land that isn't open yet. */
@@ -2031,7 +2254,11 @@ export function cloudBank(x: number, z: number, w: number, d: number, seed: numb
     const g = new THREE.IcosahedronGeometry(s * 0.55, 1).scale(1, 0.95, 1);
     put(b, g, cx, y + s * 0.45, cz, 0xffffff, 'smooth', r() * 3);
   }
-  return b.build();
+  const built = b.build();
+  built.group.traverse((o) => {
+    if (o instanceof THREE.Mesh && o.material === smoothMaterial) o.material = cloudMaterial;
+  });
+  return built;
 }
 
 /** An empty plot for sale: graded dirt, survey stakes and string, a sign. */
@@ -2251,18 +2478,28 @@ function supersonic(b: Kit, r: () => number, liv: Livery) {
   for (const s of [-1, 1]) put(b, new THREE.PlaneGeometry(0.06, 0.018), len * 0.41, y + rad * 0.55, s * rad * 0.55, 0x1c2a3a, 'glass', s > 0 ? -0.6 : Math.PI + 0.6, -0.5);
   for (const s of [-1, 1]) wall(b, 'solid', -0.1, y + rad * 0.05, s * (rad + 0.001), 0, s, len * 0.6, 0.012, liv.main);
   cabinWindows(b, r, -0.6, 0.35, y + rad * 0.3, rad * 0.98, 14, 0.014);
-  // Ogival delta wing
+  // Ogival delta wing: the leading edge creeps out of the forward fuselage as a thin strake, swells
+  // into the big S-curve of the ogee and straightens to a short streamwise tip; the trailing edge is
+  // almost straight across, the elevons a darker band along it.
   const half: XZ[] = [];
-  for (let k = 0; k <= 10; k++) {
-    const t = k / 10;
-    half.push([0.45 - t * 1.0, 0.03 + Math.pow(t, 0.75) * 0.5]);
+  for (let k = 0; k <= 16; k++) {
+    const t = k / 16;
+    const ogee = 0.72 * t * t * (3 - 2 * t) + 0.28 * Math.pow(t, 1.7);
+    half.push([0.58 - t * 1.12, 0.032 + ogee * 0.5]);
   }
-  const outline: XZ[] = [[0.5, 0], ...half, [-0.62, 0.53], [-0.68, 0.45], [-0.66, 0]];
+  const outline: XZ[] = [[0.62, 0], ...half, [-0.6, 0.535], [-0.645, 0.5], [-0.67, 0.3], [-0.68, 0.06], [-0.68, 0]];
   const full: XZ[] = [...outline, ...outline.slice(1, -1).reverse().map(([px, pz]) => [px, -pz] as XZ)];
   const shape = new THREE.Shape(full.map(([px, pz]) => new THREE.Vector2(px, -pz)));
   const wg = new THREE.ExtrudeGeometry(shape, { depth: 0.018, bevelEnabled: false });
   wg.rotateX(-Math.PI / 2);
   put(b, wg, 0, y - rad * 0.7, 0, 0xeef0f2, 'smooth');
+  const wy = y - rad * 0.7 + 0.0185;
+  for (const s of [-1, 1]) {
+    for (const [z0, z1] of [[0.08, 0.27], [0.29, 0.48]] as const) {
+      const xe = (zz: number) => -0.68 + Math.max(0, zz - 0.3) * 0.17;
+      quad4(b, 'solid', [[xe(z0), wy, s * z0], [xe(z1), wy, s * z1], [xe(z1) + 0.06, wy, s * z1], [xe(z0) + 0.06, wy, s * z0]], 0xc9ced6, [0, 1, 0]);
+    }
+  }
   // Engine nacelles (two pairs, boxy) under the wing
   for (const s of [-1, 1]) {
     b.rbox(0.42, 0.05, 0.12, -0.42, y - rad * 0.7 - 0.05, s * 0.2, 0xd8dce0, 0.012, 'smooth');
@@ -2345,7 +2582,7 @@ export function airliner(seed: number): Built {
 }
 
 /** A sleek hull: stations from stern to bow, waterline at y = 0. */
-function hull(b: GeoBuilder, len: number, beam: number, free: number, draft: number, top: ColorLike, bottom: ColorLike, boot: ColorLike, deckColor: ColorLike, sheer = 0.04) {
+function hull(b: GeoBuilder, len: number, beam: number, free: number, draft: number, top: ColorLike, bottom: ColorLike, boot: ColorLike, deckColor: ColorLike, sheer = 0.04, flare = 0) {
   const N = 14;
   const st: { x: number; hb: number; dk: number; kl: number }[] = [];
   for (let i = 0; i <= N; i++) {
@@ -2354,14 +2591,18 @@ function hull(b: GeoBuilder, len: number, beam: number, free: number, draft: num
     st.push({ x: -len / 2 + u * len, hb: Math.max(hb, 0.002), dk: free + sheer * u * u, kl: -draft * (u < 0.8 ? 1 : Math.max(0.05, (1 - u) / 0.2)) });
   }
   // Section points from deck edge down to keel (for one side), by fraction
-  const sec = (s: (typeof st)[number], side: number) => [
-    [s.hb, s.dk],
-    [s.hb * 0.99, s.dk * 0.5],
-    [s.hb * 0.95, 0.0],
-    [s.hb * 0.93, -0.012],
-    [s.hb * 0.7, s.kl * 0.6],
-    [0, s.kl],
-  ].map(([z, y]) => [s.x, y!, side * z!] as [number, number, number]);
+  // `flare`: topsides that lean out from a narrower waterline, more so towards the bow
+  const sec = (s: (typeof st)[number], side: number) => {
+    const f = flare * (0.55 + 0.9 * ((s.x + len / 2) / len));
+    return [
+      [s.hb, s.dk],
+      [s.hb * (0.99 - 0.07 * f), s.dk * 0.5],
+      [s.hb * (0.95 - 0.16 * f), 0.0],
+      [s.hb * (0.93 - 0.17 * f), -0.012],
+      [s.hb * (0.7 - 0.12 * f), s.kl * 0.6],
+      [0, s.kl],
+    ].map(([z, y]) => [s.x, y!, side * z!] as [number, number, number]);
+  };
   for (const side of [-1, 1]) {
     const rows = st.map((s) => sec(s, side));
     const band = (c0: number, c1: number, color: ColorLike) => {
@@ -2408,7 +2649,29 @@ function dayYacht(b: Kit, r: () => number) {
   const beam = 0.36;
   const hullC = pick(r, [0xf6f6f2, 0x1c2a4a, 0xe9e2d0, 0x2a3a3a] as const);
   const dark = hullC === 0x1c2a4a || hullC === 0x2a3a3a;
-  hull(b, len, beam, 0.13, 0.08, hullC, 0x1a1e26, dark ? 0xd4af37 : 0x1c2a4a, 0xb9895a, 0.05);
+  const flare = 1.3;
+  hull(b, len, beam, 0.13, 0.08, hullC, 0x1a1e26, dark ? 0xd4af37 : 0x1c2a4a, 0xb9895a, 0.07, flare);
+  // A point on the flared topsides (same stations as `hull`): u along the boat, y up from the waterline
+  const side = (u: number, y: number, sd: number) => {
+    const hb = (beam / 2) * (u < 0.55 ? 0.94 + 0.06 * Math.sin((u / 0.55) * Math.PI * 0.5) : Math.sqrt(Math.max(0, 1 - Math.pow((u - 0.55) / 0.45, 2.2))));
+    const dk = 0.13 + 0.07 * u * u;
+    const f = flare * (0.55 + 0.9 * u);
+    const k = Math.min(1, Math.max(0, (y - dk / 2) / (dk / 2)));
+    return [-len / 2 + u * len, y, sd * (hb * ((0.99 - 0.07 * f) + (1 - (0.99 - 0.07 * f)) * k) + 0.003)] as const;
+  };
+  for (const sd of [-1, 1]) {
+    // Rubrail: a bright steel strip along the sheer, where the flare is widest
+    for (let i = 0; i < 12; i++) {
+      const u0 = i / 12;
+      const u1 = (i + 1) / 12;
+      const y0 = (u: number) => 0.13 + 0.07 * u * u - 0.012;
+      quad4(b, 'solid', [side(u0, y0(u0) - 0.007, sd), side(u1, y0(u1) - 0.007, sd), side(u1, y0(u1) + 0.007, sd), side(u0, y0(u0) + 0.007, sd)], 0xd8dce0, [0, 0, sd]);
+    }
+    // Long dark hull windows of the cabin below, lit warm at night
+    const w0 = 0.36;
+    const w1 = 0.64;
+    quad4(winOf(b), 'glow', [side(w0, 0.078, sd), side(w1, 0.084, sd), side(w1 - 0.02, 0.1, sd), side(w0, 0.097, sd)], [2.2, 1.6, 0.9], [0, 0, sd], wr(r, 0.8, TINT.smoke));
+  }
   const teak = 0xb9895a;
   const white = 0xf6f6f2;
   // Swim platform
@@ -2429,7 +2692,7 @@ function dayYacht(b: Kit, r: () => number) {
   rod(b, -0.05, y + 0.17, 0, -0.05, y + 0.24, 0, 0.004, 0xd8dce0, 3);
   b.box(0.04, 0.012, 0.012, -0.05, y + 0.24, 0, 0xf4f1ea);
   // Bow sunpad, cockpit seating, rails
-  b.rbox(0.18, 0.025, 0.16, 0.38, 0.14, 0, 0xf4ecd8, 0.012);
+  b.rbox(0.18, 0.025, 0.16, 0.38, 0.168, 0, 0xf4ecd8, 0.012);
   b.rbox(0.08, 0.04, 0.24, -0.38, 0.13, 0, 0xf4ecd8, 0.015);
   b.box(0.12, 0.02, 0.06, -0.3, 0.14, 0.08, 0xf4ecd8);
   for (const s of [-1, 1]) {
@@ -2437,7 +2700,7 @@ function dayYacht(b: Kit, r: () => number) {
     for (let k = 0; k <= 4; k++) {
       const u = 0.6 + k * 0.09;
       const hb = (beam / 2) * Math.sqrt(Math.max(0, 1 - Math.pow((u - 0.55) / 0.45, 2.2))) * 0.92;
-      pts.push([-len / 2 + u * len, 0.13 + 0.05 * u * u + 0.04, s * hb]);
+      pts.push([-len / 2 + u * len, 0.13 + 0.07 * u * u + 0.04, s * hb]);
     }
     for (let k = 0; k < pts.length - 1; k++) rod(b, ...pts[k]!, ...pts[k + 1]!, 0.003, 0xd8dce0, 3);
     for (const p of pts) rod(b, p[0], p[1] - 0.04, p[2], p[0], p[1], p[2], 0.002, 0xd8dce0, 3);
@@ -2520,57 +2783,102 @@ function superyacht(b: Kit, r: () => number) {
   quadBlob(neonOf(b), -len / 2, 0.2, 0, 0.01, [3, 3, 3]);
 }
 
-/** Starship-like stack: stainless booster with grid fins, hot-stage ring, ship with flaps; engines at y = 0. */
+/** Starship-like stack: stainless booster with grid fins and chines, hot-stage ring, ship with flaps; engines at y = 0. */
 export function rocket(seed: number): Built {
-  void seed;
+  const r = rng(seed);
   const b = new Kit();
-  const steel = 0xc9ced6;
+  // Warm brushed stainless: darker and yellower than paint-white, so the glass bucket's sky sheen reads as metal
+  const steel = 0x86817a;
+  const seam = 0x6f6b62;
   const rad = 0.17;
   const tile = 0x1e2026;
-  // Engine skirt and bells
-  b.cylinder(rad * 0.96, rad * 0.9, 0.12, 0, 0.0, 0, 0x8a929c, 20, 'glass');
+  const dark = 0x2a2d33;
+  /** A stack of welded steel rings from y0, each a slightly different tone, with a dark seam at every joint. */
+  const rings = (y0: number, h: number, n: number) => {
+    for (let k = 0; k < n; k++) {
+      const yk = y0 + (k * h) / n;
+      put(b, new THREE.CylinderGeometry(rad, rad, h / n, 24, 1, true), 0, yk + h / n / 2, 0, shade(steel, (k % 2 ? 0.9 : 1.02) + r() * 0.12), 'glass');
+      if (k > 0 && k % 2 === 0) put(b, new THREE.CylinderGeometry(rad + 0.0025, rad + 0.0025, 0.006, 24, 1, true), 0, yk, 0, seam);
+    }
+  };
+  // Aft skirt and the ring of Raptor bells
+  b.cylinder(rad * 0.98, rad * 0.92, 0.12, 0, 0.0, 0, 0x5f5c56, 20, 'glass');
+  b.cylinder(rad + 0.004, rad + 0.004, 0.02, 0, 0.1, 0, seam, 20);
   for (let k = 0; k < 9; k++) {
     const a = (k / 8) * Math.PI * 2;
-    const rr = k === 8 ? 0 : rad * 0.55;
-    b.cylinder(0.022, 0.04, 0.07, Math.cos(a) * rr, -0.02, Math.sin(a) * rr, 0x5a5f68, 8);
+    const rr = k === 8 ? 0 : rad * 0.58;
+    b.cylinder(0.022, 0.042, 0.07, Math.cos(a) * rr, -0.02, Math.sin(a) * rr, 0x4a4844, 8);
   }
-  // Booster with weld lines
+  // Booster: welded rings
   const bh = 2.5;
-  b.cylinder(rad, rad, bh, 0, 0.12, 0, steel, 24, 'glass');
-  for (let k = 1; k < 10; k++) b.cylinder(rad + 0.002, rad + 0.002, 0.004, 0, 0.12 + k * (bh / 10), 0, 0xaab2bc, 24);
-  // Chines and grid fins near the top of the booster
-  for (const s of [-1, 1]) b.box(0.02, 0.9, 0.03, 0, 0.3, s * (rad + 0.012), 0xaab2bc);
+  rings(0.12, bh, 12);
+  // Chines: two long aero strakes down the sides, tapered at both ends
+  const cl = 1.7;
+  for (const s of [-1, 1]) {
+    profile(b, [[0, 0], [0.05, 0.22], [0.05, cl - 0.18], [0, cl]], 0.026, 0, 0.32, s * (rad - 0.004), s > 0 ? -Math.PI / 2 : Math.PI / 2, shade(steel, 0.86), 'glass');
+  }
+  // Raceway: the conduit running the length of the booster
+  b.box(0.026, bh - 0.3, 0.024, rad + 0.006, 0.26, 0, shade(steel, 0.8), 'glass');
+  // Grid fins: four big waffles standing out flat near the top, each on a dark actuator housing
+  const gy = 0.12 + bh - 0.2;
   for (let k = 0; k < 4; k++) {
     const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
-    const g = new THREE.BoxGeometry(0.14, 0.1, 0.012);
-    put(b, g, Math.cos(a) * (rad + 0.06), 0.12 + bh - 0.22, Math.sin(a) * (rad + 0.06), 0x6a7380, 'solid', -a + Math.PI / 2);
-    for (let j = 0; j < 3; j++) put(b, new THREE.BoxGeometry(0.004, 0.1, 0.014), Math.cos(a) * (rad + 0.06) - Math.sin(a) * (j - 1) * 0.04, 0.12 + bh - 0.22, Math.sin(a) * (rad + 0.06) + Math.cos(a) * (j - 1) * 0.04, 0x3a3f4a, 'solid', -a + Math.PI / 2);
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const at = (rad0: number, t: number) => [ca * rad0 - sa * t, sa * rad0 + ca * t] as const;
+    const [hx, hz] = at(rad + 0.02, 0);
+    b.box(0.07, 0.08, 0.07, hx, gy - 0.04, hz, dark, false, -a);
+    const r0 = rad + 0.05;
+    const r1 = rad + 0.21;
+    const half = 0.1;
+    // Frame: two radial rails and two tangential bars, then the lattice between
+    for (const t of [-half, half]) {
+      const [ax, az] = at(r0, t);
+      const [cx, cz] = at(r1, t);
+      beam(b, ax, gy, az, cx, gy, cz, 0.014, 0x55524c, 'solid', 0.034);
+    }
+    for (const rr of [r0, r1]) {
+      const [ax, az] = at(rr, -half);
+      const [cx, cz] = at(rr, half);
+      beam(b, ax, gy, az, cx, gy, cz, 0.014, 0x55524c, 'solid', 0.034);
+    }
+    for (let j = 1; j < 3; j++) {
+      const [ax, az] = at(r0 + ((r1 - r0) * j) / 3, -half);
+      const [cx, cz] = at(r0 + ((r1 - r0) * j) / 3, half);
+      beam(b, ax, gy, az, cx, gy, cz, 0.006, 0x3a3834, 'solid', 0.03);
+    }
+    for (let j = 1; j < 4; j++) {
+      const t = -half + (2 * half * j) / 4;
+      const [ax, az] = at(r0, t);
+      const [cx, cz] = at(r1, t);
+      beam(b, ax, gy, az, cx, gy, cz, 0.006, 0x3a3834, 'solid', 0.03);
+    }
   }
-  // Hot-staging ring: vented, dark
+  // Hot-staging ring: dark, with vent slots
   const hy = 0.12 + bh;
   b.cylinder(rad, rad, 0.1, 0, hy, 0, 0x3a3f4a, 24);
   for (let k = 0; k < 12; k++) {
     const a = (k / 12) * Math.PI * 2;
     wall(b, 'solid', Math.cos(a) * (rad + 0.002), hy + 0.05, Math.sin(a) * (rad + 0.002), Math.cos(a), Math.sin(a), 0.05, 0.06, 0x8a929c);
   }
-  // Ship: steel, heat-shield tiles on the windward side, flaps, nose
+  // Ship: steel rings, black heat-shield tiles on the windward (south) half, flaps, nose
   const sy = hy + 0.1;
   const sh = 1.45;
-  b.cylinder(rad, rad, sh, 0, sy, 0, steel, 24, 'glass');
+  rings(sy, sh, 7);
   put(b, new THREE.CylinderGeometry(rad + 0.003, rad + 0.003, sh, 24, 1, true, Math.PI * 0.5, Math.PI), 0, sy + sh / 2, 0, tile);
-  for (let k = 1; k < 6; k++) b.cylinder(rad + 0.002, rad + 0.002, 0.004, 0, sy + k * (sh / 6), 0, 0xaab2bc, 24);
-  const nose = new THREE.LatheGeometry([new THREE.Vector2(rad, 0), new THREE.Vector2(rad * 0.98, 0.12), new THREE.Vector2(rad * 0.88, 0.28), new THREE.Vector2(rad * 0.66, 0.44), new THREE.Vector2(rad * 0.36, 0.58), new THREE.Vector2(0.002, 0.66)], 24);
-  put(b, nose, 0, sy + sh, 0, steel, 'glass');
-  const nt = new THREE.LatheGeometry([new THREE.Vector2(rad + 0.003, 0), new THREE.Vector2(rad * 0.98 + 0.003, 0.12), new THREE.Vector2(rad * 0.88 + 0.003, 0.28), new THREE.Vector2(rad * 0.66 + 0.003, 0.44), new THREE.Vector2(rad * 0.36 + 0.002, 0.58), new THREE.Vector2(0.004, 0.66)], 12, Math.PI * 0.5, Math.PI);
-  put(b, nt, 0, sy + sh, 0, tile);
-  // Aft flaps (big) and forward flaps (small), on the tiled side's edges
+  const nosePts: [number, number][] = [[rad, 0], [rad * 0.98, 0.12], [rad * 0.88, 0.28], [rad * 0.66, 0.44], [rad * 0.36, 0.58], [0.002, 0.66]];
+  b.lathe(nosePts, 0, sy + sh, 0, steel, 24, 'glass');
+  put(b, new THREE.LatheGeometry(nosePts.map(([x, y], i) => new THREE.Vector2(x + (i < 5 ? 0.003 : 0.002), y)), 12, Math.PI * 0.5, Math.PI), 0, sy + sh, 0, tile);
   for (const s of [-1, 1]) {
-    profile(b, [[0, 0], [0.16, 0], [0.12, 0.34], [0, 0.4]], 0.016, s * (rad + 0.05), sy + 0.05, 0, Math.PI / 2, 0x2a2f38);
-    profile(b, [[0, 0], [0.1, 0], [0.07, 0.2], [0, 0.24]], 0.012, s * (rad * 0.8 + 0.035), sy + sh + 0.18, 0, Math.PI / 2, 0x2a2f38);
+    // Aft flaps (big) and forward flaps (small) on the tile line, with their hinge fairings
+    profile(b, [[0, 0], [0.17, 0], [0.13, 0.36], [0, 0.42]], 0.02, s * (rad + 0.055), sy + 0.04, 0, Math.PI / 2, tile);
+    b.box(0.03, 0.4, 0.03, s * (rad + 0.008), sy + 0.04, 0, dark);
+    profile(b, [[0, 0], [0.1, 0], [0.075, 0.2], [0, 0.25]], 0.014, s * (rad * 0.8 + 0.038), sy + sh + 0.16, 0, Math.PI / 2, tile);
   }
-  // A small flag and the name, a light on top
-  b.box(0.004, 0.05, 0.08, rad + 0.001, sy + sh * 0.6, -0.0, 0x2f4a8a);
-  pixelText(b, 'solid', 'TINYTOWN', -rad - 0.002, sy + sh * 0.55, 0, -1, 0, 0.008, 0x1c1f26, { vertical: true });
+  // The name up the steel side that faces the city, a small flag, a light on top
+  const na = Math.PI / 4;
+  pixelText(b, 'solid', 'TINYTOWN', Math.cos(na) * (rad + 0.002), sy + sh * 0.5, Math.sin(na) * (rad + 0.002), Math.cos(na), Math.sin(na), 0.011, 0x1c1f26, { vertical: true });
+  wall(b, 'solid', Math.cos(na) * (rad + 0.002), sy + sh * 0.86, Math.sin(na) * (rad + 0.002), Math.cos(na), Math.sin(na), 0.05, 0.032, 0x2f4a8a);
   quadBlob(neonOf(b), 0, sy + sh + 0.68, 0, 0.015, RED_LIGHT, FX.blink + 0.1);
   const built = b.build();
   built.group.traverse((o) => (o.castShadow = true));
