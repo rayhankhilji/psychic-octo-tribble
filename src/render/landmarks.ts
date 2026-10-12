@@ -171,16 +171,52 @@ export function bayBridge(): BayBridge {
       }
     }
   }
-  // Tunnel portal into Yerba Buena, then the white east span
+  // Tunnel portal into Yerba Buena, then the white east span: two side-by-side decks on a
+  // skyway of paired columns, and the self-anchored suspension span with its single tower.
   b.box(0.5, 0.9, 1.5, westEnd + 0.2, deckY - 0.55, z, CONCRETE);
   const eastStart = yb.x + yb.r - 0.6;
-  b.box(x1 - eastStart, 0.1, 1.5, (eastStart + x1) / 2, deckY - 0.1, z, 0xe9e6df);
-  for (let x = eastStart + 1; x < x1; x += 1.6) b.box(0.3, deckY - SEA, 0.6, x, SEA, z, 0xe9e6df);
-  const sx = eastStart + 4.5;
-  b.box(0.35, 9 - SEA, 0.35, sx, SEA, z, 0xf2efe8);
-  for (let k = -6; k <= 6; k++) {
-    if (!k) continue;
-    for (const s of [-1, 1]) strut(b, new THREE.Vector3(sx, 8.6, z), new THREE.Vector3(sx + k * 0.45, deckY, z + s * 0.7), 0.02, 0xf2efe8);
+  const white = 0xece9e2;
+  const len = x1 - eastStart;
+  const mid = (eastStart + x1) / 2;
+  for (const s of [-1, 1]) {
+    const dz = z + s * 0.36;
+    b.box(len, 0.16, 0.5, mid, deckY - 0.2, dz, white); // box girder
+    b.box(len, 0.04, 0.62, mid, deckY - 0.04, dz, 0x5d616c); // asphalt
+    for (const e of [-1, 1]) b.box(len, 0.05, 0.03, mid, deckY, dz + e * 0.3, 0xf2efe8); // barriers
+    for (let x = eastStart + 0.2; x < x1; x += 0.5) b.box(0.22, 0.004, 0.012, x, deckY + 0.001, dz, PALETTE.roadLine);
+  }
+  // The skyway: pairs of tapered columns under each deck, with a cap beam.
+  const sx = eastStart + 4.6;
+  for (let x = eastStart + 1.2; x < x1; x += 1.6) {
+    if (Math.abs(x - sx) < 1.4) continue;
+    for (const s of [-1, 1]) {
+      b.cylinder(0.11, 0.15, deckY - 0.2 - SEA, x, SEA, z + s * 0.36, white, 6);
+      b.box(0.24, 0.1, 0.56, x, deckY - 0.3, z + s * 0.36, white);
+    }
+    b.box(0.5, 0.12, 1.6, x, SEA - 0.06, z, CONCRETE);
+  }
+  // The tower: four tapered legs joined by shear links, between the two decks.
+  const towerTop = 8.4;
+  for (const lx of [-0.16, 0.16]) {
+    for (const lz of [-0.07, 0.07]) {
+      const leg = new THREE.CylinderGeometry(0.05, 0.085, towerTop - SEA, 5);
+      b.transformed(leg, new THREE.Matrix4().makeTranslation(sx + lx, SEA + (towerTop - SEA) / 2, z + lz), white);
+    }
+  }
+  for (let y = deckY + 0.5; y < towerTop - 0.2; y += 0.7) b.box(0.42, 0.04, 0.2, sx, y, z, 0xd9d5cc);
+  b.box(0.44, 0.12, 0.24, sx, towerTop, z, white);
+  b.box(1.4, 0.6, 1.8, sx, SEA - 0.4, z, CONCRETE);
+  b.blob(0.05, sx, towerTop + 0.18, z, RED_LIGHT, true);
+  // Main cables: from the west anchorage over the tower saddle and down to the east end,
+  // one along the inside edge of each deck, with suspenders every few steps.
+  const west = sx - 3.4;
+  const east = sx + 2.4;
+  for (const s of [-1, 1]) {
+    const cz = z + s * 0.1;
+    const pts = cablePoints([[west, deckY + 0.05], [sx, towerTop + 0.05], [east, deckY + 0.05]], [0.9, 0.7], 22);
+    const curve = new THREE.CatmullRomCurve3(pts.map(([x, y]) => new THREE.Vector3(x, y, cz)));
+    b.transformed(new THREE.TubeGeometry(curve, 60, 0.035, 5), new THREE.Matrix4(), white, 'smooth');
+    for (const [x, y] of pts) if (y - deckY > 0.25 && Math.abs(x - sx) > 0.25) b.box(0.01, y - deckY, 0.01, x, deckY, cz, 0xd0ccc4);
   }
   for (let x = x0 + 0.5; x < x1; x += 1.1) {
     for (const s of [-1, 1]) b.blob(0.03, x, deckY + 0.3, z + s * 0.68, LAMP, true);
