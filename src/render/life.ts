@@ -53,6 +53,7 @@ export class Life {
   /** Every boat, airliner, cable car and kite in a few draw calls. */
   private batch = new Batch(64, 80_000);
   private batched: Batched[] = [];
+  private cableCarObjs: THREE.Object3D[] = [];
   private fogTint = new THREE.Color();
   private white = new THREE.Color(1, 1, 1);
 
@@ -383,6 +384,7 @@ export class Life {
     for (const [start, lane] of [[0.15, 0.24], [0.65, -0.24]] as const) {
       const car = this.cableCar();
       this.object.add(car);
+      this.cableCarObjs.push(car);
       let d = start * (z1 - z0);
       let dir = lane > 0 ? 1 : -1;
       let wait = 0;
@@ -503,6 +505,12 @@ export class Life {
       this.object.add(g);
       this.shadows.push({ obj: g, speed: 0.25 + r() * 0.2 });
     }
+  }
+
+  /** Whether a cable car is within `r` of (x, z): cars wait for it at junctions. */
+  blocks(x: number, z: number, r: number): boolean {
+    for (const c of this.cableCarObjs) if (Math.hypot(c.position.x - x, c.position.z - z) < r + 0.3) return true;
+    return false;
   }
 
   /** Adds a model to the batch and returns its proxy: move the proxy, and the batch follows each frame. */

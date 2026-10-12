@@ -232,7 +232,8 @@ export function ferryBuilding(): THREE.Group {
   b.box(1.35, 0.62, 5.0, x, 0, z, stone);
   b.box(1.45, 0.06, 5.1, x, 0.62, z, 0xd8ccb4);
   b.gable(5.0, 0.22, 1.3, x, 0.68, z, 0x8a8f96, 0.04, Math.PI / 2);
-  b.box(0.5, 0.05, 4.6, x, 0.86, z, [1.6, 1.6, 1.5], true); // skylight
+  // The skylit nave: a soft warm glow from inside at night, not a floodlight.
+  b.box(0.5, 0.05, 4.6, x, 0.86, z, [0.55, 0.38, 0.2], true);
   // Arcade arches along the city side
   for (let k = 0; k < 13; k++) {
     const az = z - 2.25 + k * 0.375;
@@ -251,7 +252,8 @@ export function ferryBuilding(): THREE.Group {
     const [cx, cz] = f === 'x-' ? [tx - 0.31, tz] : f === 'x+' ? [tx + 0.31, tz] : f === 'z+' ? [tx, tz + 0.31] : [tx, tz - 0.31];
     const disc = new THREE.CircleGeometry(0.2, 20);
     disc.rotateY(f === 'x-' ? -Math.PI / 2 : f === 'x+' ? Math.PI / 2 : f === 'z+' ? 0 : Math.PI);
-    b.transformed(disc, new THREE.Matrix4().makeTranslation(cx, 3.07, cz), [2.4, 2.3, 2.0], true);
+    // Backlit clock faces: a warm glow that reads as a clock, not a floodlight.
+    b.transformed(disc, new THREE.Matrix4().makeTranslation(cx, 3.07, cz), [1.35, 1.25, 1.0], true);
   }
   b.box(0.42, 0.4, 0.42, tx, 3.35, tz, stone);
   b.cylinder(0.02, 0.2, 0.45, tx, 3.75, tz, 0x7a8f86, 8);

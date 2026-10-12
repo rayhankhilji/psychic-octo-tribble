@@ -674,35 +674,57 @@ export class Scenery {
     const r = rng(hash(this.seed, 'suburbs'));
     const walls = [0xf6ecd8, 0xf3c6a2, 0xc6dcf2, 0xbfe4d0, 0xf6df8c, 0xeab6cf, 0xf8f5ee] as const;
     // "Little boxes on the hillside": pastel stucco with a garage at street level and a lit window above.
-    const house = (x: number, z: number, rot: number, s = 1) => {
+    // Low roofs in warm greys, not white trim: from afar a row should read as roofs, not dots.
+    const roofs = [0xd6cfc2, 0xcbc3b4, 0xded7ca, 0xc2b8a8] as const;
+    const house = (x: number, z: number, rot: number, s = 1, width = 0.55) => {
       const y = terrainHeight(x, z);
-      const w = 0.55 * s;
+      const w = width * s;
       const d = 0.5 * s;
       const h = 0.34 * s;
       const c = Math.cos(rot);
       const sn = Math.sin(rot);
       const at = (fx: number, fz: number): [number, number] => [x + fx * c + fz * sn, z - fx * sn + fz * c];
       b.box(w, h, d, x, y - 0.05, z, pick(r, walls), false, rot);
-      b.box(w + 0.03, 0.035, d + 0.03, x, y - 0.05 + h, z, PALETTE.trim, false, rot);
-      if (r() < 0.45) b.hip(w, 0.1 * s, d, x, y - 0.05 + h + 0.03, z, pick(r, PALETTE.roofs), 0.03);
+      b.box(w + 0.02, 0.035, d + 0.03, x, y - 0.05 + h, z, pick(r, roofs), false, rot);
+      // A few pitched roofs in sun-faded tile and slate; the suburbs are backdrop, not the show.
+      if (r() < 0.18) b.hip(w, 0.1 * s, d, x, y - 0.05 + h + 0.03, z, pick(r, [0xc49a80, 0xb7a99a, 0xa59a92, 0xc8ab8e] as const), 0.03);
       const [gx, gz] = at(-0.1 * s, d / 2 + 0.003);
       b.panel(0.2 * s, 0.13 * s, gx, y + 0.02 * s, gz, rot, 0xe8e2d6, false);
       const [wx, wz] = at(0.12 * s, d / 2 + 0.004);
       b.panel(0.14 * s, 0.09 * s, wx, y + 0.17 * s, wz, rot, PALETTE.windowWarm, true, 0.1 + r() * 0.9);
     };
-    // Daly City and the south: ticky-tacky rows following the hills
+    // Daly City and the south: ticky-tacky terraces, wall to wall, each row on its own street over the hills.
     for (let z = -37; z > -62; z -= 1.15) {
+      let run: number[] = [];
+      const street = () => {
+        if (run.length >= 3) ribbon(b, [[run[0]! - 0.36, z + 0.5], [run.at(-1)! + 0.36, z + 0.5]], 0.26, PALETTE.road, 0.03);
+        run = [];
+      };
       for (let x = -46; x < 12; x += 0.68) {
         const h = terrainHeight(x, z);
-        if (h < 0.15 || h > 7.5) continue;
-        if (coastDistance(x, z) > -1.5) continue;
-        if (Math.hypot(x - LANDMARKS.sutroTower.x, z - LANDMARKS.sutroTower.z) < 3) continue;
-        if (inSign(x, z) || inHood(x, z)) continue;
-        if (x > AIRPORT.x0 - 2 && z > AIRPORT.z0 - 2) continue;
         const slope = Math.abs(terrainHeight(x + 0.5, z) - terrainHeight(x - 0.5, z)) + Math.abs(terrainHeight(x, z + 0.5) - terrainHeight(x, z - 0.5));
-        if (slope > 1.1 || r() < 0.12) continue;
-        house(x, z, 0, 0.9);
+        const open =
+          h >= 0.15 && h <= 7.5 && coastDistance(x, z) <= -1.5 && slope <= 1.1 &&
+          Math.hypot(x - LANDMARKS.sutroTower.x, z - LANDMARKS.sutroTower.z) >= 3 &&
+          !inSign(x, z) && !inHood(x, z) && !(x > AIRPORT.x0 - 2 && z > AIRPORT.z0 - 2);
+        if (!open) {
+          street();
+          continue;
+        }
+        run.push(x);
+        // Now and then an empty lot with a tree, so the row breathes.
+        if (r() < 0.06) {
+          tree(b, r, x, z, 0.8, h - 0.05, 'round');
+          continue;
+        }
+        house(x, z, 0, 0.9, 0.74);
+        // Backyard trees between the rows
+        if (r() < 0.16) {
+          const tx = x + (r() - 0.5) * 0.4;
+          tree(b, r, tx, z - 0.52, 0.7, terrainHeight(tx, z - 0.52) - 0.05, r() < 0.6 ? 'round' : 'cypress');
+        }
       }
+      street();
     }
     // Sausalito on the Marin slope, and boats in Richardson Bay
     for (let i = 0; i < 70; i++) {
@@ -1039,7 +1061,9 @@ function flatiron(b: GeoBuilder, r: () => number, pts: Pt[], h: number, glass: b
   prism(pts, h + 0.04, 0.02, glass ? 0xb9c2cc : 0x8f8a84, -0.04);
   for (let y = 0.26 + 0.6; y < h - 0.3; y += 0.6) prism(pts, y, 0.025, trim, 0.02);
   // Windows on every face, each lit at its own moment of dusk.
-  const light: ColorLike = glass ? PALETTE.windowCool : PALETTE.windowWarm;
+  // A glass tower's windows run edge to edge, so fewer are lit and each more softly, or bloom turns it into a lamp.
+  const light: ColorLike = glass ? [PALETTE.windowCool[0] * 0.55, PALETTE.windowCool[1] * 0.55, PALETTE.windowCool[2] * 0.55] : PALETTE.windowWarm;
+  const share = glass ? 0.35 : 0.6;
   for (let i = 0; i < pts.length; i++) {
     const [px, pz] = pts[i]!;
     const [qx, qz] = pts[(i + 1) % pts.length]!;
@@ -1059,7 +1083,7 @@ function flatiron(b: GeoBuilder, r: () => number, pts: Pt[], h: number, glass: b
       // Shopfront at street level
       b.panel(len / cols - 0.04, 0.15, x, 0.11, z, rot, [1.7, 1.2, 0.7], true, 0.1 + r() * 0.3);
       for (let y = 0.4; y < h - 0.12; y += 0.2) {
-        b.panel(glass ? len / cols - 0.03 : 0.08, glass ? 0.15 : 0.11, x, y, z, rot, light, true, r() < 0.6 ? 0.12 + r() * 0.86 : 2);
+        b.panel(glass ? len / cols - 0.03 : 0.08, glass ? 0.15 : 0.11, x, y, z, rot, light, true, r() < share ? 0.12 + r() * 0.86 : 2);
       }
     }
   }

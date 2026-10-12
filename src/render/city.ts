@@ -145,6 +145,8 @@ export class City {
 
     this.scenery = new Scenery(seed);
     this.life = new Life(seed);
+    // Cars give way to the F-line streetcars and the Powell cable cars.
+    this.traffic.blocked = (x, z, r) => this.train.blocks(x, z, r) || this.life.blocks(x, z, r);
     this.scene.add(this.life.object);
     this.scene.add(this.homeBatch.object);
     this.pickables.push(this.homeBatch.object);

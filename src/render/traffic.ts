@@ -526,6 +526,8 @@ function vehicleMaterials() {
     detail: fading(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.15, shadowSide: THREE.DoubleSide }), 'detail'),
     glass: fading(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.06, metalness: 0.7, flatShading: true, envMapIntensity: 1.3, shadowSide: THREE.DoubleSide }), 'glass'),
     lights: fading(new THREE.MeshBasicMaterial({ vertexColors: true }), 'lights', LIGHT_VERT, LIGHT_FRAG),
+    // The shadow pass dithers too, so a car fading in or out casts a fading shadow.
+    depth: fading(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), 'depth'),
   };
 }
 type VehicleMaterials = ReturnType<typeof vehicleMaterials>;
@@ -560,6 +562,7 @@ class Fleet {
       m.frustumCulled = false;
       m.castShadow = k !== 'lights';
       m.receiveShadow = k !== 'lights';
+      m.customDepthMaterial = mats.depth;
       m.name = `${kind}-${k}`;
       this.meshes.push(m);
     }
@@ -1865,11 +1868,10 @@ class Pedestrians {
     this.matrix = new THREE.InstancedBufferAttribute(new Float32Array(cap * 16), 16).setUsage(THREE.DynamicDrawUsage);
     this.fade = new THREE.InstancedBufferAttribute(new Float32Array(cap).fill(1), 1).setUsage(THREE.DynamicDrawUsage);
     this.walk = new THREE.InstancedBufferAttribute(new Float32Array(cap * 2), 2).setUsage(THREE.DynamicDrawUsage);
-    const mat = fading(
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, shadowSide: THREE.DoubleSide }),
-      'people',
-      'attribute vec2 aWalk;\nattribute vec2 aLimb;@@{ float sw = sin(aWalk.x) * aWalk.y * aLimb.x; float cs = cos(sw), sn = sin(sw); vec2 q = vec2(transformed.x, transformed.y - aLimb.y); transformed.x = q.x * cs - q.y * sn; transformed.y = q.x * sn + q.y * cs + aLimb.y; }',
-    );
+    const swing = 'attribute vec2 aWalk;\nattribute vec2 aLimb;@@{ float sw = sin(aWalk.x) * aWalk.y * aLimb.x; float cs = cos(sw), sn = sin(sw); vec2 q = vec2(transformed.x, transformed.y - aLimb.y); transformed.x = q.x * cs - q.y * sn; transformed.y = q.x * sn + q.y * cs + aLimb.y; }';
+    const mat = fading(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, shadowSide: THREE.DoubleSide }), 'people', swing);
+    // Shadows fade with the walker and swing their legs too.
+    const depth = fading(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), 'people-depth', swing);
     for (const g of personGeometry()) {
       g.setAttribute('aFade', this.fade);
       g.setAttribute('aWalk', this.walk);
@@ -1882,6 +1884,7 @@ class Pedestrians {
       m.frustumCulled = false;
       m.castShadow = true;
       m.receiveShadow = true;
+      m.customDepthMaterial = depth;
       this.meshes.push(m);
       this.object.add(m);
     }

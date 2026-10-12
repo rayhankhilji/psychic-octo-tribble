@@ -266,6 +266,14 @@ export class Train {
     });
   }
 
+  /** Whether a running streetcar is within `r` of (x, z): cars wait for it at junctions. */
+  blocks(x: number, z: number, r: number): boolean {
+    // A suspended line's parked cars don't hold up traffic forever.
+    if (this.speed <= 0) return false;
+    for (const c of this.cars) if (Math.hypot(c.group.position.x - x, c.group.position.z - z) < r + 0.45) return true;
+    return false;
+  }
+
   /** A PCC streetcar: rounded ends, two-tone livery, trolley pole, along +x. */
   private car(body: number, band: number): THREE.Group {
     const b = new GeoBuilder();
