@@ -693,39 +693,40 @@ export class Scenery {
       const [wx, wz] = at(0.12 * s, d / 2 + 0.004);
       b.panel(0.14 * s, 0.09 * s, wx, y + 0.17 * s, wz, rot, PALETTE.windowWarm, true, 0.1 + r() * 0.9);
     };
-    // Daly City and the south: ticky-tacky terraces, wall to wall, each row on its own street over the hills.
-    for (let z = -37; z > -62; z -= 1.15) {
-      let run: number[] = [];
-      const street = () => {
-        if (run.length >= 3) ribbon(b, [[run[0]! - 0.36, z + 0.5], [run.at(-1)! + 0.36, z + 0.5]], 0.26, PALETTE.road, 0.03);
-        run = [];
-      };
-      for (let x = -46; x < 12; x += 0.68) {
-        const h = terrainHeight(x, z);
-        const slope = Math.abs(terrainHeight(x + 0.5, z) - terrainHeight(x - 0.5, z)) + Math.abs(terrainHeight(x, z + 0.5) - terrainHeight(x, z - 0.5));
-        const open =
-          h >= 0.15 && h <= 7.5 && coastDistance(x, z) <= -1.5 && slope <= 1.1 &&
-          Math.hypot(x - LANDMARKS.sutroTower.x, z - LANDMARKS.sutroTower.z) >= 3 &&
-          !inSign(x, z) && !inHood(x, z) && !(x > AIRPORT.x0 - 2 && z > AIRPORT.z0 - 2);
-        if (!open) {
-          street();
-          continue;
+    // Ticky-tacky terraces, wall to wall, each row on its own street over the hills.
+    const terraces = (x0: number, x1: number, z0: number, z1: number, coast: number, allowed: (x: number, z: number) => boolean) => {
+      for (let z = z1; z > z0; z -= 1.15) {
+        let run: number[] = [];
+        const street = () => {
+          if (run.length >= 3) ribbon(b, [[run[0]! - 0.36, z + 0.5], [run.at(-1)! + 0.36, z + 0.5]], 0.26, PALETTE.road, 0.03);
+          run = [];
+        };
+        for (let x = x0; x < x1; x += 0.68) {
+          const h = terrainHeight(x, z);
+          const slope = Math.abs(terrainHeight(x + 0.5, z) - terrainHeight(x - 0.5, z)) + Math.abs(terrainHeight(x, z + 0.5) - terrainHeight(x, z - 0.5));
+          if (h < 0.15 || h > 7.5 || coastDistance(x, z) > coast || slope > 1.1 || !allowed(x, z)) {
+            street();
+            continue;
+          }
+          run.push(x);
+          // Now and then an empty lot with a tree, so the row breathes.
+          if (r() < 0.06) {
+            tree(b, r, x, z, 0.8, h - 0.05, 'round');
+            continue;
+          }
+          house(x, z, 0, 0.9, 0.74);
+          // Backyard trees between the rows
+          if (r() < 0.16) {
+            const tx = x + (r() - 0.5) * 0.4;
+            tree(b, r, tx, z - 0.52, 0.7, terrainHeight(tx, z - 0.52) - 0.05, r() < 0.6 ? 'round' : 'cypress');
+          }
         }
-        run.push(x);
-        // Now and then an empty lot with a tree, so the row breathes.
-        if (r() < 0.06) {
-          tree(b, r, x, z, 0.8, h - 0.05, 'round');
-          continue;
-        }
-        house(x, z, 0, 0.9, 0.74);
-        // Backyard trees between the rows
-        if (r() < 0.16) {
-          const tx = x + (r() - 0.5) * 0.4;
-          tree(b, r, tx, z - 0.52, 0.7, terrainHeight(tx, z - 0.52) - 0.05, r() < 0.6 ? 'round' : 'cypress');
-        }
+        street();
       }
-      street();
-    }
+    };
+    // Daly City and the south
+    terraces(-46, 12, -62, -37, -1.5, (x, z) =>
+      Math.hypot(x - LANDMARKS.sutroTower.x, z - LANDMARKS.sutroTower.z) >= 3 && !inSign(x, z) && !inHood(x, z) && !(x > AIRPORT.x0 - 2 && z > AIRPORT.z0 - 2));
     // Sausalito on the Marin slope, and boats in Richardson Bay
     for (let i = 0; i < 70; i++) {
       const x = -30 + r() * 7;
@@ -743,12 +744,8 @@ export class Scenery {
       b.box(0.9, h, 0.9, x, terrainHeight(x, z) - 0.1, z, pick(r, [0xc9d2dc, 0xb9c4cf, 0xdcd3c3] as const));
       b.windows({ w: 0.9, d: 0.9, x, z, y0: terrainHeight(x, z), rows: Math.floor(h / 0.3), rowHeight: 0.3, cols: 3, faces: ['x-', 'z+'] }, r, 0.5, [1.6, 1.15, 0.6], { w: 0.14, h: 0.12 });
     }
-    for (let i = 0; i < 300; i++) {
-      const x = 57 + r() * 24;
-      const z = -60 + r() * 100;
-      if (coastDistance(x, z) > -0.8) continue;
-      house(x, z, 0, 0.9);
-    }
+    // The Oakland and Berkeley flats and hills, behind the downtown towers
+    terraces(57, 75, -60, 40, -0.8, (x, z) => !(x < 65 && z > -10 && z < -1));
     // Treasure Island and Yerba Buena
     const t = ISLANDS.treasure;
     for (let i = 0; i < 10; i++) b.box(0.8, 0.35, 0.5, t.x - 1.8 + (i % 5) * 0.8, terrainHeight(t.x, t.z), t.z - 0.8 + Math.floor(i / 5) * 1.4, 0xe2d8c3);
