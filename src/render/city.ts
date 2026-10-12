@@ -102,6 +102,8 @@ export class City {
   private fades = new Set<Fade>();
   private homeFades = new Map<string, Fade>();
   private beaconLevel = 0;
+  /** Fireworks waiting their turn in a show. */
+  private volleys: { at: THREE.Vector3; count: number; spread: number; delay: number }[] = [];
   private sun: THREE.DirectionalLight;
   private hemi: THREE.HemisphereLight;
   private warm: THREE.PointLight;
@@ -273,7 +275,30 @@ export class City {
       } else if (e.type === 'customers.joined' && e.total === 1) {
         const first = this.homes.values().next().value;
         if (first) this.fireworks.launch(first.position.clone().setY(1), 1, 0);
+      } else if (e.type === 'customers.joined' && CUSTOMER_MILESTONES.some((m) => e.total >= m && e.total - e.count < m)) {
+        this.show(new THREE.Vector3(1, 0.5, -2), 1);
+      } else if (e.type === 'district.unlocked') {
+        // An MRR milestone: fired from barges in the bay off the Ferry Building, like New Year's Eve in SF.
+        // The bigger the number, the bigger the show. (Rockets climb 4–6 units before they burst.)
+        const pier = LANDMARKS.ferryBuilding;
+        this.show(new THREE.Vector3(pier.x + 3.5, 0.3, pier.z + 1), e.threshold >= 10_000 ? 3 : e.threshold >= 1_000 ? 2 : 1);
       }
+    }
+  }
+
+  /** A short fireworks show: volleys across a few seconds that build to a finale. */
+  private show(at: THREE.Vector3, size: 1 | 2 | 3) {
+    const volleys = 2 + size * 2;
+    for (let i = 0; i < volleys; i++) {
+      const last = i === volleys - 1;
+      const a = (i / volleys) * Math.PI * 2;
+      const r = last ? 0 : 1.2 + size * 0.6;
+      this.volleys.push({
+        at: new THREE.Vector3(at.x + Math.cos(a) * r, at.y + (i % 2) * 0.8, at.z + Math.sin(a) * r),
+        count: last ? 3 + size * 2 : 1 + (i % 2),
+        spread: last ? 2.5 + size : 1.5,
+        delay: i * 0.45 + (last ? 0.5 : 0),
+      });
     }
   }
 
@@ -902,6 +927,10 @@ export class City {
     this.moon.home = (this.game?.home.tier ?? 0) >= 6;
     // The iso view has no sky, so the moon only rises for rocket flights, as their destination.
     if (this.camera) this.moon.update(dt, this.camera, 0, !!this.launch && this.launch.t > 2 && this.launch.t < 11);
+    if (this.volleys.length) {
+      for (const v of this.volleys) if ((v.delay -= dt) <= 0) this.fireworks.launch(v.at, v.count, v.spread);
+      this.volleys = this.volleys.filter((v) => v.delay > 0);
+    }
     this.fireworks.update(dt);
     this.train.update(dt);
     this.traffic.update(dt);
@@ -983,6 +1012,9 @@ export class City {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
+
+/** Paying-customer counts worth a fireworks show. */
+const CUSTOMER_MILESTONES = [10, 100, 1_000, 10_000, 100_000];
 
 function neighbourhoodLabel(plan: WorldPlan, n: number): string {
   return plan.neighbourhoods.find((x) => x.index === n)?.name ?? 'Neighbourhood';
