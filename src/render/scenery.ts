@@ -3,6 +3,7 @@ import { GeoBuilder, smoothMaterial, solidMaterial, type ColorLike } from './geo
 import { PALETTE } from './palette.ts';
 import { palm, tree } from './buildings.ts';
 import { cloudBank } from './models.ts';
+import { Kit, tower } from './towers.ts';
 import { Batch } from './batch.ts';
 import {
   bayBridge,
@@ -738,19 +739,20 @@ export class Scenery {
       if (h > 6) continue;
       house(x, z, Math.PI / 4, 0.9);
     }
-    // Oakland: a hazy skyline across the bay, and houses up the hills
-    for (let i = 0; i < 14; i++) {
-      const x = 58 + r() * 6;
-      const z = -10 + r() * 9;
-      const h = 1.5 + r() * 4;
-      b.box(0.9, h, 0.9, x, terrainHeight(x, z) - 0.1, z, pick(r, [0xc9d2dc, 0xb9c4cf, 0xdcd3c3] as const));
-      b.windows({ w: 0.9, d: 0.9, x, z, y0: terrainHeight(x, z), rows: Math.floor(h / 0.3), rowHeight: 0.3, cols: 3, faces: ['x-', 'z+'] }, r, 0.5, [1.6, 1.15, 0.6], { w: 0.14, h: 0.12 });
+    // Downtown Oakland across the bay: real towers (the same families as ours), each on the ground.
+    const spots: [number, number, number][] = [[59, -9, 6], [61.2, -8.6, 4], [59.4, -6.6, 4], [61.6, -6.2, 6], [63.6, -7.8, 4], [60, -4, 4], [62.4, -3.6, 4]];
+    for (const [x, z, tier] of spots) {
+      const k = new Kit();
+      tower(k, r, 0, 0, tier, [2.4, 1.8, 1.0]);
+      const { group } = k.build();
+      group.position.set(x, Math.max(0, terrainHeight(x, z)) - 0.03, z);
+      group.userData.tip = { title: 'Downtown Oakland', detail: 'Across the bay. Someday, a district of your own over there.' };
+      this.fix(group);
     }
     // The Oakland and Berkeley flats and hills, behind the downtown towers
     terraces(57, 75, -60, 40, -0.8, (x, z) => !(x < 65 && z > -10 && z < -1));
     // Treasure Island and Yerba Buena
-    const t = ISLANDS.treasure;
-    for (let i = 0; i < 10; i++) b.box(0.8, 0.35, 0.5, t.x - 1.8 + (i % 5) * 0.8, terrainHeight(t.x, t.z), t.z - 0.8 + Math.floor(i / 5) * 1.4, 0xe2d8c3);
+    this.treasureIsland(b, r);
     const yb = ISLANDS.yerba;
     for (let i = 0; i < 26; i++) {
       const a = r() * Math.PI * 2;
@@ -892,6 +894,78 @@ export class Scenery {
     }
     this.placeHillHouses(b, r);
     this.hood.add(this.add(b, { title: 'TinyTown Hills', detail: 'Opens at $1k MRR, when you move into your first Hills house.' }));
+  }
+
+  /**
+   * Treasure Island: Building One (the 1939 Art Deco terminal) facing the city,
+   * three seaplane hangars, a grid of streets and navy-era houses, the Avenue
+   * of the Palms along the west shore, and boats in Clipper Cove.
+   */
+  private treasureIsland(b: GeoBuilder, r: () => number) {
+    const t = ISLANDS.treasure;
+    const y = terrainHeight(t.x, t.z);
+    const cream = 0xeee5d0;
+    const gold = 0xc9a24a;
+    // Streets: the Avenue of the Palms on the west shore, and a little grid inland.
+    const avenue = t.x - 2.2;
+    ribbon(b, [[avenue, t.z - 2.0], [avenue, t.z + 1.8]], 0.2, PALETTE.road, 0.02);
+    for (const sz of [t.z - 1.1, t.z + 0.1, t.z + 1.2]) ribbon(b, [[avenue, sz], [t.x + 2.2, sz]], 0.16, PALETTE.road, 0.02);
+    ribbon(b, [[t.x + 0.25, t.z - 1.6], [t.x + 0.25, t.z + 2.6]], 0.16, PALETTE.road, 0.02);
+    ribbon(b, [[avenue, t.z + 2.3], [t.x + 1.9, t.z + 2.3]], 0.16, PALETTE.road, 0.02);
+    for (let k = 0; k < 9; k++) {
+      const pz = t.z - 1.9 + k * 0.45;
+      palm(b, r, avenue - 0.18, pz, 0.9, terrainHeight(avenue - 0.18, pz) - 0.02);
+      if (k % 2) {
+        b.cylinder(0.006, 0.009, 0.24, avenue + 0.13, y, pz, 0x3a4048, 5);
+        b.blob(0.016, avenue + 0.13, y + 0.25, pz, LAMP, true);
+      }
+    }
+    // Building One: a long cream block, a stepped central tower, gold trim, facing the city (west).
+    const bx = avenue + 0.55;
+    const bz = t.z - 0.5;
+    b.box(0.42, 0.32, 1.2, bx, y, bz, cream);
+    b.box(0.46, 0.03, 1.24, bx, y + 0.32, bz, gold);
+    for (const [w, h, yy] of [[0.36, 0.2, 0.32], [0.28, 0.16, 0.52], [0.18, 0.12, 0.68]] as const) {
+      b.box(w, h, w, bx, y + yy, bz, cream);
+      b.box(w + 0.02, 0.015, w + 0.02, bx, y + yy + h, bz, gold);
+    }
+    b.cylinder(0.008, 0.012, 0.14, bx, y + 0.8, bz, gold, 6);
+    b.windows({ w: 0.42, d: 1.2, x: bx, z: bz, y0: y, rows: 2, rowHeight: 0.14, cols: 8, faces: ['x-', 'x+', 'z+'] }, r, 0.6, [1.6, 1.15, 0.6], { w: 0.06, h: 0.08 });
+    for (const s of [-1, 1]) b.box(0.3, 0.22, 0.32, bx + 0.32, y, bz + s * 0.48, cream);
+    // Three seaplane hangars with barrel roofs, doors to the cove.
+    for (let k = 0; k < 3; k++) {
+      const hx = t.x + 1.25;
+      const hz = t.z - 1.55 + k * 0.62;
+      b.box(1.1, 0.22, 0.5, hx, y, hz, 0xd9d4c8);
+      b.transformed(new THREE.CylinderGeometry(0.25, 0.25, 1.1, 14, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), new THREE.Matrix4().makeTranslation(hx, y + 0.22, hz), 0x9aa5a0, 'smooth');
+      b.box(0.02, 0.18, 0.36, hx + 0.56, y, hz, 0x5a646a);
+      b.quad(0.02, 0.06, hx + 0.571, y + 0.28, hz, 'x+', [1.6, 1.3, 0.8], true, 0.3);
+    }
+    // Navy-era houses in rows on the north side, each with a small gable.
+    for (let row = 0; row < 4; row++) {
+      for (let k = 0; k < 6; k++) {
+        const hx = t.x - 0.9 + k * 0.36;
+        const hz = t.z + 0.55 + row * 0.58 + (row > 1 ? 0.18 : 0);
+        if (coastDistance(hx, hz) > -0.35) continue;
+        const wall = pick(r, [0xf3e9d8, 0xe9dcc4, 0xd8e2e6, 0xf0d9c0] as const);
+        b.box(0.28, 0.16, 0.24, hx, y, hz, wall);
+        b.gable(0.28, 0.08, 0.24, hx, y + 0.16, hz, pick(r, PALETTE.roofs), 0.02);
+        b.quad(0.06, 0.05, hx + 0.05, y + 0.1, hz + 0.121, 'z+', [1.6, 1.1, 0.55], true, 0.15 + r() * 0.8);
+        if (r() < 0.5) tree(b, r, hx + 0.12, hz - 0.2, 0.55, y - 0.02, 'round');
+      }
+    }
+    // A ballfield by the hangars
+    const fx = t.x + 1.35;
+    const fz = t.z + 1.25;
+    b.box(1.0, 0.012, 0.9, fx, y, fz, 0x7fbf55);
+    b.box(0.34, 0.006, 0.34, fx - 0.22, y + 0.012, fz - 0.2, 0xc9a77a, false, Math.PI / 4);
+    for (const s of [-1, 1]) b.box(0.012, 0.16, 0.012, fx + s * 0.48, y, fz + 0.42, 0xe8e8e8);
+    // Clipper Cove: a pier with boats, out in the water off the south shore.
+    const px = t.x + 0.6;
+    let pz = t.z - 1.8;
+    while (coastDistance(px, pz) < 0.25 && pz > t.z - 5) pz -= 0.1;
+    b.box(1.6, 0.03, 0.12, px, SEA + 0.05, pz, PALETTE.wood);
+    for (let k = 0; k < 4; k++) moored(b, r, px - 0.6 + k * 0.42, pz - 0.35);
   }
 
   /** A house on every terrace. */
