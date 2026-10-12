@@ -83,7 +83,7 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
 
 **Branch:** `claude/tender-keller-mnunoy`. It is currently the **only branch** on GitHub, so it's effectively the default branch, and there is no `main` to open PRs against. Ask the owner whether to create `main` from it; don't create or push other branches without asking.
 
-**Health:** `npm run typecheck` clean, `npm test` 59/59 passing, `npm run build` succeeds.
+**Health:** `npm run typecheck` clean, `npm test` 59/59 passing, `npm run build` succeeds. Grown city (day 540): 755 draw calls and 2.27M triangles per frame, which is over budget; see the perf item in TODO P1.
 
 **Built and working:**
 

@@ -112,7 +112,7 @@ Colours are hex or linear RGB triples; values above 1 glow under bloom. `build()
 | Vehicle (plane, yacht) | ≤ ~3k |
 | Car model (instanced) | ≤ ~600 |
 
-- **Draw calls:** a grown city should stay at a few hundred. Batching cut it from about 1,080 to about 376 before the newest models; re-measure with `tools/perf.mjs`.
+- **Draw calls:** a grown city should stay at a few hundred. Batching cut it from about 1,080 to about 376, but the newest models brought it back up to 755 (see TODO P1). Re-measure with `tools/perf.mjs`.
 - **Per frame:** update instance matrices only, with no per-frame allocations in hot loops.
 
 ## Rendering gotchas (learned the hard way)

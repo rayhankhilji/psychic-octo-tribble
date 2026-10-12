@@ -6,17 +6,17 @@
 
 The world is a toy-sized **San Francisco Bay**, laid out like the real thing: downtown and the Financial District on the north-east corner of the peninsula, Market Street cutting diagonally to Civic Center and City Hall's gold dome, the Embarcadero and its piers, the Marina, the Presidio's forest and the Golden Gate to the north-west, Golden Gate Park and the Sunset running out to Ocean Beach, the Bay Bridge to Treasure Island and Oakland, and SFO down the peninsula. Painted ladies, Sunset stucco row houses and Edwardian flats fill the neighbourhoods; a Transamerica pyramid and a Salesforce-style spire rise as you grow. The city is alive: cars, Muni buses and cabs on a real street grid, people on the sidewalks, F-line streetcars and cable cars, ferries and sailboats on the bay, airliners landing at SFO, gulls, kites and the Karl the Fog rolling in. A **TINYTOWN** sign sits on the hill above it all.
 
-![A grown TinyTown at midday: the city panel showing treasury and satisfaction, neighbourhoods around a glass downtown, the Hills neighbourhood, pier rides and the TINYTOWN sign](docs/images/city.png)
+![A grown TinyTown at midday: Market Street cutting through downtown, glass towers, painted-lady and stucco neighbourhoods, the pier, the Ferry Building and the Bay Bridge, with the metrics and city cards on the left](docs/images/city.png)
 
-![The build menu: items with prices, upkeep and MRR unlocks](docs/images/build.png)
+![The build menu: items with real 3D thumbnails, prices, upkeep and happiness](docs/images/build.png)
 
 ## Day and night
 
 The sun follows **your local clock**. Mornings are soft, middays are bright, golden hour is long, and at night the windows, street lamps, neon, bridge lights and the floodlit sign come on. The chip next to your startup's name shows the time; click it to preview morning, midday, golden hour and night, then click again to go back to live. Add `?time=19:30` (or `7pm`) to the URL to pin a time, which is handy for recording.
 
 <p>
-  <img src="docs/images/evening.png" width="49%" alt="Golden hour: warm low sun, long shadows, golden hills">
-  <img src="docs/images/night.png" width="49%" alt="Night: lit windows, street lamps and the floodlit TINYTOWN sign">
+  <img src="docs/images/evening.png" width="49%" alt="Golden hour over downtown and the Embarcadero: warm low sun and long shadows">
+  <img src="docs/images/night.png" width="49%" alt="Night: lit windows, street lamps, the glowing towers and the Bay Bridge lights">
 </p>
 
 ## Try it
@@ -48,8 +48,8 @@ The full design, with every number, is in [docs/GAME_DESIGN.md](docs/GAME_DESIGN
 Real metrics still drive the world, as before: HQ gains a floor per GitHub release, the train speeds up with commits, and rain falls when MRR drops more than 1% in a week.
 
 <p>
-  <img src="docs/images/decay.png" width="49%" alt="Day 105 at night: thousands of users without a home, the bridge rusting and the sign dark">
-  <img src="docs/images/island.png" width="49%" alt="At $1M MRR: the island estate, superyacht, rocket on its launch pad, and the pier's Ferris wheel and coaster">
+  <img src="docs/images/decay.png" width="49%" alt="Day 106 at night: 4,309 people without a home, the bridge rusting, and the decay and housing alerts on the city card">
+  <img src="docs/images/island.png" width="49%" alt="The island estate with its helipad and superyacht, the launch site, and the pier's Ferris wheel and coaster">
 </p>
 
 ## Connect your startup
@@ -96,7 +96,7 @@ Stripe / GitHub ──► server/        fetch + cache (60s), keys stay here
 ```
 
 - **Deterministic.** The same numbers always produce the same city, seeded by your startup's name. Growth only ever adds to it, so customer #12's house never moves when #13 arrives.
-- **Cheap to render.** However detailed a building is, it's merged into a handful of meshes by material (matte, glass, smooth, lights). Every home in the city shares one `BatchedMesh` per material, and cars, people, gulls, lamps and trees are instanced, so a fully grown city draws in a few hundred calls. Quality adapts to the device (`?quality=low|medium|high` to force it).
+- **Cheap to render.** However detailed a building is, it's merged into a handful of meshes by material (matte, glass, smooth, lights). Every home in the city shares one `BatchedMesh` per material, and cars, people, gulls, lamps and trees are instanced, so a fully grown city with shadows draws in about 750 calls (the target is a few hundred; see `docs/TODO.md`). Quality adapts to the device (`?quality=low|medium|high` to force it).
 - **Miniature look.** A post pipeline renders the city like a model you could pick up: ambient occlusion for contact shadows, bloom only on lights after dark, a tilt-shift blur at the top and bottom of the frame, and a warm filmic grade.
 - **Reconciled, not rebuilt.** A new day diffs the plan and touches only what changed: one customer costs one small house.
 - **No backend dependencies.** The server is plain Node (≥ 22.18, which runs TypeScript directly) plus `fetch`.

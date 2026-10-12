@@ -7,23 +7,21 @@ Every task follows the visual bar in `CLAUDE.md`: screenshot it, day and night, 
 ## P0: Housekeeping
 
 - [ ] **Base branch.** `claude/tender-keller-mnunoy` is the only branch on GitHub. Ask the owner whether to create `main` from it, so future work can go through PRs.
-- [ ] **Refresh README screenshots** (`docs/images/city.png`, `build.png`, `evening.png`, `night.png`, `decay.png`, `island.png`). Some may still show the old Golden Coast look. Use `tools/shot.mjs` from a frozen build. Suggested shots:
-  - `city`: `time=13:00`, `--day=end`, with UI
-  - `build`: build menu open (press `b`)
-  - `evening`: `time=18:45`
-  - `night`: `time=22:00`
-  - `decay`: day ~105 at night (tents, dark sign, rust)
-  - `island`: `&boost=40`, focus the island
 
 ## P1: Finish the visual overhaul (leftovers from the parallel agents)
 
 The four agents' work is committed. Items each one reported as unfinished are listed here.
 
-- [ ] **Perf pass on a real GPU.** Measure draw calls and triangles with `tools/perf.mjs` at day 540, `quality=high`. Target a few hundred draw calls. If over budget, batch or instance more: tents, trees in parks, district items.
+- [ ] **Perf pass.** At handoff, `tools/perf.mjs` (day 540, `quality=high`, one render including the shadow pass) measured **755 draw calls, 2.27M triangles, 108 shader programs**. That's up from about 376 calls and 1.28M triangles before the new models. Target: a few hundred calls and under about 1.5M triangles, holding 60 fps on a mid-range laptop.
+  - **Cheapest wins:** batch district and plot items through `Batch` the same way homes are (towers and items are separate meshes today); instance park and forest trees and the tents; trim the over-budget models (see the models leftovers below).
+  - **Shadows:** consider excluding small props from casting.
+  - **Shader programs:** check why there are 108; per-model material clones may be defeating program sharing.
+  - **Then:** confirm frame time on a real GPU and tune adaptive quality (`stage.ts` `adapt()`).
 - [ ] **Bundle size.** The production chunk is over 1 MB. Split out the showcase-only code and lazy-load `ui/thumbnails.ts` and the post-processing passes if that helps first paint.
 
 ## P2: Polish and bugs
 
+- [ ] **Rocket missing in the boosted demo.** With `/?demo&fresh&boost=40`, the launch site at day 540 shows the launch tower but no rocket on the pad. Check whether the demo founder can afford the $2B rocket by then (`src/game/demo-script.ts`, entry 536) and whether `city.ts` places it. The README `island.png` was taken without it.
 - [ ] **Cloud banks over locked land** are bright white at night. Tint them with the atmosphere (they should go blue-grey under moonlight), or soften them with the fog colour.
 - [ ] Apartments average about 1,530 triangles, just over the 1,500 home budget. Trim them if perf needs it.
 - [ ] `buildings.ts` leaves out the south-west street lamp of each block because `city.ts` puts a junction lamp there. If that lamp moves, add it back.
