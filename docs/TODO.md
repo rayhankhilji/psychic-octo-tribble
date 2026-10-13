@@ -6,8 +6,8 @@ Every task follows the visual bar in `CLAUDE.md`: screenshot it, day and night, 
 
 ## P0: Housekeeping
 
-- [ ] **Base branch.** There's no `main`: work lives on `claude/*` branches. The owner opened PR #1 (`claude/friendly-darwin-sjkcz1` → `claude/tender-keller-mnunoy`). Still worth creating `main` so CI's `push: [main]` trigger means something; ask before creating it.
-- [ ] **Seeded cities (asked the owner, awaiting "go").** The owner wants every founder's city to be different: same size, same number of plots, different layout and structure. Proposal: keep a recognisable sunny bay city, but seed the coastline shape, hill and park placement, which neighbourhoods and landmarks you get and where, house styles, palettes and tree mix; the plot count and unlock gates stay fixed for fairness; the demo keeps today's layout as one seed. Touches `world/map.ts` (pure, testable) first.
+- [x] **Base branch.** `main` created (2026-10-13, owner's go) from the latest work. The GitHub default branch is still `claude/tender-keller-mnunoy`: the owner can switch it to `main` in the repo's Settings → General.
+- [ ] **Seeded cities (owner said go, 2026-10-13; agent working).** The owner wants every founder's city to be different: same size, same number of plots, different layout and structure. Proposal: keep a recognisable sunny bay city, but seed the coastline shape, hill and park placement, which neighbourhoods and landmarks you get and where, house styles, palettes and tree mix; the plot count and unlock gates stay fixed for fairness; the demo keeps today's layout as one seed. Touches `world/map.ts` (pure, testable) first.
 
 ## P1: The reference-image quality push (in progress)
 
