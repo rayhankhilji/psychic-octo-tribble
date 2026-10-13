@@ -54,6 +54,8 @@ export class Stage {
   private dragging = false;
   private lastPick = 0;
   private wasCalm = false;
+  private following: { target: () => THREE.Vector3; zoom: number } | null = null;
+  private tmpStep = new THREE.Vector3();
 
   constructor(host: HTMLElement, city: City) {
     this.host = host;
@@ -88,6 +90,7 @@ export class Stage {
       this.userZoomed = true;
       this.glide = null;
       this.dragging = true;
+      this.following = null;
       this.wake();
     });
     this.controls.addEventListener('end', () => (this.dragging = false));
@@ -166,7 +169,23 @@ export class Stage {
   /** Smoothly fly the camera to look at a point. */
   focus(target: THREE.Vector3, zoom = 2.4) {
     this.userZoomed = true;
+    this.following = null;
     this.glide = { target: target.clone(), zoom, t: 0, fromT: this.controls.target.clone(), fromZ: this.camera.zoom };
+  }
+
+  /**
+   * Keeps the camera on something that moves (a helicopter on its way to
+   * your island), easing towards it each frame, until `stopFollowing()`
+   * or the user grabs the controls.
+   */
+  follow(target: () => THREE.Vector3, zoom: number) {
+    this.userZoomed = true;
+    this.glide = null;
+    this.following = { target, zoom };
+  }
+
+  stopFollowing() {
+    this.following = null;
   }
 
   /** Back to the overview that frames the whole developed city. */
@@ -277,7 +296,7 @@ export class Stage {
   private frame(now: number) {
     // A calm city (no input, no replay, nothing moving the camera, nothing popping in) draws at
     // 30 fps: the miniature still breathes, at half the CPU and GPU. Skipped frames fold into dt.
-    const calm = !this.active && !this.spin && !this.glide && !this.easing && !this.city.lively && now - this.lastInput > 4000;
+    const calm = !this.active && !this.spin && !this.glide && !this.following && !this.easing && !this.city.lively && now - this.lastInput > 4000;
     if (this.lastFrame && now - this.lastFrame < (calm ? 1000 / 30 : 1000 / 60) - 2) return;
     this.lastFrame = now;
     const paced = calm || this.wasCalm;
@@ -301,7 +320,17 @@ export class Stage {
       if (this.spin.t >= 1) this.spin = null;
     }
 
-    if (this.glide) {
+    if (this.following) {
+      // Ride along: ease the view onto the moving target, ground level beneath it.
+      const f = this.following;
+      const at = f.target();
+      const k = Math.min(1, dt * 3);
+      const step = this.tmpStep.set(at.x - this.controls.target.x, 0, at.z - this.controls.target.z).multiplyScalar(k);
+      this.controls.target.add(step);
+      this.camera.position.add(step);
+      this.camera.zoom += (f.zoom - this.camera.zoom) * Math.min(1, dt * 1.5);
+      this.camera.updateProjectionMatrix();
+    } else if (this.glide) {
       const g = this.glide;
       g.t = Math.min(1, g.t + dt / 1.1);
       const k = g.t < 0.5 ? 4 * g.t ** 3 : 1 - (-2 * g.t + 2) ** 3 / 2;
