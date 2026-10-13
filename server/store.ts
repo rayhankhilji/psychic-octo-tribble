@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import type { Connections, PlanInterval, PlanStatus, UsersSource, WorldInfo } from '../src/api/contract.ts';
 import type { Action } from '../src/game/economy.ts';
 import type { Timeline } from '../src/data/types.ts';
+import { HttpError } from './http.ts';
 import type { Db } from './supabase.ts';
 
 /** Rows as they live in Postgres (see supabase/migrations). */
@@ -71,7 +72,8 @@ export async function ensureProfile(db: Db, userId: string, onCreate?: () => Pro
   const inserted = await db.upsert('profiles', { user_id: userId, seed: randomInt(1, 2 ** 31) }, 'user_id', 'ignore');
   if (inserted && onCreate) await onCreate();
   const created = await db.one<ProfileRow>('profiles', { user_id: userId });
-  if (!created) throw new Error('Profile was not created');
+  // 0006 drops inserts for users who no longer exist: a deleted account whose sign-in is still cached.
+  if (!created) throw new HttpError(401, 'Your session has expired. Sign in again.', 'unauthenticated');
   return created;
 }
 

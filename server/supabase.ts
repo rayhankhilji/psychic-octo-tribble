@@ -18,6 +18,7 @@ export interface SupabaseConfig {
  * repeat) are retried on 429/5xx; writes are sent once (see retry.ts).
  */
 const TIMEOUT_MS = 8_000;
+const READ_TIMEOUT_MS = 4_000;
 
 export interface AuthUser {
   id: string;
@@ -63,7 +64,8 @@ async function rest<T>(cfg: SupabaseConfig, method: string, path: string, body?:
     res = await fetchWithRetry(
       `${cfg.url}/rest/v1/${path}`,
       { method, headers: serviceHeaders(cfg, prefer ? { Prefer: prefer } : {}), ...(body === undefined ? {} : { body: JSON.stringify(body) }) },
-      { timeoutMs: TIMEOUT_MS },
+      // Reads fail fast under overload rather than stacking up; writes get longer.
+      { timeoutMs: method === 'GET' ? READ_TIMEOUT_MS : TIMEOUT_MS },
     );
   } catch (err) {
     log.error('database unreachable', { method, table, err });

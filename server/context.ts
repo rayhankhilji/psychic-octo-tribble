@@ -47,7 +47,8 @@ export async function requireUser(ctx: Hosted): Promise<AuthUser> {
   }
   const user = await fetchUser(ctx.supabase, token);
   if (!user) throw new HttpError(401, 'Your session has expired. Sign in again.', 'unauthenticated');
-  if (authCache.size > 5_000) authCache.clear();
+  // Full: forget the oldest sign-in, not all of them, so a busy instance doesn't send everyone back to Supabase at once.
+  if (authCache.size >= 5_000) authCache.delete(authCache.keys().next().value!);
   authCache.set(key, { user, until: ctx.now + AUTH_TTL_MS });
   noteUser(ctx.req, user.id);
   return user;
@@ -59,6 +60,7 @@ export async function requireUser(ctx: Hosted): Promise<AuthUser> {
  * period end closes on time even if its last webhook never arrived.
  */
 export async function requirePaid(ctx: Hosted, user: AuthUser): Promise<SubscriptionRow> {
+  // Read every time, never cached: a revoked comp or an ended plan must lose access at once, on every instance.
   const sub = await ctx.db.one<SubscriptionRow>('subscriptions', { user_id: user.id });
   if (!sub || !hasAccess(sub, ctx.now)) throw new HttpError(402, 'Pick a plan to open your city.', 'payment_required');
   return sub;

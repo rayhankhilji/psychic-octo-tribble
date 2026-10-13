@@ -246,8 +246,11 @@ export function simulate(snapshots: Snapshot[], actions: Action[], upto: number,
     treasury += incomePerDay;
     earned += incomePerDay;
 
-    while (qi < queue.length && queue[qi]!.t <= s.t) apply(queue[qi++]!, s);
-    openLand();
+    while (qi < queue.length && queue[qi]!.t <= s.t) {
+      apply(queue[qi++]!, s);
+      // Filling the last plot opens the next block straight away, as the build menu already shows.
+      openLand();
+    }
 
     population = populationOf(s);
     const capacity = Math.max(FREE_HOUSED, Math.floor(s.mrr / MRR_PER_USER));

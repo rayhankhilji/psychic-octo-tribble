@@ -51,7 +51,8 @@ async function route(ctx: Ctx): Promise<Response> {
 
   if (path === ROUTES.config) {
     if (method !== 'GET') throw methodNotAllowed();
-    return json(await config(ctx), 200, { 'Cache-Control': 'public, max-age=60' });
+    // Nothing in it is per-user: let Vercel's edge serve it, so a launch spike doesn't fan out to Stripe's price API.
+    return json(await config(ctx), 200, { 'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' });
   }
   // Health, cron, email links, accounts and admin: each module checks its own auth.
   for (const ext of EXTENSIONS) if (ext.match(path, method)) return ext.handle(ctx);

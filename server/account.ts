@@ -323,7 +323,8 @@ async function endBilling(ctx: Hosted, user: AuthUser, row: SubscriptionRow | nu
     return canceled;
   } catch (err) {
     // The customer itself was deleted in the Stripe Dashboard: nothing left to charge.
-    if (err instanceof StripeError && (err.status === 404 || (err.code === 'resource_missing' && err.param === 'customer'))) return 0;
+    // Only that: any other 404 (a wrong path, a proxy) must not pass for "nothing to cancel".
+    if (err instanceof StripeError && err.code === 'resource_missing' && err.param === 'customer') return 0;
     log.error('account delete: Stripe step failed', { user_id: user.id, err });
     throw stripeDown();
   }

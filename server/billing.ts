@@ -74,9 +74,21 @@ const PRICE_TTL_MS = 10 * 60_000;
 let priceCache: { key: string; until: number; prices: Record<PlanInterval, StripePrice> } | null = null;
 
 /** Both prices as Stripe has them, checked to be what they say they are, and cached for ten minutes. */
+/** A price lookup already on its way: requests that arrive meanwhile share it instead of each asking Stripe. */
+let pricesInFlight: { key: string; prices: Promise<Record<PlanInterval, StripePrice>> } | null = null;
+
 async function resolvePrices(ctx: Ctx, billing: Billing): Promise<Record<PlanInterval, StripePrice>> {
   const key = `${billing.prices.month}|${billing.prices.year}`;
   if (priceCache && priceCache.key === key && priceCache.until > ctx.now) return priceCache.prices;
+  if (pricesInFlight?.key === key) return pricesInFlight.prices;
+  const prices = fetchPrices(ctx, billing, key);
+  pricesInFlight = { key, prices };
+  return prices.finally(() => {
+    if (pricesInFlight?.prices === prices) pricesInFlight = null;
+  });
+}
+
+async function fetchPrices(ctx: Ctx, billing: Billing, key: string): Promise<Record<PlanInterval, StripePrice>> {
   const found: Partial<Record<PlanInterval, StripePrice>> = {};
   const byLookup = (['month', 'year'] as const).filter((i) => !isPriceId(billing.prices[i]));
   if (byLookup.length) {
