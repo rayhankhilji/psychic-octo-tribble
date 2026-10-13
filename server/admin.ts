@@ -620,10 +620,14 @@ async function refreshTimeline(ctx: Hosted, admin: Admin, id: string, body: Reco
 /** How many invite emails go to the email module at once. */
 const NOTIFY_PARALLEL = 20;
 
-/** Hands invites to the email module a batch at a time, recording each batch as sent. */
-async function sendInvites(ctx: Hosted, emails: string[]) {
+/**
+ * Hands invites to the email module a batch at a time, recording each batch
+ * as sent. The email module sends an invite once per address unless given a
+ * `ref`, so a deliberate resend passes its own.
+ */
+async function sendInvites(ctx: Hosted, emails: string[], ref?: string) {
   for (const batch of chunks(emails, NOTIFY_PARALLEL)) {
-    await Promise.all(batch.map((email) => notify(ctx, { kind: 'access.invited', email }).catch(() => undefined)));
+    await Promise.all(batch.map((email) => notify(ctx, { kind: 'access.invited', email, ...(ref ? { ref } : {}) }).catch(() => undefined)));
     await pg(ctx, 'PATCH', 'waitlist', [['email', inList(batch)]], { body: { notified_at: iso(ctx.now) }, prefer: ['return=minimal'] });
   }
 }
@@ -720,7 +724,7 @@ async function resendInvite(ctx: Hosted, admin: Admin, email: string | null, tar
   return change(ctx, admin, body, 'waitlist.resend', target, { email }, async () => {
     const [row] = await select<WaitlistRow>(ctx, 'waitlist', [['select', WAITLIST_COLS], ['email', `eq.${email}`], ['limit', '1']]);
     if (!row?.invited_at) throw new HttpError(409, row ? "They haven't been invited yet. Invite them first." : "They aren't on the waitlist. Invite them by email first.", 'rejected');
-    await sendInvites(ctx, [email]);
+    await sendInvites(ctx, [email], `resend:${ctx.now}`);
     return { sent: true };
   });
 }
