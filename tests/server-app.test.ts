@@ -21,7 +21,7 @@ describe('/api/config', () => {
   it('says hosted: false without Supabase, and serves no plans or keys', async () => {
     stubFetch(db);
     const res = await call('GET', '/api/config', { env: {} });
-    expect(await res.json()).toEqual({ hosted: false, supabase: null, plans: [], connect: { stripe: false, github: false, posthog: false } });
+    expect(await res.json()).toEqual({ hosted: false, supabase: null, plans: [], connect: { stripe: false, github: false, posthog: false }, captcha: null, access: 'open', supportEmail: null });
   });
 
   it('exposes only the Supabase URL and anon key, plus prices read from Stripe', async () => {
@@ -36,6 +36,9 @@ describe('/api/config', () => {
         { interval: 'year', amount: 9900, currency: 'usd' },
       ],
       connect: { stripe: true, github: true, posthog: true },
+      captcha: null,
+      access: 'open',
+      supportEmail: null,
     });
     for (const secret of [ENV.SUPABASE_SERVICE_ROLE_KEY, ENV.STRIPE_BILLING_SECRET_KEY, ENV.STATE_SECRET, ENV.TOKEN_ENCRYPTION_KEY, ENV.GITHUB_APP_CLIENT_SECRET, 'whsec_test']) {
       expect(text).not.toContain(secret);

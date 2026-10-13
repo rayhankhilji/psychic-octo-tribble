@@ -69,7 +69,7 @@ export function rateLimit(key: string, perMinute: number, now: number) {
     windows.set(key, { start: now, count: 1 });
     return;
   }
-  if (++w.count > perMinute) throw new HttpError(429, 'Slow down a little and try again in a minute.', 'bad_request');
+  if (++w.count > perMinute) throw new HttpError(429, 'Slow down a little and try again in a minute.', 'rate_limited');
 }
 
 /** For tests: forget cached sign-ins and rate-limit counters. */

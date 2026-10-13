@@ -15,7 +15,7 @@
 import { DAY, type Timeline } from '../data/types.ts';
 import type { Action, SimOptions } from '../game/economy.ts';
 
-export type ErrorCode = 'unauthenticated' | 'payment_required' | 'rejected' | 'not_configured' | 'not_connected' | 'upstream' | 'bad_request';
+export type ErrorCode = 'unauthenticated' | 'payment_required' | 'rejected' | 'not_configured' | 'not_connected' | 'upstream' | 'bad_request' | 'not_invited' | 'rate_limited';
 
 export interface ApiError {
   error: string;
@@ -31,6 +31,34 @@ export interface ConfigResponse {
   plans: Plan[];
   /** Which ways to connect data are set up on this server. */
   connect: { stripe: boolean; github: boolean; posthog: boolean };
+  /** Bot check on sign-in (Supabase's captcha support), when configured. The browser passes the token to Supabase. */
+  captcha?: { provider: 'turnstile'; siteKey: string } | null;
+  /** `open`: anyone can sign up and pay. `waitlist`: only invited emails can (403 `not_invited` otherwise). */
+  access?: 'open' | 'waitlist';
+  /** Where to write for help. */
+  supportEmail?: string | null;
+}
+
+/** Public pages every screen can link to (static files in public/). */
+export const LEGAL = { terms: '/legal/terms.html', privacy: '/legal/privacy.html', refunds: '/legal/refunds.html', contact: '/legal/contact.html' } as const;
+
+/** `GET /api/account/export` → a JSON download of everything we hold about the signed-in founder. */
+/** `DELETE /api/account` { confirm: email } → { ok: true }: cancels the plan, disconnects everything, deletes the account. */
+export interface DeleteAccountRequest {
+  /** The account's email, typed again, so a stray click can't delete a city. */
+  confirm: string;
+}
+
+/** `POST /api/telemetry` (public, rate-limited): a browser error report. No personal data. */
+export interface TelemetryReport {
+  kind: 'error' | 'unhandledrejection' | 'webgl' | 'perf';
+  message: string;
+  stack?: string;
+  url?: string;
+  /** Build id, so reports map to a release. */
+  release?: string;
+  /** Free-form numbers (fps, draw calls, boot ms). */
+  data?: Record<string, number | string | boolean>;
 }
 
 export type PlanInterval = 'month' | 'year';
@@ -152,6 +180,12 @@ export const ROUTES = {
   githubRepos: '/api/connect/github/repos',
   githubRepo: '/api/connect/github/repo',
   users: '/api/connect/users',
+  account: '/api/account',
+  accountExport: '/api/account/export',
+  telemetry: '/api/telemetry',
+  health: '/api/health',
+  /** `GET /api/email/unsubscribe?token=…` (public, signed link in every non-essential email). */
+  unsubscribe: '/api/email/unsubscribe',
 } as const;
 
 /** A plan that unlocks the hosted game. */

@@ -1,8 +1,10 @@
 import { ROUTES, type ConfigResponse, type Provider } from '../src/api/contract.ts';
 import type { Timeline } from '../src/data/types.ts';
+import { checkAccess } from './access.ts';
 import { appUrl, checkout, plans, portal, resetBillingCaches, webhook } from './billing.ts';
 import { hosted, rateLimit, requirePaid, requireUser, resetContextCaches, type Ctx, type Hosted } from './context.ts';
 import { settings, type Env } from './env.ts';
+import { EXTENSIONS } from './extensions.ts';
 import * as github from './github-app.ts';
 import { userTimeline, resetTimelineCaches } from './hosted-timeline.ts';
 import { HttpError, errorResponse, json, notConfigured, readJson } from './http.ts';
@@ -44,6 +46,8 @@ async function route(ctx: Ctx): Promise<Response> {
     if (method !== 'GET') throw methodNotAllowed();
     return json(await config(ctx), 200, { 'Cache-Control': 'public, max-age=60' });
   }
+  // Health, cron, email links, accounts and admin: each module checks its own auth.
+  for (const ext of EXTENSIONS) if (ext.match(path, method)) return ext.handle(ctx);
   if (!ctx.s.supabase) {
     if (path === ROUTES.timeline && method === 'GET') return localTimeline(ctx);
     throw notConfigured('Accounts');
@@ -72,6 +76,7 @@ async function route(ctx: Ctx): Promise<Response> {
   if (!handler && !(connectDelete && method === 'DELETE')) throw new HttpError(404, 'Not found.', 'bad_request');
 
   const user = await requireUser(h);
+  await checkAccess(h, user);
   if (connectDelete && method === 'DELETE') {
     await requirePaid(h, user);
     rateLimit(`connect:${user.id}`, 20, ctx.now);
@@ -149,7 +154,7 @@ async function disconnect(ctx: Hosted, userId: string, provider: Provider): Prom
 /** `GET /api/config`: public. Only the Supabase URL and anon key ever leave the server. */
 async function config(ctx: Ctx): Promise<ConfigResponse> {
   const s = ctx.s;
-  if (!s.supabase) return { hosted: false, supabase: null, plans: [], connect: { stripe: false, github: false, posthog: false } };
+  if (!s.supabase) return { hosted: false, supabase: null, plans: [], connect: { stripe: false, github: false, posthog: false }, captcha: null, access: 'open', supportEmail: null };
   let billingReady = !!s.billing;
   try {
     if (billingReady) appUrl(ctx);
@@ -161,6 +166,9 @@ async function config(ctx: Ctx): Promise<ConfigResponse> {
     supabase: { url: s.supabase.url, anonKey: s.supabase.anonKey },
     plans: billingReady ? await plans(ctx) : [],
     connect: { stripe: !!s.stripeApp && !!s.appUrl, github: !!s.githubApp && !!s.appUrl, posthog: !!s.secrets },
+    captcha: ctx.env.TURNSTILE_SITE_KEY ? { provider: 'turnstile', siteKey: ctx.env.TURNSTILE_SITE_KEY } : null,
+    access: ctx.env.ACCESS_MODE === 'waitlist' ? 'waitlist' : 'open',
+    supportEmail: ctx.env.SUPPORT_EMAIL || null,
   };
 }
 
