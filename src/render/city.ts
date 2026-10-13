@@ -89,6 +89,8 @@ export class City {
   private jobs = new Map<string, () => void>();
   private worldReady = false;
   private tentTarget = -1;
+  /** After a jump (not a replay step), build faster: the user is waiting on it. */
+  private hurry = false;
   /** Every home and every neighbourhood's grounds, in a few draw calls. */
   private homeBatch = new Batch();
   /** Batch proxies for the neighbourhood grounds, by neighbourhood index. */
@@ -225,7 +227,21 @@ export class City {
     if (!this.worldReady) {
       this.runJobs(Infinity);
       this.worldReady = true;
-    } else if (!animate) this.runJobs(16);
+    } else if (!animate) {
+      this.runJobs(16);
+      this.hurry = true;
+    }
+  }
+
+  /** Builds everything still queued, now (for screenshots and tests). */
+  finishBuilding() {
+    this.runJobs(Infinity);
+    this.buildHomes(Infinity);
+  }
+
+  /** Still building homes or grounds queued by the last change (screenshot tools wait on this). */
+  get busy(): boolean {
+    return this.jobs.size > 0 || this.pendingHomes.size > 0;
   }
 
   private defer(key: string, job: () => void) {
@@ -971,8 +987,10 @@ export class City {
 
   update(dt: number, time: number) {
     // A few milliseconds of building per frame, so growth never stutters.
-    if (this.jobs.size) this.runJobs(3);
-    if (this.pendingHomes.size) this.buildHomes(4);
+    if (!this.busy) this.hurry = false;
+    // A jump the user asked for fills in within a few frames; a replay step trickles in.
+    if (this.jobs.size) this.runJobs(this.hurry ? 16 : 3);
+    if (this.pendingHomes.size) this.buildHomes(this.hurry ? 40 : 4);
     for (const a of this.anims) {
       if (a.delay > 0) {
         a.delay -= dt;

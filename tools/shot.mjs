@@ -27,7 +27,10 @@ page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`));
 page.on('console', (m) => {
   if (m.type() === 'error' && !m.text().includes('useProgram')) errors.push(`[console] ${m.text().slice(0, 300)}`);
 });
-await page.goto(url, { timeout: 180000, waitUntil: 'domcontentloaded' });
+// &debug exposes window.__stage in builds, so scrubTo can wait for the city to finish building.
+const target = new URL(url);
+if (!target.pathname.includes('showcase')) target.searchParams.set('debug', '');
+await page.goto(target.toString(), { timeout: 180000, waitUntil: 'domcontentloaded' });
 if (opt.wait) await page.waitForTimeout(+opt.wait);
 else console.log('ready after', await waitForGame(page), 'ms');
 if (opt.day) {

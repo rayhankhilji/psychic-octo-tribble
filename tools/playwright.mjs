@@ -29,11 +29,14 @@ export async function waitForGame(page, timeout = 240000) {
   throw new Error('game did not finish loading');
 }
 
-/** Moves the timeline to `day` ('end' or a number). */
+/** Moves the timeline to `day` ('end' or a number), then waits for the city to finish building it. */
 export async function scrubTo(page, day) {
   await page.evaluate((d) => {
     const r = document.querySelector('input[type=range]');
     r.value = d === 'end' ? r.max : String(d);
     r.dispatchEvent(new Event('input'));
   }, day);
+  // The city builds a few homes per frame, and software rendering makes frames slow: finish now.
+  // (window.__stage exists on the dev server, or in any build opened with &debug.)
+  await page.evaluate(() => window.__stage?.city.finishBuilding());
 }
