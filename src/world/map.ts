@@ -93,9 +93,10 @@ export interface Island {
 
 export const ISLANDS: Record<'founder' | 'launch' | 'yerba' | 'treasure' | 'angel', Island> = {
   /** Your island (Alcatraz-ish), unlocked at $100k MRR. */
-  founder: { id: 'founder', x: -6, z: 24.5, r: 3.2, h: 1.2 },
+  // Your island sits well out in the bay, north of the shipping lane: you fly there (helicopter or jet).
+  founder: { id: 'founder', x: 12, z: 39, r: 4.5, h: 1.2 },
   /** The clouded end of your island, unlocked at $1M. */
-  launch: { id: 'launch', x: -1.6, z: 27.6, r: 2.3, h: 0.25 },
+  launch: { id: 'launch', x: 16.8, z: 42.8, r: 2.6, h: 0.25 },
   yerba: { id: 'yerba', x: 33, z: -7, r: 3.6, h: 3.2 },
   treasure: { id: 'treasure', x: 35.5, z: -0.5, r: 3.2, h: 0.25 },
   angel: { id: 'angel', x: -16, z: 38, r: 6.5, h: 6 },
@@ -310,7 +311,7 @@ export const LANDMARKS = {
 export const PIER = { x0: -10.4, x1: -6.4, z0: 10.6, z1: 22 } as const;
 /** Yacht berths at the Marina. */
 export const MARINA_SLOTS = [-23.2, -21.4, -19.6].map((x) => ({ x, z: 14.6 }));
-export const SUPERYACHT = { x: -9.8, z: 26.2 } as const;
+export const SUPERYACHT = { x: 6.9, z: 37.6 } as const;
 /** SFO-ish, on fill by the bay to the south-east. Free for everyone. */
 export const AIRPORT = { x0: 16, x1: 28, z0: -50, z1: -36 } as const;
 export const AIRPORT_SLOTS = [-47, -44.4, -41.8, -39.2].map((z) => ({ x: 19.2, z }));
@@ -333,4 +334,4 @@ export const PRESIDIO_PKWY: Pt[] = [[-34.6, 5.4], [-34.2, 2.6], [-33, 0], [-32.5
 export const BAY_APPROACH: Pt[] = [[11.6, -6.5], [9.5, -6.8], [7.5, -7.5]];
 export const AIRPORT_ROAD: Pt[] = [[11.2, -21], [12.6, -26], [14.4, -31], [16.4, -36]];
 /** Extent of the world worth framing. */
-export const WORLD = { x0: -50, x1: 16, z0: -40, z1: 30 } as const;
+export const WORLD = { x0: -50, x1: 18, z0: -40, z1: 46 } as const;
