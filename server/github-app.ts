@@ -1,4 +1,5 @@
 import { ROUTES, type Connections, type RedirectResponse, type ReposResponse } from '../src/api/contract.ts';
+import { track } from './analytics.ts';
 import type { Ctx, Hosted } from './context.ts';
 import { githubAppJwt } from './crypto.ts';
 import type { Settings } from './env.ts';
@@ -114,6 +115,7 @@ export async function callback(ctx: Hosted): Promise<Response> {
   );
   await markJoined(ctx, state.user);
   await ctx.db.remove('timelines', { user_id: state.user });
+  await track(ctx, state.user, 'connected_github', { reconnect: !!existing });
   return backHome(ctx, 'github');
 }
 

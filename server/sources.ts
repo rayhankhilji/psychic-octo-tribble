@@ -1,5 +1,23 @@
 import type { GithubCommit, GithubRelease } from '../src/data/github.ts';
 import type { StripeSubscription } from '../src/data/stripe.ts';
+import { UpstreamTimeout, deadline, fetchWithRetry } from './retry.ts';
+
+/**
+ * Each page has 8 s and is retried on 429/5xx (these are all reads); a whole
+ * history, however many pages, has 15 s, so a slow provider fails one
+ * request cleanly instead of hanging it until the platform kills it.
+ */
+const PAGE_TIMEOUT_MS = 8_000;
+const HISTORY_TIMEOUT_MS = 15_000;
+
+async function get(service: string, url: string | URL, headers: Record<string, string>, signal: AbortSignal): Promise<Response> {
+  try {
+    return await fetchWithRetry(url, { headers }, { timeoutMs: PAGE_TIMEOUT_MS, signal });
+  } catch (err) {
+    if (err instanceof UpstreamTimeout) throw new Error(`${service} took too long to respond. Try again in a moment.`);
+    throw new Error(`${service} could not be reached.`);
+  }
+}
 
 /** A readable error from an upstream API response, without dumping its body. */
 async function upstreamError(service: string, res: Response): Promise<Error> {
@@ -20,12 +38,13 @@ const STRIPE_PAGE_LIMIT = 50; // 5,000 subscriptions
 export async function fetchStripeSubscriptions(key: string): Promise<StripeSubscription[]> {
   const subs: StripeSubscription[] = [];
   let after: string | undefined;
+  const signal = deadline(HISTORY_TIMEOUT_MS);
   for (let page = 0; page < STRIPE_PAGE_LIMIT; page++) {
     const url = new URL('https://api.stripe.com/v1/subscriptions');
     url.searchParams.set('status', 'all');
     url.searchParams.set('limit', '100');
     if (after) url.searchParams.set('starting_after', after);
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+    const res = await get('Stripe', url, { Authorization: `Bearer ${key}` }, signal);
     if (!res.ok) throw await upstreamError('Stripe', res);
     const body = (await res.json()) as { data: StripeSubscription[]; has_more: boolean };
     subs.push(...body.data);
@@ -41,11 +60,12 @@ export async function fetchGithub(repo: string, token?: string): Promise<{ commi
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error(`GITHUB_REPO should look like owner/repo, got "${repo}"`);
   const headers: Record<string, string> = { Accept: 'application/vnd.github+json', 'User-Agent': 'tinytown' };
   if (token) headers.Authorization = `Bearer ${token}`;
+  const signal = deadline(HISTORY_TIMEOUT_MS);
 
   const pages = async <T>(path: string, max: number): Promise<T[]> => {
     const out: T[] = [];
     for (let page = 1; page <= max; page++) {
-      const res = await fetch(`https://api.github.com/repos/${repo}/${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`, { headers });
+      const res = await get('GitHub', `https://api.github.com/repos/${repo}/${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`, headers, signal);
       if (res.status === 409) break; // empty repository
       if (!res.ok) throw await upstreamError('GitHub', res);
       const batch = (await res.json()) as T[];

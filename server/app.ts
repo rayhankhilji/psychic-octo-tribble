@@ -8,6 +8,7 @@ import { EXTENSIONS } from './extensions.ts';
 import * as github from './github-app.ts';
 import { userTimeline, resetTimelineCaches } from './hosted-timeline.ts';
 import { HttpError, errorResponse, json, notConfigured, readJson } from './http.ts';
+import { finishRequest, log, reportError } from './log.ts';
 import { backHome } from './oauth.ts';
 import { ensureProfile, type ProfileRow } from './store.ts';
 import * as stripeApp from './stripe-app.ts';
@@ -25,14 +26,20 @@ import { getActions, me, patchWorld, postAction } from './world.ts';
 export async function handle(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const ctx: Ctx = { req, url, env, s: settings(env), now: Date.now() };
+  const started = performance.now();
+  let res: Response;
   try {
-    return await route(ctx);
+    res = await route(ctx);
   } catch (err) {
-    if (err instanceof HttpError) return errorResponse(err);
-    // Unexpected: log the message only (bodies and headers can hold secrets).
-    console.error(`${req.method} ${url.pathname} failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-    return errorResponse(new HttpError(500, 'Something went wrong on our side. Try again in a moment.'));
+    if (err instanceof HttpError) res = errorResponse(err);
+    else {
+      // Unexpected: logged (scrubbed, with the request id) and sent to Sentry if it's set up.
+      await reportError(ctx, err);
+      res = errorResponse(new HttpError(500, 'Something went wrong on our side. Try again in a moment.'));
+    }
   }
+  // One line per request: id, route, status, time taken, user.
+  return finishRequest(ctx, res, started);
 }
 
 const methodNotAllowed = () => new HttpError(405, 'Method not allowed.', 'bad_request');
@@ -66,7 +73,7 @@ async function route(ctx: Ctx): Promise<Response> {
     try {
       return await (provider === 'stripe' ? stripeApp.callback(h) : github.callback(h));
     } catch (err) {
-      console.error(`${provider} callback failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      await reportError(ctx, err, `${provider} callback failed`);
       return backHome(h, provider, 'upstream');
     }
   }
@@ -190,7 +197,7 @@ async function localTimeline(ctx: Ctx): Promise<Response> {
     if (!t) return json({ error: 'No integrations configured. Add STRIPE_SECRET_KEY or GITHUB_REPO to .env.' }, 404);
     return json(t);
   } catch (err) {
-    console.error(err);
+    log.warn('local timeline failed', { err });
     return json({ error: err instanceof Error ? err.message : 'Upstream error' }, 502);
   }
 }

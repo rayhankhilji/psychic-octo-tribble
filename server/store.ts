@@ -58,12 +58,16 @@ export interface TimelineRow {
 
 const ms = (iso: string | null) => (iso ? Date.parse(iso) : null);
 
-/** The founder's profile, created on first sight with a random world seed. */
-export async function ensureProfile(db: Db, userId: string): Promise<ProfileRow> {
+/**
+ * The founder's profile, created on first sight with a random world seed.
+ * `onCreate` runs only for the request whose insert actually made the row.
+ */
+export async function ensureProfile(db: Db, userId: string, onCreate?: () => Promise<void>): Promise<ProfileRow> {
   const existing = await db.one<ProfileRow>('profiles', { user_id: userId });
   if (existing) return existing;
-  // `ignore` keeps whichever row won if two first requests race.
-  await db.upsert('profiles', { user_id: userId, seed: randomInt(1, 2 ** 31) }, 'user_id', 'ignore');
+  // `ignore` keeps whichever row won if two first requests race; the loser gets nothing back.
+  const inserted = await db.upsert('profiles', { user_id: userId, seed: randomInt(1, 2 ** 31) }, 'user_id', 'ignore');
+  if (inserted && onCreate) await onCreate();
   const created = await db.one<ProfileRow>('profiles', { user_id: userId });
   if (!created) throw new Error('Profile was not created');
   return created;

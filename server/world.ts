@@ -1,5 +1,6 @@
 import { simOptionsFor, type ActionsResponse, type MeResponse, type WorldInfo } from '../src/api/contract.ts';
 import type { Action } from '../src/game/economy.ts';
+import { track } from './analytics.ts';
 import type { Hosted } from './context.ts';
 import { checkAction, parseAction } from './game.ts';
 import { HttpError, badRequest } from './http.ts';
@@ -10,7 +11,7 @@ import type { AuthUser } from './supabase.ts';
 /** `GET /api/me`: everything the shell needs to decide what to show. Creates the profile on first sight. */
 export async function me(ctx: Hosted, user: AuthUser): Promise<MeResponse> {
   const [profile, sub, rows] = await Promise.all([
-    ensureProfile(ctx.db, user.id),
+    ensureProfile(ctx.db, user.id, () => track(ctx, user.id, 'signed_up')),
     ctx.db.one<SubscriptionRow>('subscriptions', { user_id: user.id }),
     ctx.db.many<ConnectionRow>('connections', { user_id: user.id }),
   ]);
@@ -67,7 +68,10 @@ export async function postAction(ctx: Hosted, user: AuthUser, body: Record<strin
     if (!verdict.ok) throw new HttpError(409, verdict.reason, 'rejected');
     const actions = [...row.actions, action];
     const saved = await ctx.db.update<WorldRow>('worlds', { user_id: user.id, version: row.version }, { actions, version: row.version + 1, updated_at: new Date(ctx.now).toISOString() });
-    if (saved.length) return { actions };
+    if (saved.length) {
+      if (row.actions.length === 0) await track(ctx, user.id, 'first_build', { kind: action.kind, ...(action.kind === 'build' ? { item: action.item } : { tier: action.tier }) });
+      return { actions };
+    }
   }
   throw new HttpError(409, 'Your city changed in another tab. Reload and try again.', 'rejected');
 }

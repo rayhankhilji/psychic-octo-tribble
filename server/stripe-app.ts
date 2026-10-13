@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import { ROUTES, type RedirectResponse } from '../src/api/contract.ts';
 import type { StripeSubscription } from '../src/data/stripe.ts';
 import { startOfDay } from '../src/data/types.ts';
+import { track } from './analytics.ts';
 import type { Ctx, Hosted } from './context.ts';
 import { decrypt, encrypt } from './crypto.ts';
 import type { Settings } from './env.ts';
@@ -111,6 +112,7 @@ export async function callback(ctx: Hosted): Promise<Response> {
   );
   await markJoined(ctx, user);
   await ctx.db.remove('timelines', { user_id: user });
+  await track(ctx, user, 'connected_stripe', { livemode: token.livemode });
   return backHome(ctx, 'stripe');
 }
 

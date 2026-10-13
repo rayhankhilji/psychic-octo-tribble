@@ -1,4 +1,6 @@
 import { HttpError, upstream } from './http.ts';
+import { log } from './log.ts';
+import { fetchWithRetry } from './retry.ts';
 
 /**
  * Supabase over plain fetch: Auth to identify the caller, and PostgREST with
@@ -11,6 +13,12 @@ export interface SupabaseConfig {
   serviceKey: string;
 }
 
+/**
+ * Every call has a timeout, and reads (and deletes, which are safe to
+ * repeat) are retried on 429/5xx; writes are sent once (see retry.ts).
+ */
+const TIMEOUT_MS = 8_000;
+
 export interface AuthUser {
   id: string;
   email: string | null;
@@ -18,7 +26,12 @@ export interface AuthUser {
 
 /** Who a Supabase access token belongs to, or null if it isn't valid. */
 export async function fetchUser(cfg: SupabaseConfig, token: string): Promise<AuthUser | null> {
-  const res = await fetch(`${cfg.url}/auth/v1/user`, { headers: { apikey: cfg.anonKey, Authorization: `Bearer ${token}` } });
+  let res: Response;
+  try {
+    res = await fetchWithRetry(`${cfg.url}/auth/v1/user`, { headers: { apikey: cfg.anonKey, Authorization: `Bearer ${token}` } }, { timeoutMs: TIMEOUT_MS });
+  } catch {
+    throw upstream('The sign-in service is unavailable. Try again in a moment.');
+  }
   if (res.status === 401 || res.status === 403) return null;
   if (!res.ok) throw upstream(`Sign-in service responded ${res.status}.`);
   const body = (await res.json()) as { id?: unknown; email?: unknown };
@@ -30,7 +43,7 @@ export async function fetchUser(cfg: SupabaseConfig, token: string): Promise<Aut
  * Headers for the service role. New-style secret keys (`sb_secret_…`) aren't
  * JWTs and go in `apikey` only; legacy service-role JWTs go in both.
  */
-function serviceHeaders(cfg: SupabaseConfig, extra: Record<string, string> = {}): Record<string, string> {
+export function serviceHeaders(cfg: SupabaseConfig, extra: Record<string, string> = {}): Record<string, string> {
   const h: Record<string, string> = { apikey: cfg.serviceKey, 'Content-Type': 'application/json', ...extra };
   if (!cfg.serviceKey.startsWith('sb_')) h.Authorization = `Bearer ${cfg.serviceKey}`;
   return h;
@@ -44,14 +57,21 @@ function filters(where: Record<string, string | number | boolean>): string {
 }
 
 async function rest<T>(cfg: SupabaseConfig, method: string, path: string, body?: unknown, prefer?: string): Promise<T> {
-  const res = await fetch(`${cfg.url}/rest/v1/${path}`, {
-    method,
-    headers: serviceHeaders(cfg, prefer ? { Prefer: prefer } : {}),
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
+  const table = path.split('?')[0];
+  let res: Response;
+  try {
+    res = await fetchWithRetry(
+      `${cfg.url}/rest/v1/${path}`,
+      { method, headers: serviceHeaders(cfg, prefer ? { Prefer: prefer } : {}), ...(body === undefined ? {} : { body: JSON.stringify(body) }) },
+      { timeoutMs: TIMEOUT_MS },
+    );
+  } catch (err) {
+    log.error('database unreachable', { method, table, err });
+    throw new HttpError(502, 'The database is unavailable. Try again in a moment.', 'upstream');
+  }
   if (!res.ok) {
-    // PostgREST errors can echo values; log the code only, never the body.
-    console.error(`database ${method} ${path.split('?')[0]} → ${res.status}`);
+    // PostgREST errors can echo values; log the status only, never the body.
+    log.error('database error', { method, table, status: res.status });
     throw new HttpError(502, 'The database is unavailable. Try again in a moment.', 'upstream');
   }
   const text = await res.text();
