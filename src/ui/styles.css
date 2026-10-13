@@ -1472,6 +1472,38 @@ code {
   overflow-wrap: anywhere;
 }
 
+.toast-action {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 10px 4px 8px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--accent-ink, #fff);
+  background: var(--accent);
+  cursor: pointer;
+  transition: filter var(--dur-1, 120ms) var(--ease-out);
+}
+
+.toast-action .ico {
+  width: 14px;
+  height: 14px;
+}
+
+.toast-action:hover {
+  filter: brightness(1.06);
+}
+
+.toast-action:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .toast-close {
   display: grid;
   place-items: center;

@@ -42,7 +42,7 @@ const FEED: Record<string, { icon: IconName; tone: Tone; kicker: string; linger?
   'game.region.opened': { icon: 'cloudSun', tone: 'good', kicker: 'Clouds cleared', linger: 7000 },
   'game.home.moved': { icon: 'home', tone: 'brand', kicker: 'You moved', linger: 7000 },
   'game.sign.dark': { icon: 'bulbOff', tone: 'bad', kicker: 'Upkeep' },
-  'game.sign.lit': { icon: 'bulb', tone: 'good', kicker: 'Lights on' },
+  'game.sign.lit': { icon: 'bulb', tone: 'good', kicker: 'Lights on', linger: 12000 },
   'game.decay': { icon: 'wrench', tone: 'warn', kicker: 'Upkeep' },
   'game.homeless.appeared': { icon: 'tent', tone: 'bad', kicker: 'Housing' },
   'game.homeless.cleared': { icon: 'home', tone: 'good', kicker: 'Housing' },
@@ -491,8 +491,11 @@ export class Hud {
 
   // ── Feed ───────────────────────────────────────────────────────────
 
-  /** Adds a toast to the event feed; repeated kinds collapse into the latest one. */
-  feed(kind: string, text: string, t: number) {
+  /**
+   * Adds a toast to the event feed; repeated kinds collapse into the latest one.
+   * `action` puts a small button on it (e.g. "Share this" for a moment worth a postcard).
+   */
+  feed(kind: string, text: string, t: number, action?: { label: string; icon?: IconName; run: () => void }) {
     const date = dateLabel(t, { month: 'short', day: 'numeric' });
     const first = kind === 'customers.joined' && /first/i.test(text);
     const spec = first ? { icon: 'sparkle' as const, tone: 'brand' as const, kicker: 'Milestone', linger: 8000 } : (FEED[kind] ?? { icon: 'sparkle', tone: 'info', kicker: 'News' });
@@ -509,7 +512,7 @@ export class Hud {
       'div',
       { class: `toast tone-${spec.tone}` },
       `<span class="tile">${ICON[icon]}</span>
-       <span class="toast-body"><span class="toast-kicker">${spec.kicker}<span class="toast-date num"></span></span><span class="toast-text"></span></span>
+       <span class="toast-body"><span class="toast-kicker">${spec.kicker}<span class="toast-date num"></span></span><span class="toast-text"></span>${action ? `<button class="toast-action" type="button">${action.icon ? ICON[action.icon] : ''}<span></span></button>` : ''}</span>
        <button class="toast-close" type="button" aria-label="Dismiss">${ICON.close}</button>
        <i class="toast-timer"></i>`,
     );
@@ -517,6 +520,14 @@ export class Hud {
     setText(toast.querySelector('.toast-text')!, text);
     setText(toast.querySelector('.toast-date')!, date);
     toast.querySelector('.toast-close')!.addEventListener('click', () => this.dismiss(toast));
+    const act = toast.querySelector<HTMLButtonElement>('.toast-action');
+    if (act && action) {
+      setText(act.querySelector('span')!, action.label);
+      act.addEventListener('click', () => {
+        this.dismiss(toast);
+        action.run();
+      });
+    }
     this.feedEl.prepend(toast);
     const live = [...this.feedEl.children].filter((c) => !c.classList.contains('out'));
     for (const old of live.slice(4)) this.dismiss(old as HTMLElement);

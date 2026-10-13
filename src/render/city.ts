@@ -323,6 +323,11 @@ export class City {
     return true;
   }
 
+  /** The TINYTOWN sign on its hillside, for the camera when it relights. */
+  signFocus(): THREE.Vector3 {
+    return new THREE.Vector3(LANDMARKS.sign.x, hillHeight(LANDMARKS.sign.x, LANDMARKS.sign.z) + 0.6, LANDMARKS.sign.z);
+  }
+
   /** Where to point the camera for a site. */
   focusOf(what: 'downtown' | 'airport' | 'marina' | 'pier' | 'hills' | 'island' | 'launchpad'): THREE.Vector3 {
     switch (what) {

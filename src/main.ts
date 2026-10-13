@@ -129,6 +129,8 @@ class App {
       this.preview = { label: params.get('time')!, hour: fixed };
     }
     this.stage = new Stage(document.getElementById('world')!, this.city);
+    // Dev and ?debug: the app on window, for screenshot scripts (tools/, tests/e2e).
+    if (import.meta.env.DEV || params.has('debug')) (window as unknown as { __app: App }).__app = this;
     this.hud = new Hud(document.getElementById('ui')!, {
       ...(opts.accounts ? { onConnect: () => this.onConnect?.() } : {}),
       onTogglePlay: () => this.setPlaying(!this.playing),
@@ -382,7 +384,14 @@ class App {
     if (prevGame && animate && (i === prev + 1 || sameDay)) {
       const events = diffGame(prevGame, game);
       this.city.celebrateGame(events);
-      for (const e of events) this.hud.feed(`game.${e.type}`, describeGame(e), game.t);
+      for (const e of events) {
+        // The sign coming back on is earned by paying the city's upkeep again: on
+        // the live day, fly over for the fireworks and offer a postcard of it.
+        if (e.type === 'sign.lit' && i === this.last) {
+          this.stage.focus(this.city.signFocus(), 1.25);
+          this.hud.feed(`game.${e.type}`, describeGame(e), game.t, { label: 'Share this', icon: 'share', run: () => setTimeout(() => this.share(), 400) });
+        } else this.hud.feed(`game.${e.type}`, describeGame(e), game.t);
+      }
     }
     const m = this.moments[i]!;
     const weekAgo = this.moments[Math.max(0, i - 7)]!;

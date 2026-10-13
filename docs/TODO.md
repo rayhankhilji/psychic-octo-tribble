@@ -78,7 +78,7 @@ All in `docs/GAME_DESIGN.md` and HANDOFF §7.
 
 - [x] **"While you were away" summary** when the app opens. Logic done and tested (`src/game/away.ts`, `lastSeen`/`markSeen` in `save.ts`); the card (`Hud.showAway`) is being built by the UI agent, then main.ts wires it at boot with a `?away=N` preview param for the demo. Done: card is `Hud.showAway`; try `/?demo&away=30`.
 - [x] **Celebrations, part 1:** fireworks shows over the bay for MRR milestones (smaller downtown for customer milestones); a street festival on Civic Center Plaza at satisfaction 85+, an orderly protest at City Hall below 40 with a banner naming the weakest part.
-- [ ] **Celebrations, part 2:** a moment and a share prompt when the TINYTOWN sign relights.
+- [x] **Celebrations, part 2:** when the TINYTOWN sign relights on the live day, the camera flies to the hillside for the fireworks and the feed offers "Share this" (a postcard). Feed toasts can carry an action button.
 - [ ] **Moon scene:** after the rocket launch, cut to the moon, show the moon house, then the return. The moon sprite during flights (`src/render/moon.ts`) is the current stand-in.
 - [ ] **Sound:** ambient city by day and night, waves and gulls, construction, fireworks, UI ticks. Off by default or very quiet, with a mute toggle.
 - [ ] **More $1B-a-month projects:** a second bridge, a new district across the bay (Oakland side), an international airport upgrade, "launch a venture" from the venture studio.
