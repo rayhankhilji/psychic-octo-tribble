@@ -130,6 +130,92 @@ export function treeLots(n: number): Lot[] {
 /** Edge lots that aren't corners: shopfronts on Market Street. */
 export const FRONTAGE_LOTS: readonly Lot[] = EDGE_LOTS.filter((_, k) => k % 3 !== 0);
 
+/**
+ * The street wall. Every home's facade stands SETBACK in from the block's
+ * edge on every street it faces: a SIDEWALK band, then a strip of front
+ * garden for stoops, bays and bins. Corner homes keep the same setback on
+ * their side street, so all four sides of a block line up.
+ */
+export const SIDEWALK = 0.1;
+export const SETBACK = 0.2;
+
+/** What a home needs to know about its lot beyond where it is. */
+export interface LotRole {
+  /** A corner lot: the side street is on its local −x (−1) or +x (+1) side; 0 mid-row. */
+  street: -1 | 0 | 1;
+  /** A pocket park beside it, on its local −x (−1) or +x (+1) side; 0 if it has neighbours both sides. */
+  open: -1 | 0 | 1;
+}
+
+/** Which of a lot's sides meet a street, a pocket park or a neighbour. */
+export function lotRole(n: number, lot: Lot): LotRole {
+  // The lot's local +x, in block steps (a home faces local +z).
+  const ax = Math.round(Math.cos(lot.rot));
+  const aj = Math.round(-Math.sin(lot.rot));
+  const trees = treeLots(n);
+  const side = (d: 1 | -1) => {
+    const i = lot.i + ax * d;
+    const j = lot.j + aj * d;
+    if (i < 0 || j < 0 || i >= BLOCK || j >= BLOCK) return 'street';
+    return trees.some((t) => t.i === i && t.j === j) ? 'open' : 'home';
+  };
+  const lo = side(-1);
+  const hi = side(1);
+  return {
+    street: hi === 'street' ? 1 : lo === 'street' ? -1 : 0,
+    open: hi === 'open' ? 1 : lo === 'open' ? -1 : 0,
+  };
+}
+
+/**
+ * How wide a home stands on its lot (lot-local x). Neighbours leave a hairline
+ * between them; a corner home stops at the side street's building line.
+ */
+export function frontage(role: LotRole): { x0: number; x1: number } {
+  const edge = 0.5 - SETBACK;
+  return { x0: role.street < 0 ? -edge : -0.485, x1: role.street > 0 ? edge : 0.485 };
+}
+
+/**
+ * Density rings, by a neighbourhood's place in the order (nearest downtown
+ * first): 0 is the inner ring (flats once the city is dense), 1 the middle
+ * (painted ladies), 2 the outer ring, which stays houses with gardens.
+ */
+export function neighbourhoodRing(n: number): 0 | 1 | 2 {
+  const f = n / NEIGHBOURHOOD_BLOCKS.length;
+  return f < 0.3 ? 0 : f < 0.65 ? 1 : 2;
+}
+
+/**
+ * A home's seed carries its street, so one block reads as one street (a row
+ * of painted ladies, a block of Sunset stucco) while each home still varies:
+ * bits 0–3 hold the lot's role, 4–7 the lot within the block, 8–9 the ring,
+ * and 10–31 a seed shared by every home on the block.
+ */
+export interface HomeSeed {
+  street: number;
+  ring: 0 | 1 | 2;
+  lot: number;
+  role: LotRole;
+}
+
+const SIDE_BITS: Record<number, -1 | 0 | 1> = { 0: 0, 1: 1, 2: -1, 3: 0 };
+const sideBits = (v: -1 | 0 | 1) => (v === 1 ? 1 : v === -1 ? 2 : 0);
+
+export function packHomeSeed(h: HomeSeed): number {
+  return (((h.street & 0x3fffff) << 10) | (h.ring << 8) | ((h.lot & 15) << 4) | (sideBits(h.role.open) << 2) | sideBits(h.role.street)) >>> 0;
+}
+
+export function readHomeSeed(seed: number): HomeSeed {
+  const ring = (seed >>> 8) & 3;
+  return {
+    street: seed >>> 10,
+    ring: ring > 2 ? 2 : (ring as 0 | 1 | 2),
+    lot: (seed >>> 4) & 15,
+    role: { street: SIDE_BITS[seed & 3]!, open: SIDE_BITS[(seed >>> 2) & 3]! },
+  };
+}
+
 export function lotPosition(b: BlockCoord, lot: { i: number; j: number }): { x: number; z: number } {
   const c = blockCentre(b);
   return { x: c.x - (BLOCK - 1) / 2 + lot.i, z: c.z - (BLOCK - 1) / 2 + lot.j };
@@ -179,10 +265,13 @@ export function planWorld(s: Snapshot, ctx: PlanContext): WorldPlan {
   for (let index = 0; index < homeCount; index++) {
     const n = Math.floor(index / lots);
     const block = NEIGHBOURHOOD_BLOCKS[n]!;
-    const lot = homeLots(n)[index % lots]!;
+    const k = index % lots;
+    const lot = homeLots(n)[k]!;
     const { x, z } = lotPosition(block, lot);
     const kind = kindOf(n);
-    homes.push({ key: `home-${index}-${kind}`, index, neighbourhood: n, x, z, rot: lot.rot, kind, seed: hash(seed, 'home', index) });
+    // Every home on a block shares its street's seed, so the block is built in one style.
+    const homeSeed = packHomeSeed({ street: hash(seed, 'street', n), ring: neighbourhoodRing(n), lot: k, role: lotRole(n, lot) });
+    homes.push({ key: `home-${index}-${kind}`, index, neighbourhood: n, x, z, rot: lot.rot, kind, seed: homeSeed });
   }
 
   const neighbourhoods: NeighbourhoodPlan[] = [];

@@ -251,6 +251,73 @@ Object.assign(SETS, {
   },
 } satisfies Record<string, () => ShowItem[]>);
 
+// Neighbourhoods: every street family as a whole block on its real lots, and single homes (mid-row, corner, by a park).
+// `?set=nb-streets&zoom=1.4`, `?set=nb-homes&zoom=5&cols=6` (az=225 for the backs).
+import { streetFamily } from '../render/buildings.ts';
+import { lotRole, packHomeSeed } from '../world/layout.ts';
+const NB_FAMILIES: [HomeKind, string, 0 | 1 | 2][] = [
+  ['house', 'sunset', 1], ['house', 'marina', 2], ['house', 'cottage', 2],
+  ['townhouse', 'italianate', 1], ['townhouse', 'queen', 1], ['townhouse', 'stick', 1],
+  ['apartment', 'edwardian', 0], ['apartment', 'brick', 0], ['apartment', 'deco', 0],
+];
+/** The first street seed that builds this family. */
+function nbStreet(kind: HomeKind, family: string, ring: number, skip = 0): number {
+  for (let i = 0, found = 0; i < 4000; i++) {
+    const seed = ttHash('nb-street', i) >>> 10;
+    if (streetFamily(kind, seed, ring) === family && found++ === skip) return seed;
+  }
+  return 1;
+}
+function nbBlock(kind: HomeKind, street: number, ring: 0 | 1 | 2, n: number): THREE.Group {
+  const g = new THREE.Group();
+  const c = blockCentre({ bx: 0, bz: 0 });
+  g.add(group(neighbourhoodGrounds(0, 0, n, 91 + n)));
+  homeLots(n).forEach((lot, k) => {
+    const p = lotPosition({ bx: 0, bz: 0 }, lot);
+    const h = group(home(kind, packHomeSeed({ street, ring, lot: k, role: lotRole(n, lot) })));
+    h.position.set(p.x, 0, p.z);
+    h.rotation.y = lot.rot;
+    g.add(h);
+  });
+  g.position.set(-c.x, 0, -c.z);
+  const o = new THREE.Group();
+  o.add(g);
+  return o;
+}
+Object.assign(SETS, {
+  'nb-streets': (): ShowItem[] =>
+    NB_FAMILIES.map(([kind, family, ring], i) => ({ label: `${family} (${kind})`, object: nbBlock(kind, nbStreet(kind, family, ring), ring, ring === 2 ? 24 + i : ring === 1 ? 10 + i : i), size: 5 })),
+  /** One block, with `?family=queen&n=1`. */
+  'nb-one': (): ShowItem[] => {
+    const p = new URLSearchParams(location.search);
+    const fam = NB_FAMILIES.find((f) => f[1] === (p.get('family') ?? 'sunset'))!;
+    const n = Number(p.get('n') ?? 1);
+    const o = nbBlock(fam[0], nbStreet(fam[0], fam[1], fam[2], Number(p.get('skip') ?? 0)), fam[2], n);
+    // `&at=x,z` centres the view on that point of the block (from its centre), for close-ups.
+    const [ax = 0, az = 0] = (p.get('at') ?? '0,0').split(',').map(Number);
+    o.position.set(-ax, 0, -az);
+    const w = new THREE.Group();
+    w.add(o);
+    return [{ label: fam[1], object: w, size: 5 }];
+  },
+  'nb-homes': (): ShowItem[] =>
+    NB_FAMILIES.flatMap(([kind, family, ring]) => {
+      const street = nbStreet(kind, family, ring);
+      const roles = [
+        ['mid', { street: 0, open: 0 }],
+        ['corner', { street: 1, open: 0 }],
+        ['by a park', { street: 0, open: -1 }],
+      ] as const;
+      return roles.map(([label, role], k) => ({ label: `${family} ${label}`, object: group(home(kind, packHomeSeed({ street, ring, lot: k + 2, role: { ...role } }))), size: 1.2 }));
+    }),
+  'nb-trees': (): ShowItem[] =>
+    (['round', 'plane', 'ficus', 'pine', 'cypress', 'eucalyptus', 'palm'] as TreeKind[]).map((kind, i) => {
+      const b = new GeoBuilder();
+      const r = rng(300 + i);
+      for (let k = 0; k < 4; k++) tree(b, r, (k % 2) * 0.7 - 0.35, Math.floor(k / 2) * 0.7 - 0.35, 1, 0, kind);
+      return { label: kind, object: group(b.build()), size: 1.6 };
+    }),
+} satisfies Record<string, () => ShowItem[]>);
 // Any `tt-one` model, framed on a point `focus` of the way up: `?set=dt-focus&what=hq:3&focus=0.9&zoom=6`.
 Object.assign(SETS, {
   'dt-focus': (): ShowItem[] => {
