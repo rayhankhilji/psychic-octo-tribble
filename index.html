@@ -30,30 +30,38 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,500..800&family=Geist+Mono:wght@400..600&family=Geist:wght@400..700&display=swap" rel="stylesheet" />
     <style>
-      /* Boot screen: inline so it paints before any script loads. */
+      /* Boot screen: inline so it paints before any script loads. The mark assembles
+         (tile, tower, blocks, sun), the skyline draws itself on, the hairline fills;
+         then the status leaves, and the sand veil lifts off the city like a sheet. */
       html, body { margin: 0; height: 100%; background: #f5ecdb; }
-      .boot { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: radial-gradient(120% 80% at 50% 0%, #fbf5ea 0%, #f5ecdb 55%, #ecdfc6 100%); color: #1b2236; font-family: Geist, system-ui, sans-serif; transition: opacity 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0.7s; }
-      .boot.done { opacity: 0; visibility: hidden; pointer-events: none; }
-      .boot.done .boot-inner { transform: translateY(-10px) scale(0.985); }
-      .boot-inner { display: grid; justify-items: center; text-align: center; padding: 24px; transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1); }
+      .boot { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: radial-gradient(120% 80% at 50% 0%, #fbf5ea 0%, #f5ecdb 55%, #ecdfc6 100%); color: #1b2236; font-family: Geist, system-ui, sans-serif; transition: transform 0.6s cubic-bezier(0.65, 0, 0.35, 1) 0.12s, opacity 0.16s linear 0.6s, visibility 0s linear 0.76s; }
+      /* The veil's trailing edge is feathered, so the lift reads as a soft wipe rather than a hard line. */
+      .boot::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 180px; background: linear-gradient(#ecdfc6, rgba(236, 223, 198, 0.6) 45%, rgba(236, 223, 198, 0)); pointer-events: none; }
+      .boot.done { transform: translateY(calc(-100% - 180px)); opacity: 0; visibility: hidden; pointer-events: none; will-change: transform; }
+      .boot.done .boot-inner { opacity: 0; transform: translateY(-16px); transition: opacity 0.22s linear 0.12s, transform 0.34s cubic-bezier(0.55, 0, 0.75, 0.2) 0.1s; }
+      .boot-inner { display: grid; justify-items: center; text-align: center; padding: 24px; }
       .boot-mark { width: 92px; height: 92px; overflow: visible; filter: drop-shadow(0 18px 18px rgba(27, 34, 54, 0.14)); }
-      .boot-mark .mk { transform-box: view-box; transform-origin: 24px 46px; animation: boot-rise 0.7s cubic-bezier(0.34, 1.4, 0.64, 1) both; }
-      .boot-mark .mk-0 { animation: none; }
-      .boot-mark .mk-1 { animation-delay: 0.25s; }
-      .boot-mark .mk-2 { animation-delay: 0.4s; }
-      .boot-mark .mk-3 { animation: boot-sun 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.6s both; }
-      .boot-word { margin-top: 18px; font: 800 44px/1 'Bricolage Grotesque', Geist, system-ui, sans-serif; font-stretch: 88%; letter-spacing: -0.035em; }
-      .boot-tag { margin: 10px 0 0; font-size: 15px; color: #5b6075; }
+      .boot-mark .mk { transform-box: view-box; transform-origin: 24px 46px; animation: boot-rise 0.62s cubic-bezier(0.34, 1.45, 0.64, 1) both; }
+      .boot-mark .mk-0 { animation: boot-tile 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      .boot-mark .mk-1 { animation-delay: 0.14s; }
+      .boot-mark .mk-2 { animation-delay: 0.27s; }
+      .boot-mark .mk-3 { animation: boot-sun 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) 0.44s both; }
+      .boot-word { margin-top: 18px; font: 800 44px/1 'Bricolage Grotesque', Geist, system-ui, sans-serif; font-stretch: 88%; letter-spacing: -0.035em; animation: boot-fade 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) 0.24s both; }
+      .boot-tag { margin: 10px 0 0; font-size: 15px; color: #5b6075; animation: boot-fade 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) 0.32s both; }
       .boot-skyline { width: min(320px, 76vw); height: auto; margin-top: 26px; overflow: visible; }
-      .boot-skyline path { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: boot-draw 2.2s cubic-bezier(0.65, 0, 0.35, 1) 0.5s forwards; }
-      .boot-skyline .ghost { stroke-dasharray: none; stroke-dashoffset: 0; animation: none; opacity: 0.12; }
+      .boot-skyline path { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: boot-draw 1s cubic-bezier(0.65, 0, 0.35, 1) 0.5s forwards; }
+      .boot-skyline .ghost { stroke-dasharray: none; stroke-dashoffset: 0; opacity: 0.12; animation: boot-ghost 0.4s linear 0.3s both; }
       .boot-skyline .sky-city { stroke: #1b2236; stroke-width: 1.4; }
-      .boot-skyline .sky-bridge { stroke: #e5512b; stroke-width: 1.6; animation-delay: 0.7s; }
-      .boot-skyline .sky-sun { stroke: #f6b53d; stroke-width: 1.6; animation-delay: 1.6s; animation-duration: 1s; }
-      .boot-skyline .sky-water { stroke: #2c6fb7; stroke-width: 1.2; stroke-dasharray: 1; opacity: 0.6; animation-delay: 1.2s; }
-      .boot-bar { position: relative; width: 148px; height: 3px; margin-top: 22px; border-radius: 3px; background: rgba(27, 34, 54, 0.1); overflow: hidden; }
-      .boot-bar i { position: absolute; inset: 0; width: 40%; border-radius: 3px; background: linear-gradient(90deg, transparent, #e5512b, transparent); animation: boot-slide 1.3s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
-      .boot-status { min-height: 18px; margin: 12px 0 0; font-size: 12.5px; color: #62667a; font-variant-numeric: tabular-nums; }
+      .boot-skyline .sky-bridge { stroke: #e5512b; stroke-width: 1.6; animation-delay: 0.42s; animation-duration: 0.9s; }
+      .boot-skyline .sky-sun { stroke: #f6b53d; stroke-width: 1.6; animation-delay: 1.1s; animation-duration: 0.55s; }
+      .boot-skyline .sky-water { stroke: #2c6fb7; stroke-width: 1.2; opacity: 0.6; animation-delay: 0.36s; animation-duration: 1.1s; }
+      .boot-bar { position: relative; width: 148px; height: 2px; margin-top: 24px; border-radius: 2px; background: rgba(27, 34, 54, 0.1); overflow: hidden; }
+      /* A hairline that fills quickly, then creeps (it can't know how long the city takes); it finishes when the world is ready. */
+      .boot-bar i { position: absolute; inset: 0; border-radius: 2px; background: #e5512b; transform-origin: 0 50%; animation: boot-fill 9s cubic-bezier(0.1, 0.7, 0.15, 1) 0.2s both; }
+      .boot.done .boot-bar i { transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+      .boot-status { display: grid; min-height: 18px; margin: 12px 0 0; font-size: 12.5px; color: #62667a; font-variant-numeric: tabular-nums; }
+      .boot-status > span { grid-area: 1 / 1; animation: boot-line-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      .boot-status > span.out { animation: boot-line-out 0.22s cubic-bezier(0.4, 0, 1, 1) both; }
       .boot.failed .boot-bar { display: none; }
       .boot.failed .boot-status { color: #b83c1c; max-width: 360px; font-size: 14px; }
       .boot.failed:has(.boot-fail) .boot-status, .boot.failed:has(.boot-fail) .boot-skyline { display: none; }
@@ -62,18 +70,26 @@
       .boot-fail p { margin: 8px 0 0; font-size: 14.5px; line-height: 1.5; color: #4b5168; }
       .boot-fail ul { margin: 14px 0 0; padding: 12px 16px 12px 32px; border-radius: 12px; background: rgba(27, 34, 54, 0.05); text-align: left; font-size: 13.5px; line-height: 1.55; color: #4b5168; }
       .boot-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px 18px; margin-top: 18px; }
-      .boot-btn { height: 40px; padding: 0 18px; border: 0; border-radius: 10px; background: #cc4420; color: #fff; font: 600 14px Geist, system-ui, sans-serif; cursor: pointer; box-shadow: 0 4px 12px -4px rgba(229, 81, 43, 0.55); }
+      .boot-btn { height: 40px; padding: 0 18px; border: 0; border-radius: 10px; background: #cc4420; color: #fff; font: 600 14px Geist, system-ui, sans-serif; cursor: pointer; box-shadow: 0 4px 12px -4px rgba(229, 81, 43, 0.55); transition: background-color 0.12s, scale 0.12s; }
       .boot-btn:hover { background: #b93d1c; }
+      .boot-btn:active { scale: 0.98; }
       .boot-btn:focus-visible, .boot-link:focus-visible { outline: 2px solid #2c6fb7; outline-offset: 2px; }
       .boot-link { color: #235e9c; font-size: 14px; font-weight: 600; }
+      @keyframes boot-tile { from { opacity: 0; transform: translateY(5px) scale(0.92); } }
       @keyframes boot-rise { from { opacity: 0; transform: translateY(10px) scaleY(0.2); } }
       @keyframes boot-sun { from { opacity: 0; transform: translate(-6px, 8px) scale(0.4); } }
       @keyframes boot-fade { from { opacity: 0; transform: translateY(6px); } }
+      @keyframes boot-ghost { from { opacity: 0; } }
       @keyframes boot-draw { to { stroke-dashoffset: 0; } }
-      @keyframes boot-slide { from { transform: translateX(-110%); } to { transform: translateX(260%); } }
+      @keyframes boot-fill { from { transform: scaleX(0); } to { transform: scaleX(0.94); } }
+      @keyframes boot-line-in { from { opacity: 0; transform: translateY(5px); } }
+      @keyframes boot-line-out { to { opacity: 0; transform: translateY(-5px); } }
       @media (prefers-reduced-motion: reduce) {
-        .boot *, .boot { animation: none !important; transition-duration: 0.01s !important; }
+        .boot *, .boot { animation: none !important; }
+        .boot, .boot.done .boot-inner { transition: opacity 0.2s linear, visibility 0s linear 0.2s !important; }
+        .boot.done, .boot.done .boot-inner { transform: none; }
         .boot-skyline path { stroke-dashoffset: 0; }
+        .boot-bar i { transform: scaleX(0.6); }
       }
     </style>
   </head>
@@ -91,7 +107,7 @@
           <path class="sky-sun" pathLength="1" d="M252 20a7 7 0 1 0 14 0a7 7 0 1 0-14 0"/>
         </svg>
         <div class="boot-bar"><i></i></div>
-        <p class="boot-status">Laying out the streets…</p>
+        <p class="boot-status"><span>Laying out the streets…</span></p>
       </div>
     </div>
     <div id="world" role="img" aria-label="Your city, drawn from your real metrics. Use Build (B) and Your home (H) to play from the keyboard."></div>

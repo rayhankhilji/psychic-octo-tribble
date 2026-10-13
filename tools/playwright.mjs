@@ -22,7 +22,7 @@ export async function waitForGame(page, timeout = 240000) {
   while (Date.now() - t0 < timeout) {
     await page.waitForTimeout(2000);
     const ok = await page
-      .evaluate(() => !!document.querySelector('input[type=range]') && !document.body.innerText.includes('Laying out'))
+      .evaluate(() => !!document.querySelector('input[type=range]') && !document.getElementById('boot'))
       .catch(() => false);
     if (ok) return Date.now() - t0;
   }

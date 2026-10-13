@@ -1,6 +1,6 @@
 import { CATALOG, HOME_TIERS, HQ_LEVEL_NAMES, ITEMS, REGIONS, SWAP_FEE, type Category, type Item, type Region } from '../game/catalog.ts';
 import { canBuy, decayOf, FREE_HOUSED, money, MRR_PER_USER, type GameState } from '../game/economy.ts';
-import { compact, el, escape, returnFocusOnClose, setHtml, setText, shortMrr, showModal, Tween } from './dom.ts';
+import { compact, el, escape, reducedMotion, returnFocusOnClose, setHtml, setText, shortMrr, showModal, Tint, Tween } from './dom.ts';
 import { ICON, type IconName } from './icons.ts';
 import { lazyThumbnail, prewarmThumbnails, setThumbnailBusy } from './thumbnails.ts';
 
@@ -71,6 +71,7 @@ function level(v: number, good: number, mid: number): 'good' | 'mid' | 'bad' {
  */
 export class GameUI {
   private h: GameHandlers;
+  private root: HTMLElement;
   private state: GameState | null = null;
   private tab: Tab = 'all';
   private plot: string | undefined;
@@ -81,6 +82,9 @@ export class GameUI {
   private card: HTMLElement;
   private treasury: HTMLElement;
   private treasuryTween: Tween;
+  private treasuryTint: Tint;
+  /** When the last purchase came off the treasury: its count is tinted as spending, not as a loss. */
+  private spentAt = -Infinity;
   private net: HTMLElement;
   private mood: HTMLElement;
   private ring: SVGCircleElement;
@@ -89,12 +93,17 @@ export class GameUI {
   private ringWrap: HTMLElement;
   private parts: Record<'housing' | 'upkeep' | 'amenities' | 'momentum', HTMLElement>;
   private housing: HTMLElement;
+  private housingStatus!: HTMLElement;
+  private housingFoot!: HTMLElement;
+  private meter!: HTMLElement;
   private alerts: HTMLElement;
   private fine: HTMLElement;
   private floaters: HTMLElement;
   private miniTreasury: HTMLElement | null;
   private miniTreasuryTween: Tween;
   private miniSat: HTMLElement | null;
+  private miniSatFill: SVGCircleElement | null = null;
+  private miniSatValue: HTMLElement | null = null;
   private lastOwned = -1;
 
   private drawer: HTMLElement;
@@ -105,6 +114,7 @@ export class GameUI {
   private cards = new Map<string, { root: HTMLElement; action: HTMLElement; sig: string }>();
   private buildBtn: HTMLButtonElement;
   private drawerReturn: HTMLElement | null = null;
+  private drawerTimer = 0;
 
   private homeDialog: HTMLDialogElement;
   private homeBody: HTMLElement;
@@ -119,6 +129,7 @@ export class GameUI {
 
   constructor(root: HTMLElement, side: HTMLElement, tools: HTMLElement, h: GameHandlers) {
     this.h = h;
+    this.root = root;
     // Thumbnail prewarming waits out the replay (the HUD marks the root while it plays).
     setThumbnailBusy(() => root.classList.contains('is-playing'));
 
@@ -143,7 +154,9 @@ export class GameUI {
        <p class="fine num"></p>`,
     );
     this.treasury = this.card.querySelector('.treasury-value')!;
-    this.treasuryTween = new Tween((v) => setText(this.treasury, money(v)), 700);
+    this.treasuryTween = new Tween((v) => setText(this.treasury, money(v)), 650);
+    this.treasuryTint = new Tint(this.card.querySelector('.treasury')!);
+    this.treasuryTween.onMove = (d) => performance.now() - this.spentAt > 400 && this.treasuryTint.show(d > 0 ? 'up' : 'down');
     this.net = this.card.querySelector('.net')!;
     this.mood = this.card.querySelector('.mood')!;
     this.ring = this.card.querySelector('.ring-fill')!;
@@ -152,10 +165,19 @@ export class GameUI {
     this.ringTween = new Tween((v) => {
       setText(this.ringValue, String(Math.round(v)));
       this.ring.style.strokeDashoffset = String(RING * (1 - v / 100));
-    }, 800);
+    }, 700);
+    const ringTint = new Tint(this.ringWrap);
+    this.ringTween.onMove = (d) => ringTint.show(d > 0 ? 'up' : 'down');
     const part = (k: string) => this.card.querySelector<HTMLElement>(`[data-part=${k}]`)!;
     this.parts = { housing: part('housing'), upkeep: part('upkeep'), amenities: part('amenities'), momentum: part('momentum') };
     this.housing = this.card.querySelector('.housing')!;
+    // Built once, so the meter's fill can slide to each new value rather than being redrawn.
+    this.housing.innerHTML = `<div class="housing-row"><span class="housing-label">${ICON.home}Housing</span><span class="housing-status"></span></div>
+       <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-label="Users housed"><i class="meter-housed"></i></div>
+       <div class="housing-foot num"></div>`;
+    this.housingStatus = this.housing.querySelector('.housing-status')!;
+    this.housingFoot = this.housing.querySelector('.housing-foot')!;
+    this.meter = this.housing.querySelector('.meter')!;
     this.alerts = this.card.querySelector('.alerts')!;
     this.fine = this.card.querySelector('.fine')!;
     this.floaters = this.card.querySelector('.floaters')!;
@@ -163,6 +185,15 @@ export class GameUI {
     this.miniTreasury = side.querySelector('[data-mini=treasury]');
     this.miniSat = side.querySelector('[data-mini=sat]');
     this.miniTreasuryTween = new Tween((v) => this.miniTreasury && setText(this.miniTreasury, money(v)));
+    if (this.miniTreasury) {
+      const tint = new Tint(this.miniTreasury);
+      this.miniTreasuryTween.onMove = (d) => performance.now() - this.spentAt > 400 && tint.show(d > 0 ? 'up' : 'down');
+    }
+    if (this.miniSat) {
+      this.miniSat.innerHTML = `<svg viewBox="0 0 50 50" aria-hidden="true"><circle class="ring-track" cx="25" cy="25" r="21"/><circle class="ring-fill" cx="25" cy="25" r="21" stroke-dasharray="${RING.toFixed(2)}" stroke-dashoffset="${RING.toFixed(2)}"/></svg><b class="num"></b>`;
+      this.miniSatFill = this.miniSat.querySelector('.ring-fill');
+      this.miniSatValue = this.miniSat.querySelector('b');
+    }
 
     // ── Toolbar and map ────────────────────────────────────────────────
     const home = el('button', { class: 'btn ghost', type: 'button', 'aria-label': 'Your home (H)', 'data-tip': 'Your home: the ladder from hacker house to the moon (H)' }, `${ICON.home}<span class="label">Your home</span>`);
@@ -346,7 +377,11 @@ export class GameUI {
     // A purchase: show what it cost, floating off the treasury.
     if (prev && this.lastOwned >= 0 && g.owned.length > this.lastOwned && g.t === prev.t) {
       const spent = g.owned.slice(this.lastOwned).reduce((s, o) => s + (ITEMS.get(o.item)?.price ?? 0), 0);
-      if (spent > 0) this.floater(`−${money(spent)}`);
+      if (spent > 0) {
+        this.floater(`−${money(spent)}`);
+        this.spentAt = performance.now();
+        this.treasuryTint.show('spend', true);
+      }
     }
     this.lastOwned = g.owned.length;
     if (prev) this.notePick(prev, g);
@@ -359,7 +394,7 @@ export class GameUI {
 
   private renderCard(prev: GameState | null) {
     const g = this.state!;
-    const glide = !!prev && Math.abs(g.t - prev.t) <= 4 * 86_400_000;
+    const glide = !!prev && Math.abs(g.t - prev.t) <= 4 * 86_400_000 && !this.root.classList.contains('is-scrubbing');
     const sat = g.satisfaction;
     const mood = sat.score >= 80 ? 'Thriving' : sat.score >= 60 ? 'Content' : sat.score >= 40 ? 'Uneasy' : 'Unhappy';
     setText(this.mood, mood);
@@ -378,11 +413,12 @@ export class GameUI {
     this.ringWrap.dataset.tipHtml = `<b>Satisfaction ${sat.score}/100 · ${mood}</b><span>Housing counts 35%, upkeep 25%, amenities 20% and MRR momentum 20%. Only real growth raises it.</span>`;
     for (const [k, v] of Object.entries({ housing: sat.housing, upkeep: sat.upkeep, amenities: sat.amenities, momentum: sat.momentum })) {
       const p = this.parts[k as keyof typeof this.parts];
-      p.querySelector<HTMLElement>('b')!.style.width = `${Math.round(v * 100)}%`;
+      p.style.setProperty('--v', `${Math.round(v * 100)}%`);
       p.dataset.level = level(v, 0.75, 0.45);
     }
     if (this.miniSat) {
-      setHtml(this.miniSat, `<svg viewBox="0 0 50 50" aria-hidden="true"><circle class="ring-track" cx="25" cy="25" r="21"/><circle class="ring-fill" cx="25" cy="25" r="21" stroke-dasharray="${RING.toFixed(2)}" stroke-dashoffset="${(RING * (1 - sat.score / 100)).toFixed(2)}"/></svg><b class="num">${sat.score}</b>`);
+      this.miniSatFill!.style.strokeDashoffset = (RING * (1 - sat.score / 100)).toFixed(2);
+      setText(this.miniSatValue!, String(sat.score));
       this.miniSat.dataset.level = level(sat.score, 60, 40);
     }
 
@@ -399,12 +435,12 @@ export class GameUI {
           : 'Waiting for residents';
     const short = need - Math.floor(g.mrr);
     const headroom = g.unhoused > 0 ? (short > 0 ? `Need $${short.toLocaleString('en-US')} more MRR` : 'Homes failing: upkeep is short') : `Room for ${compact(Math.max(0, capacity - pop))} more`;
-    setHtml(
-      this.housing,
-      `<div class="housing-row"><span class="housing-label">${ICON.home}Housing</span><span class="housing-status">${status}</span></div>
-       <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(housedPct)}" aria-label="Users housed"><i class="meter-housed" style="width:${housedPct.toFixed(2)}%"></i><i class="meter-unhoused" style="width:${(100 - housedPct).toFixed(2)}%"></i></div>
-       <div class="housing-foot num"><span>${Math.round(housedPct)}% housed</span><span>${headroom}</span></div>`,
-    );
+    setHtml(this.housingStatus, status);
+    setHtml(this.housingFoot, `<span>${Math.round(housedPct)}% housed</span><span>${headroom}</span>`);
+    // The housed fill slides; whatever it doesn't cover is the striped unhoused share.
+    this.meter.style.setProperty('--v', `${housedPct.toFixed(2)}%`);
+    this.meter.toggleAttribute('data-short', g.unhoused > 0);
+    this.meter.setAttribute('aria-valuenow', String(Math.round(housedPct)));
     this.housing.dataset.state = g.unhoused > 0 ? 'bad' : 'good';
     this.housing.dataset.tipHtml = `<b>$0.20 of MRR houses one user</b><span>${pop.toLocaleString('en-US')} users need $${need.toLocaleString('en-US')} MRR; you're at $${Math.round(g.mrr).toLocaleString('en-US')}. The first ${FREE_HOUSED} are on the house. Short of it, people end up in tents and the city runs down.</span>`;
 
@@ -426,7 +462,8 @@ export class GameUI {
     }
     setHtml(this.alerts, alerts);
     this.card.classList.toggle('alarmed', !!alerts);
-    setText(this.fine, `Income ${money(g.incomePerDay)}/day · Upkeep ${money(g.upkeepPerDay)}/day · HQ: ${HQ_LEVEL_NAMES[g.hqLevel]}`);
+    // Non-breaking spaces keep each separator at the end of its line and "HQ: Tower" in one piece.
+    setText(this.fine, `Income ${money(g.incomePerDay)}/day\u00a0· Upkeep ${money(g.upkeepPerDay)}/day\u00a0· HQ:\u00a0${HQ_LEVEL_NAMES[g.hqLevel]}`);
     this.buildBtn.classList.toggle('has-new', CATALOG.some((i) => !canBuy(g, i)));
   }
 
@@ -458,7 +495,7 @@ export class GameUI {
   }
 
   toggleBuild(plot?: string) {
-    if (!this.drawer.hidden && plot === this.plot) return this.closeBuild();
+    if (!this.drawer.hidden && !this.drawer.classList.contains('closing') && plot === this.plot) return this.closeBuild();
     this.plot = plot;
     this.openBuild();
   }
@@ -466,8 +503,12 @@ export class GameUI {
   private openBuild(tab?: Tab) {
     if (tab) this.tab = tab;
     else if (this.plot && (this.tab === 'vehicles' || this.tab === 'hq')) this.tab = 'all';
-    const wasHidden = this.drawer.hidden;
-    if (wasHidden) this.drawerReturn = document.activeElement as HTMLElement | null;
+    const closing = this.drawer.classList.contains('closing');
+    const wasHidden = this.drawer.hidden || closing;
+    if (wasHidden && !closing) this.drawerReturn = document.activeElement as HTMLElement | null;
+    clearTimeout(this.drawerTimer);
+    this.drawer.classList.remove('closing');
+    this.drawer.inert = false;
     this.drawer.hidden = false;
     this.buildBtn.classList.add('on');
     this.buildBtn.setAttribute('aria-expanded', 'true');
@@ -484,9 +525,19 @@ export class GameUI {
   }
 
   closeBuild() {
-    if (this.drawer.hidden) return;
+    if (this.drawer.hidden || this.drawer.classList.contains('closing')) return;
     const hadFocus = this.drawer.contains(document.activeElement);
-    this.drawer.hidden = true;
+    // It slides back toward its edge, then hides; `inert` keeps it out of reach meanwhile.
+    this.drawer.classList.add('closing');
+    this.drawer.inert = true;
+    this.drawerTimer = window.setTimeout(
+      () => {
+        this.drawer.classList.remove('closing');
+        this.drawer.inert = false;
+        this.drawer.hidden = true;
+      },
+      reducedMotion() ? 0 : 200,
+    );
     if (hadFocus) (this.drawerReturn?.isConnected && this.drawerReturn !== document.body ? this.drawerReturn : this.buildBtn).focus({ preventScroll: true });
     this.drawerReturn = null;
     this.plot = undefined;

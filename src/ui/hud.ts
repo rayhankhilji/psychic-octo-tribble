@@ -5,7 +5,7 @@ import type { AwaySummary } from '../game/away.ts';
 import { describeGame, money, RATE, type GameEvent } from '../game/economy.ts';
 import { lazyThumbnail } from './thumbnails.ts';
 import { markSvg } from './brand.ts';
-import { compact, dateLabel, el, escape, reducedMotion, replayAnimation, returnFocusOnClose, setHtml, setText, shortMrr, showModal, Tween } from './dom.ts';
+import { compact, dateLabel, el, escape, flip, reducedMotion, replayAnimation, returnFocusOnClose, setHtml, setText, shortMrr, showModal, Tint, Tween } from './dom.ts';
 import { ICON, type IconName } from './icons.ts';
 
 export { el, escape } from './dom.ts';
@@ -212,6 +212,8 @@ export class Hud {
     });
     this.miniMrr = mini.querySelector('[data-mini=mrr]')!;
     this.miniMrrTween = new Tween((v) => setText(this.miniMrr, this.money(v, true)));
+    const miniTint = new Tint(this.miniMrr);
+    this.miniMrrTween.onMove = (d) => miniTint.show(d > 0 ? 'up' : 'down');
 
     const metrics = el(
       'div',
@@ -290,7 +292,16 @@ export class Hud {
     this.hover = el('div', { class: 'scrub-hover', hidden: '' }, '<span class="scrub-bubble"></span>');
     this.thumb = el('div', { class: 'scrub-thumb', 'aria-hidden': 'true' }, '<i></i>');
     this.scrub = el('input', { type: 'range', min: '0', max: '0', value: '0', step: '1', 'aria-label': 'Day' });
-    this.scrub.addEventListener('input', () => h.onSeek(Number(this.scrub.value)));
+    // Dragging the timeline snaps every number (no counting, no tint): the root
+    // carries `is-scrubbing` while the seek runs, so the game UI snaps too.
+    this.scrub.addEventListener('input', () => {
+      root.classList.add('is-scrubbing');
+      try {
+        h.onSeek(Number(this.scrub.value));
+      } finally {
+        root.classList.remove('is-scrubbing');
+      }
+    });
     this.scrubWrap.append(this.chart, this.markers, this.thumb, this.hover, this.scrub);
     this.scrubWrap.addEventListener('pointermove', (e) => this.onScrubHover(e));
     this.scrubWrap.addEventListener('pointerleave', () => (this.hover.hidden = true));
@@ -333,13 +344,20 @@ export class Hud {
   private addMetric(key: string, row: HTMLElement, fmt: (v: number) => string) {
     const value = row.querySelector<HTMLElement>('.metric-value')!;
     const delta = row.querySelector<HTMLElement>('.metric-delta')!;
-    this.metrics.set(key, { value, delta, row, tween: new Tween((v) => setText(value, fmt(v))) });
+    const tween = new Tween((v) => setText(value, fmt(v)));
+    // Money and people tint as they move; releases and commits only ever count up, so they stay calm.
+    if (key === 'mrr' || key === 'customers' || key === 'users') {
+      const tint = new Tint(row);
+      tween.onMove = (d) => tint.show(d > 0 ? 'up' : 'down');
+    }
+    this.metrics.set(key, { value, delta, row, tween });
   }
 
   private money(v: number, short: boolean): string {
     const c = this.timeline?.currency ?? 'usd';
     if (short && Math.abs(v) >= 10_000) {
-      return new Intl.NumberFormat('en-US', { style: 'currency', currency: c.toUpperCase(), notation: 'compact', maximumFractionDigits: 1 }).format(v);
+      // Lower-case k, as everywhere else in the HUD ("Room for 27k more"); M and B stay capitals.
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: c.toUpperCase(), notation: 'compact', maximumFractionDigits: 1 }).format(v).replace('K', 'k');
     }
     return formatMoney(v >= 100 ? Math.round(v) : Math.round(v * 100) / 100, c);
   }
@@ -412,8 +430,8 @@ export class Hud {
     if (!s) return;
     const prev = this.index;
     this.index = i;
-    // Big jumps (scrubbing) snap; day-by-day playback glides.
-    const glide = Math.abs(i - prev) <= 4;
+    // Scrubbing and big jumps snap; day-by-day playback (and stepping with the arrow keys) counts.
+    const glide = Math.abs(i - prev) <= 4 && !this.root.classList.contains('is-scrubbing');
     this.scrub.value = String(i);
     this.scrub.setAttribute('aria-valuetext', `${dateLabel(s.t)}, day ${i + 1}`);
     setText(this.dateEl, dateLabel(s.t));
@@ -528,7 +546,8 @@ export class Hud {
         action.run();
       });
     }
-    this.feedEl.prepend(toast);
+    // The stack slides up to make room rather than jumping.
+    flip(this.feedEl.children, () => this.feedEl.prepend(toast));
     const live = [...this.feedEl.children].filter((c) => !c.classList.contains('out'));
     for (const old of live.slice(4)) this.dismiss(old as HTMLElement);
     this.expire(toast, spec.linger);
@@ -565,7 +584,11 @@ export class Hud {
     if (toast.classList.contains('out')) return;
     clearTimeout(Number(toast.dataset.timer));
     toast.classList.add('out');
-    window.setTimeout(() => toast.remove(), reducedMotion() ? 0 : 380);
+    window.setTimeout(() => {
+      if (!toast.isConnected) return;
+      const rest = [...(toast.parentElement?.children ?? [])].filter((c) => c !== toast && !c.classList.contains('out'));
+      flip(rest, () => toast.remove());
+    }, reducedMotion() ? 0 : 240);
   }
 
   clearFeed() {
@@ -592,7 +615,10 @@ export class Hud {
   private wireTooltips() {
     let current: HTMLElement | null = null;
     let timer = 0;
+    // Once one tooltip has shown, the next comes up at once (no delay, no fade) while you browse.
+    let warmUntil = 0;
     const show = (target: HTMLElement) => {
+      this.uitip.classList.toggle('warm', !this.uitip.hidden || performance.now() < warmUntil);
       const html = target.dataset.tipHtml;
       const text = target.dataset.tip;
       if (!html && !text) return;
@@ -611,6 +637,7 @@ export class Hud {
     const hide = () => {
       clearTimeout(timer);
       current = null;
+      if (!this.uitip.hidden) warmUntil = performance.now() + 500;
       this.uitip.hidden = true;
     };
     const find = (e: Event) => (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-tip],[data-tip-html]') ?? null;
@@ -621,7 +648,8 @@ export class Hud {
       hide();
       if (!t) return;
       current = t;
-      timer = window.setTimeout(() => current === t && show(t), 280);
+      if (performance.now() < warmUntil) show(t);
+      else timer = window.setTimeout(() => current === t && show(t), 280);
     });
     document.addEventListener('focusin', (e) => {
       const t = find(e);

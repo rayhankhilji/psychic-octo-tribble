@@ -98,8 +98,12 @@
   --dur-3: 320ms;
   --dur-4: 560ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Exits accelerate away: things leave a little faster than they arrive. */
+  --ease-in: cubic-bezier(0.45, 0, 0.8, 0.3);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-spring: cubic-bezier(0.34, 1.5, 0.64, 1);
+  /* Gap between panels in a choreographed group (the HUD entrance). */
+  --stagger: 50ms;
 
   /* Layout */
   --edge: 16px;
@@ -118,7 +122,7 @@
   --surface-2: #1d2439;
   --surface-3: #283049;
   --surface-hover: rgba(245, 236, 219, 0.06);
-  --line: rgba(245, 236, 219, 0.08);
+  --line: rgba(245, 236, 219, 0.1);
   --line-strong: rgba(245, 236, 219, 0.16);
   --ink: #f6eedf;
   --ink-2: #c8c2b6;
@@ -143,7 +147,8 @@
   --bad: #ff7462;
   --bad-soft: rgba(255, 116, 98, 0.14);
   --focus: #8fc0ec;
-  --highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  /* A faint lit top edge, so cards read as objects over the dark city rather than holes in it. */
+  --highlight: inset 0 1px 0 rgba(255, 255, 255, 0.07);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 36px -14px rgba(0, 0, 0, 0.6);
   --shadow-3: 0 30px 80px -20px rgba(0, 0, 0, 0.7);
@@ -224,6 +229,159 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── HUD entrance ──────────────────────────────────────────────────────── */
+
+/*
+ * The HUD waits off stage while the boot screen is up (no html.booted yet)
+ * or the front door is (html.intro), then arrives when loader.ts adds
+ * html.hud-in: each panel from its own edge, a beat apart. Safety net: once
+ * booted without an intro, the HUD shows whether or not hud-in ever comes.
+ * The animations are scoped to html.hud-entering (removed after ~1.6 s), so
+ * they never replay later or fight a panel's own animations.
+ */
+:root:is(:not(.booted), .intro):not(.hud-in) #ui {
+  opacity: 0;
+}
+
+:root {
+  --hud-delay: 0ms;
+}
+
+/*
+ * Arriving with the boot screen's lift, the HUD follows the veil as it rises
+ * off the city: the dock first, then the rail and map controls, then the top
+ * bar, each a touch quicker so the whole thing lands inside ~900 ms.
+ */
+:root.hud-after-boot {
+  --hud-delay: 200ms;
+}
+
+:root.hud-after-boot.hud-entering :is(.topbar > *, .rail, .rail > *, .help, .mapctl, .dock, .lower) {
+  animation-duration: var(--dur-3);
+}
+
+:root.hud-entering :is(.topbar > *, .rail, .help, .mapctl, .dock, .lower) {
+  animation: var(--hud-in, hud-from-top) var(--dur-4) var(--ease-out) both;
+  animation-delay: calc(var(--hud-delay) + var(--i, 0) * var(--stagger));
+}
+
+:root.hud-entering .topbar > :nth-child(2) {
+  --i: 1;
+}
+
+:root.hud-entering .topbar > :nth-child(3) {
+  --i: 2;
+}
+
+:root.hud-entering .topbar > :nth-child(n + 4) {
+  --i: 3;
+}
+
+:root.hud-entering .rail {
+  --hud-in: hud-from-left;
+  --i: 1;
+}
+
+/*
+ * The rail's cards follow it in, one after another. They settle by scale, not
+ * by moving down: a downward offset would briefly make the scrolling rail
+ * think it overflows.
+ */
+:root.hud-entering .rail > * {
+  --i: 0;
+  transform-origin: 0 0;
+  animation: hud-settle var(--dur-4) var(--ease-out) both;
+  animation-delay: calc(var(--hud-delay) + (var(--i, 0) + 2) * var(--stagger));
+}
+
+:root.hud-entering .rail > :nth-child(3) {
+  --i: 1;
+}
+
+:root.hud-entering .rail > :nth-child(n + 4) {
+  --i: 2;
+}
+
+:root.hud-entering .dock {
+  --hud-in: hud-from-bottom;
+  --i: 2;
+}
+
+:root.hud-entering .help {
+  --hud-in: hud-from-right;
+  --i: 4;
+}
+
+:root.hud-entering .mapctl {
+  --hud-in: hud-from-right;
+  --i: 5;
+}
+
+:root.hud-entering .lower {
+  --hud-in: fade-in;
+  --i: 6;
+}
+
+/* Bottom-up order for the lift (see above). */
+:root.hud-after-boot.hud-entering .dock {
+  --i: 0;
+}
+
+:root.hud-after-boot.hud-entering :is(.mapctl, .lower) {
+  --i: 1;
+}
+
+:root.hud-after-boot.hud-entering .rail {
+  --i: 2;
+}
+
+:root.hud-after-boot.hud-entering .rail > * {
+  animation-delay: calc(var(--hud-delay) + (var(--i, 0) + 2) * var(--stagger) * 0.8);
+}
+
+:root.hud-after-boot.hud-entering .help {
+  --i: 4;
+}
+
+:root.hud-after-boot.hud-entering .topbar > * {
+  animation-delay: calc(var(--hud-delay) + (var(--i, 0) + 4) * var(--stagger) * 0.8);
+}
+
+@keyframes hud-from-top {
+  from {
+    opacity: 0;
+    translate: 0 -14px;
+  }
+}
+
+@keyframes hud-from-left {
+  from {
+    opacity: 0;
+    translate: -18px 0;
+  }
+}
+
+@keyframes hud-from-right {
+  from {
+    opacity: 0;
+    translate: 18px 0;
+  }
+}
+
+@keyframes hud-from-bottom {
+  from {
+    opacity: 0;
+    translate: 0 18px;
+  }
+}
+
+@keyframes hud-settle {
+  from {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+
 button,
 input {
   font: inherit;
@@ -278,7 +436,16 @@ code {
     background-color var(--dur-4) var(--ease-out),
     border-color var(--dur-4) var(--ease-out),
     color var(--dur-4) var(--ease-out),
-    box-shadow var(--dur-4) var(--ease-out);
+    box-shadow var(--dur-4) var(--ease-out),
+    scale var(--dur-1) var(--ease-out);
+}
+
+/*
+ * Press: everything you can click gives a little under your finger (120 ms).
+ * The `scale` property composes with any transform a control already has.
+ */
+:is(.btn, .clock, .brand-city, .mini, .tab, .toast-action, .toast-close, .place, .rail-more, .help summary):active:not([disabled], [aria-disabled='true']) {
+  scale: 0.98;
 }
 
 .ico {
@@ -308,7 +475,7 @@ code {
     background-color var(--dur-1) var(--ease-out),
     border-color var(--dur-1) var(--ease-out),
     color var(--dur-1) var(--ease-out),
-    transform var(--dur-1) var(--ease-out),
+    scale var(--dur-1) var(--ease-out),
     box-shadow var(--dur-2) var(--ease-out);
 }
 
@@ -316,14 +483,9 @@ code {
   background: var(--surface-hover);
 }
 
-.btn:active {
-  transform: translateY(1px) scale(0.98);
-}
-
 .btn[disabled] {
   cursor: default;
   opacity: 0.5;
-  transform: none;
 }
 
 .btn.ghost {
@@ -863,8 +1025,10 @@ code {
 
 .metric {
   display: grid;
-  grid-template-columns: 1fr auto;
+  /* The delta sits right after its figure, so it can't be read as the next column's. */
+  grid-template-columns: auto 1fr;
   grid-template-areas: 'label label' 'value delta';
+  column-gap: 6px;
   align-items: baseline;
   row-gap: 2px;
   padding: 8px 0;
@@ -890,6 +1054,7 @@ code {
 
 .metric .metric-delta {
   grid-area: delta;
+  justify-self: start;
   font-size: 10.5px;
   font-weight: 600;
   color: var(--ink-3);
@@ -906,6 +1071,57 @@ code {
 
 .metric.missing .metric-value {
   color: var(--ink-4);
+}
+
+/*
+ * Numbers that just moved (dom.ts Tint sets data-tick while they count):
+ * the figure leans toward good or bad and its delta chip brightens, then
+ * both settle back. The tint arrives fast and leaves slowly.
+ */
+.metric-value,
+.treasury-value,
+.ring-value,
+.mini-stat b {
+  transition: color var(--dur-4) var(--ease-out);
+}
+
+.chip {
+  transition:
+    background-color var(--dur-4) var(--ease-out),
+    box-shadow var(--dur-4) var(--ease-out),
+    color var(--dur-4) var(--ease-out),
+    scale var(--dur-1) var(--ease-out);
+}
+
+[data-tick] :is(.metric-value, .treasury-value, .ring-value),
+.mini-stat b[data-tick],
+[data-tick] .chip {
+  transition-duration: var(--dur-1);
+}
+
+[data-tick='up'] :is(.metric-value, .treasury-value, .ring-value),
+.mini-stat b[data-tick='up'] {
+  color: color-mix(in srgb, var(--good) 50%, var(--ink));
+}
+
+[data-tick='down'] :is(.metric-value, .treasury-value, .ring-value),
+.mini-stat b[data-tick='down'] {
+  color: color-mix(in srgb, var(--bad) 50%, var(--ink));
+}
+
+/* Spending isn't bad news: a purchase tints the treasury in the brand colour. */
+.treasury[data-tick='spend'] .treasury-value {
+  color: var(--accent-text);
+}
+
+[data-tick='up'] .chip[data-dir='up'] {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--good) 40%, transparent);
+  background: color-mix(in srgb, var(--good) 20%, transparent);
+}
+
+[data-tick='down'] .chip[data-dir='down'] {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--bad) 40%, transparent);
+  background: color-mix(in srgb, var(--bad) 18%, transparent);
 }
 
 .as-of {
@@ -1052,13 +1268,15 @@ code {
   overflow: hidden;
 }
 
+/* The fill is full width and slides in from the left (a transform, so no layout as it moves). */
 .part b {
   display: block;
   height: 100%;
   border-radius: 4px;
   background: var(--good);
+  transform: translateX(calc(var(--v, 0%) - 100%));
   transition:
-    width var(--dur-4) var(--ease-out),
+    transform var(--dur-4) var(--ease-out),
     background-color var(--dur-3);
 }
 
@@ -1115,32 +1333,27 @@ code {
   color: var(--bad);
 }
 
+/* Housed fill over the track; when people are short of a home, the uncovered track is the striped unhoused share. */
 .meter {
-  display: flex;
+  position: relative;
   height: 8px;
-  gap: 2px;
   border-radius: 8px;
   overflow: hidden;
   background: var(--surface-3);
 }
 
-.meter i {
-  display: block;
-  height: 100%;
-  transition: width var(--dur-4) var(--ease-out);
-}
-
-.meter-housed {
-  background: linear-gradient(90deg, var(--bay), color-mix(in srgb, var(--bay) 70%, #fff));
-  border-radius: 8px 0 0 8px;
-}
-
-.meter-unhoused {
+.meter[data-short] {
   background: repeating-linear-gradient(-45deg, var(--bad) 0 3px, color-mix(in srgb, var(--bad) 55%, transparent) 3px 6px);
 }
 
-.meter-unhoused[style*='width:0.00%'] {
-  display: none;
+.meter-housed {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--bay), color-mix(in srgb, var(--bay) 70%, #fff));
+  /* A hairline of card between housed and unhoused; clipped away when everyone is housed. */
+  box-shadow: 2px 0 0 var(--surface-solid);
+  transform: translateX(calc(var(--v, 100%) - 100%));
+  transition: transform var(--dur-4) var(--ease-out);
 }
 
 .housing-foot {
@@ -1249,6 +1462,7 @@ code {
 }
 
 .fine {
+  text-wrap: pretty;
   margin: 10px 0 0;
   padding-top: 10px;
   border-top: 1px solid var(--line);
@@ -1421,8 +1635,9 @@ code {
   border: 1px solid var(--line);
   box-shadow: var(--highlight), var(--shadow-2);
   overflow: hidden;
+  /* Toasts land from the bottom-left corner with a little spring, and leave the way they came. */
   transform-origin: 0 100%;
-  animation: toast-in var(--dur-4) var(--ease-spring);
+  animation: toast-in var(--dur-4) var(--ease-spring) both;
   transition:
     opacity var(--dur-3) var(--ease-out),
     transform var(--dur-3) var(--ease-out),
@@ -1487,7 +1702,9 @@ code {
   color: var(--accent-ink, #fff);
   background: var(--accent);
   cursor: pointer;
-  transition: filter var(--dur-1, 120ms) var(--ease-out);
+  transition:
+    filter var(--dur-1) var(--ease-out),
+    scale var(--dur-1) var(--ease-out);
 }
 
 .toast-action .ico {
@@ -1515,7 +1732,10 @@ code {
   background: transparent;
   color: var(--ink-3);
   opacity: 0;
-  transition: opacity var(--dur-1);
+  transition:
+    opacity var(--dur-1),
+    background-color var(--dur-1),
+    scale var(--dur-1) var(--ease-out);
 }
 
 .toast-close .ico {
@@ -1572,7 +1792,11 @@ code {
 
 .toast.out {
   opacity: 0;
-  transform: translateX(-14px) scale(0.97);
+  transform: translate(-12px, 6px) scale(0.96);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-2) var(--ease-in),
+    transform var(--dur-2) var(--ease-in);
 }
 
 .toast.bump {
@@ -1592,7 +1816,10 @@ code {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(12px) scale(0.96);
+    transform: translate(-8px, 14px) scale(0.94);
+  }
+  40% {
+    opacity: 1;
   }
 }
 
@@ -1641,6 +1868,15 @@ code {
   gap: 2px;
   border-radius: var(--r-md);
   z-index: 5;
+  transform-origin: 100% 100%;
+  animation: menu-in var(--dur-2) var(--ease-out);
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateX(6px) scale(0.97);
+  }
 }
 
 .places-menu .place {
@@ -1943,7 +2179,16 @@ code {
   box-shadow: var(--shadow-2);
   font-size: var(--t-sm);
   line-height: 1.4;
-  animation: tip-in var(--dur-2) var(--ease-out);
+  animation: tip-in 140ms var(--ease-out);
+}
+
+/* Browsing from one tooltip to the next: no delay and no fade, it just follows you. */
+.uitip.warm {
+  animation: none;
+}
+
+.uitip[data-side='below'] {
+  --tip-from: -3px;
 }
 
 :root[data-theme='night'] .tip,
@@ -1969,13 +2214,19 @@ code {
 @keyframes tip-in {
   from {
     opacity: 0;
-    transform: translateY(3px);
+    transform: translateY(var(--tip-from, 3px));
   }
 }
 
 /* ── Dialogs ───────────────────────────────────────────────────────────── */
 
+/*
+ * Dialogs rise 8px and fade in with their scrim, and sink back out when they
+ * close (exit transitions where the browser supports them; elsewhere they
+ * simply go).
+ */
 .dialog {
+  --dialog-from: 0 8px;
   border: 1px solid var(--line);
   border-radius: var(--r-xl);
   background: var(--surface-solid);
@@ -1986,10 +2237,27 @@ code {
   box-shadow: var(--highlight), var(--shadow-3);
   overflow: auto;
   overscroll-behavior: contain;
+  opacity: 0;
+  translate: var(--dialog-from);
+  transition:
+    opacity var(--dur-2) var(--ease-in),
+    translate var(--dur-2) var(--ease-in),
+    overlay var(--dur-2) allow-discrete,
+    display var(--dur-2) allow-discrete;
 }
 
 .dialog[open] {
-  animation: dialog-in var(--dur-4) var(--ease-spring);
+  opacity: 1;
+  translate: 0 0;
+  transition-duration: var(--dur-3);
+  transition-timing-function: var(--ease-out);
+}
+
+@starting-style {
+  .dialog[open] {
+    opacity: 0;
+    translate: var(--dialog-from);
+  }
 }
 
 .dialog:focus {
@@ -1999,7 +2267,23 @@ code {
 .dialog::backdrop {
   background: var(--scrim);
   backdrop-filter: blur(3px);
-  animation: fade-in var(--dur-3) var(--ease-out);
+  opacity: 0;
+  transition:
+    opacity var(--dur-2) var(--ease-in),
+    overlay var(--dur-2) allow-discrete,
+    display var(--dur-2) allow-discrete;
+}
+
+.dialog[open]::backdrop {
+  opacity: 1;
+  transition-duration: var(--dur-3);
+  transition-timing-function: var(--ease-out);
+}
+
+@starting-style {
+  .dialog[open]::backdrop {
+    opacity: 0;
+  }
 }
 
 @keyframes dialog-in {
@@ -2326,14 +2610,26 @@ code {
   flex-direction: column;
   border-radius: var(--r-xl);
   background: var(--surface-solid);
-  animation: drawer-in var(--dur-4) var(--ease-spring);
+  animation: drawer-in var(--dur-3) var(--ease-out);
   overflow: hidden;
+}
+
+/* The build menu slides in from the right edge and back out to it. */
+.drawer.closing {
+  animation: drawer-out var(--dur-2) var(--ease-in) both;
 }
 
 @keyframes drawer-in {
   from {
     opacity: 0;
-    transform: translateX(24px);
+    transform: translateX(28px);
+  }
+}
+
+@keyframes drawer-out {
+  to {
+    opacity: 0;
+    transform: translateX(28px);
   }
 }
 
@@ -3673,6 +3969,12 @@ code {
     stroke-width: 6;
   }
 
+  .mini-sat .ring-fill {
+    transition:
+      stroke-dashoffset var(--dur-4) var(--ease-out),
+      stroke var(--dur-3);
+  }
+
   .mini-sat b {
     position: absolute;
     inset: 0;
@@ -3811,6 +4113,10 @@ code {
     box-shadow: var(--shadow-3);
   }
 
+  .drawer.closing {
+    animation: sheet-out var(--dur-3) var(--ease-in) both;
+  }
+
   .sheet-handle {
     display: block;
     width: 38px;
@@ -3868,8 +4174,14 @@ code {
     padding-bottom: env(safe-area-inset-bottom);
   }
 
+  /* Phones: dialogs are bottom sheets that come up from, and go back to, the bottom edge. */
+  .dialog {
+    --dialog-from: 0 100%;
+    opacity: 1;
+  }
+
   .dialog[open] {
-    animation: sheet-in var(--dur-4) var(--ease-out);
+    transition-duration: var(--dur-4);
   }
 
   .dialog-body {
@@ -3938,6 +4250,12 @@ code {
 
 @keyframes sheet-in {
   from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes sheet-out {
+  to {
     transform: translateY(100%);
   }
 }
@@ -4053,8 +4371,10 @@ code {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
   }
 
   .toast-timer {
