@@ -1,6 +1,6 @@
 import { ROUTES, type ConfigResponse, type Provider } from '../src/api/contract.ts';
 import type { Timeline } from '../src/data/types.ts';
-import { checkAccess } from './access.ts';
+import { checkAccess, resetAccessCaches } from './access.ts';
 import { appUrl, checkout, plans, portal, resetBillingCaches, webhook } from './billing.ts';
 import { hosted, rateLimit, requirePaid, requireUser, resetContextCaches, type Ctx, type Hosted } from './context.ts';
 import { settings, type Env } from './env.ts';
@@ -206,6 +206,7 @@ async function localTimeline(ctx: Ctx): Promise<Response> {
 export function resetCaches() {
   localCache = undefined;
   resetContextCaches();
+  resetAccessCaches();
   resetBillingCaches();
   resetTimelineCaches();
   github.resetGithubCaches();
