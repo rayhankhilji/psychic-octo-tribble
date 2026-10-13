@@ -5,6 +5,7 @@ import { describe, diffMoments, type Moment } from './world/events.ts';
 import { momentsOf } from './world/history.ts';
 import { planWorld } from './world/layout.ts';
 import { hash } from './world/rng.ts';
+import { setWorldSeed } from './world/seed.ts';
 import { parseHour } from './world/daylight.ts';
 import { City } from './render/city.ts';
 import { Stage } from './render/stage.ts';
@@ -89,6 +90,8 @@ class App {
   constructor(timeline: Timeline, notice?: string) {
     const name = storedName() || timeline.name;
     this.seed = hash(name);
+    // The map's layout: the classic map (seed 0) until the founder's own world says otherwise; `?seed=N` to preview one.
+    setWorldSeed(Number(params.get('seed')) || 0);
     setThumbnailContext(name, this.seed);
     this.city = new City(name, this.seed);
     const fixed = parseHour(params.get('time'));
