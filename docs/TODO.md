@@ -27,6 +27,16 @@ Built and committed (2026-10-13): accounts, billing, the paywall, onboarding, th
 - [x] Fewer database calls per visit (reads rate-limited in memory; lastSeen written once a day in one call).
 - [ ] Known gaps: founders must remove the Stripe App themselves after deleting; per-instance limits on telemetry; `style-src 'unsafe-inline'` (inline `style=` attributes in the HUD). Several cities on one Stripe account is allowed on purpose: co-founders share one company account.
 
+## P1: Design pass follow-ups (2026-10-13)
+
+- [ ] **Re-render the launch images after the fog change:** `node tools/brand-assets.mjs social --base=<dev url>` (the social kit) and `node tools/email-assets.mjs` (the invite's city picture) still show the old cloud look.
+- [ ] **Owner to confirm:** the invite email now states the price ("$12 a month or $99 a year"), matching the terms page.
+- [ ] **Lawyer:** privacy §2 says no marketing email unless asked, but the weekly digest is on by default; and the legal pages use British spelling while the product uses US.
+- [ ] **Front door on phones:** the camera stops at `minZoom` 0.32, so the top half shows downtown cropped; let attract mode zoom out further on portrait screens (check shadows and the far plane).
+- [ ] **Mobile help button:** the floating "?" under the mini card is heavy; consider a small icon in the top bar.
+- [ ] **A real-device pass** in a GPU browser (pointer hover, the camera drift's smoothness, Turnstile with network) and a Litmus/Email on Acid run for the emails (Outlook on Windows, Gmail dark mode on Android).
+- [ ] **Next brand assets:** Stripe App listing images (≥1,600 px, no real customer data), a short golden-hour loop for X and Product Hunt, a zip on the press page.
+
 ## P1: The reference-image quality push (in progress)
 
 The owner sent reference images (the Silicon Valley title slide is the art-direction target; GTA's Vinewood Hills for the Hills; SimCity BuildIt and 2013 for tidy blocks) and a screenshot of our bay they hate. Four agents worked on it, each owning its own files. See CONVERSATION_LOG for their words.

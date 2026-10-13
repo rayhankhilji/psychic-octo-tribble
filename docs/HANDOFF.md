@@ -96,6 +96,15 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
 - **Ops:** CI (typecheck, tests, build, audit, E2E, CodeQL, Dependabot), migrations on deploy with approval, release and rollback docs, the launch plan with invite waves, the incident runbook, the FAQ and launch copy, draft legal pages.
 - **What's left is mostly the owner's** (accounts, keys, a domain, a lawyer): see TODO "P0: Launch" and `docs/LAUNCH.md`. **Verified:** `node tools/e2e.mjs` runs the real server against fake providers (`tools/fake-providers.mjs`): 14 API journeys pass (sign in → pay → webhook → connect → build → 409s → portal → export → delete) and the 8 browser journeys passed in QA's run; `tests/fuzz-game.test.ts` proves the server accepts exactly what the browser allows; the load test held 1,200 founders over 2 minutes with 0 errors (p95 under 160 ms except a first timeline build, ~1.3 s). QA's bugs are fixed (a minute of 500s after deleting an account; land opened today couldn't be built on today; a Stripe price-API stampede from `/api/config`).
 
+**Design pass (2026-10-13):** the owner asked for the best possible motion, branding, layout, colour and UI/UX work before launch. Six agents, each in its own files; the brand (mark, palette, fonts) was kept and elevated, not redesigned.
+
+- **The front door** (`src/ui/frontdoor.ts`): a first visit opens on a title card over the grown demo city with a slow camera sway (`Stage.attract`); "Watch a startup grow" brings the HUD in and replays from day 1. Shown once, to signed-out demo visitors, never with preview params; `?intro` forces it.
+- **Motion** (`styles.css`, `index.html`, `loader.ts`, `dom.ts`): the boot screen assembles the mark and draws the skyline, then lifts off like a sheet; the HUD follows it in (`revealHud()` / `html.hud-in`); numbers count and tint; toasts, dialogs, drawer and tooltips enter and leave with purpose; reduced motion respected.
+- **Paywall and account** (`plans.ts`, `signin.ts`, `onboarding.ts`, `account.ts`, `waitlist.ts`, `hosted.css`): a two-column plan picker with the terms at reading size, six-box codes, a Linear-style account dialog.
+- **Brand kit:** `docs/BRAND.md` (the brand book), `public/brand/` (lockups outlined from the real wordmark, avatars, social images rendered from the game), a press page at `/brand/`, `tools/brand-assets.mjs` to regenerate.
+- **Email and static pages:** a masthead with the skyline, a ticket-like invite with a picture of the demo city, a digest led by its numbers, legal pages with contents and print styles, a 404 that builds itself.
+- **Fog over locked land** (`src/render/fog.ts`): see the fog commit.
+
 Still open with the owner: whether the public GitHub repository should stay public, the legal decisions in LAUNCH.md, and the two account-deletion questions in TODO.
 
 **Headless gotcha learned:** homes build a few per frame; SwiftShader frames are slow, so screenshot tools call `city.finishBuilding()` after scrubbing (`tools/playwright.mjs`), otherwise shots catch a half-built city.
