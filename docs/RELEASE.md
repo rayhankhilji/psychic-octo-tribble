@@ -126,7 +126,7 @@ From then on, never paste a migration into the SQL Editor: merge it and let the 
 
 **Settings → Advanced Security** (all free on a public repository):
 
-- **Dependency graph**, **Dependabot alerts**, **Dependabot security updates** and **Grouped security updates**: on.
+- **Dependency graph**, **Dependabot alerts**, **Dependabot security updates** and **Grouped security updates**: on. Then add the repository variable `DEPENDENCY_REVIEW` = `on` (Settings → Secrets and variables → Actions → Variables): the **Dependency review** check is skipped until it's set, because it can't run without the dependency graph.
 - **Secret Protection** (secret scanning) and **Push protection**: on. Push protection refuses a push that contains a recognisable key (Stripe, Supabase, GitHub and many more) before it ever reaches GitHub. If it fires, the key was on your disk in a commit: remove it from the commit, and if it was ever pushed anywhere, roll it in the provider's dashboard.
 - **Private vulnerability reporting:** on. The bug report form links to it.
 - **Code scanning:** leave **CodeQL analysis** on *advanced* (our `codeql.yml`). Don't switch on *default setup* as well: it would stop our workflow from uploading.

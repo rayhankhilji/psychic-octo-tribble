@@ -95,7 +95,10 @@ jobs:
 
   dependency-review:
     name: Dependency review
-    if: github.event_name == 'pull_request'
+    # Needs the repository's dependency graph (Settings → Code security). Once it's
+    # on, set the repository variable DEPENDENCY_REVIEW=on (docs/RELEASE.md); until
+    # then the job is skipped rather than failing every PR.
+    if: github.event_name == 'pull_request' && vars.DEPENDENCY_REVIEW == 'on'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
