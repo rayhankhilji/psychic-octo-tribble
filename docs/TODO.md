@@ -29,7 +29,7 @@ Built and committed (2026-10-13): accounts, billing, the paywall, onboarding, th
 
 ## P1: Design pass follow-ups (2026-10-13)
 
-- [ ] **Re-render the launch images after the fog change:** `node tools/brand-assets.mjs social --base=<dev url>` (the social kit) and `node tools/email-assets.mjs` (the invite's city picture) still show the old cloud look.
+- [x] **Re-render the launch images after the fog change** (done; rerun after big visual changes): `node tools/brand-assets.mjs social --base=<dev url>` (the social kit) and `node tools/email-assets.mjs` (the invite's city picture) still show the old cloud look.
 - [ ] **Owner to confirm:** the invite email now states the price ("$12 a month or $99 a year"), matching the terms page.
 - [ ] **Lawyer:** privacy §2 says no marketing email unless asked, but the weekly digest is on by default; and the legal pages use British spelling while the product uses US.
 - [ ] **Front door on phones:** the camera stops at `minZoom` 0.32, so the top half shows downtown cropped; let attract mode zoom out further on portrait screens (check shadows and the far plane).
