@@ -83,9 +83,13 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
 
 **Branch:** `claude/friendly-darwin-sjkcz1` (second session; it continues from `claude/tender-keller-mnunoy`). There is no `main` to open PRs against. The owner has been asked whether to create `main` from the latest work branch; don't create or push other branches without asking.
 
-**Health:** `npm run typecheck` clean, `npm test` 64/64 passing, `npm run build` succeeds (two chunks: app 163 kB gzip, three.js 170 kB gzip). Grown city (day 540, `quality=high`): **263 draw calls** (was 755) and ~2.2M triangles counting the shadow pass.
+**Health:** `npm run typecheck` clean, `npm test` 66/66 passing, `npm run build` succeeds (two chunks: app ~165 kB gzip, three.js 170 kB gzip). Grown city (day 540, `quality=high`): ~260 draw calls (was 755) and ~2.3M triangles counting the shadow pass. PR #1 (`claude/friendly-darwin-sjkcz1` → `claude/tender-keller-mnunoy`) was opened by the owner; CI runs typecheck, tests and build.
 
-**Second session so far:** perf pass (generalised `Batch`, see ARCHITECTURE), boosted-demo rocket fix, night fixes (clouds, lighthouse beam, Ferry Building, glass flatirons), Daly City as terraced streets, scenery tooltips wired, cars give way to streetcars, fading car shadows, the bundle split, and the "while you were away" logic. Two parallel agents were run: models (trims, rocket, yacht, Concorde, ballpark, founder-home rooftops, back sides, encampment, night cloud tint) and UI (swap fee, accessibility, short screens, thumbnails context, night share card, the away card). Check `git log` and TODO for what landed.
+**Second session (2026-10-12/13), in order:** perf pass (generalised `Batch`); boosted-demo rocket fix; night fixes (clouds, lighthouse beam, Ferry Building, glass flatirons); Daly City and East Bay as terraced streets; scenery tooltips wired; cars give way to streetcars; fading car shadows; bundle split; "while you were away" (logic + card); milestone fireworks shows; festival/protest mood on Civic Center Plaza; the models agent's trims and polish (rocket, yacht, Concorde, ballpark, founder-home rooftops, encampment); the UI agent's accessibility, renovation fee, short-screen rail, lazy thumbnails and night postcard; **the lag fix** (the replay was silently rebuilding thousands of homes; building is now frame-budgeted; lighter GPU defaults); the **TinyTown Hills redesign** with a new house family (`render/hills.ts`); Treasure Island, the Bay Bridge east span and Oakland rebuilt.
+
+**Waiting on the owner:** whether to build **seeded cities** (every founder's layout different, same size and plot count; see TODO P0), and whether to create `main`.
+
+**Headless gotcha learned:** homes build a few per frame; SwiftShader frames are slow, so screenshot tools call `city.finishBuilding()` after scrubbing (`tools/playwright.mjs`), otherwise shots catch a half-built city.
 
 **Built and working:**
 
