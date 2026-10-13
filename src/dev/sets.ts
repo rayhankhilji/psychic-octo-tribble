@@ -195,3 +195,20 @@ Object.assign(SETS, {
     return [{ ...item!, object: g }];
   },
 } satisfies Record<string, () => ShowItem[]>);
+
+// TinyTown Hills houses, every style with two seeds: `?set=tt-hillshouses` (az=225 for the back).
+import { hillsHouse, type HillsStyle } from '../render/hills.ts';
+Object.assign(SETS, {
+  'tt-hillshouses': (): ShowItem[] =>
+    (['midcentury', 'spanish', 'modern', 'canyon'] as HillsStyle[]).flatMap((style) =>
+      [11, 24].map((seed) => ({ label: `${style} ${seed}`, object: group(hillsHouse(style, seed)), size: 1.4 })),
+    ),
+} satisfies Record<string, () => ShowItem[]>);
+// One Hills house up close: `?set=tt-hills1&style=spanish&seed=11&zoom=14`.
+Object.assign(SETS, {
+  'tt-hills1': (): ShowItem[] => {
+    const p = new URLSearchParams(location.search);
+    const style = (p.get('style') ?? 'midcentury') as HillsStyle;
+    return [{ label: style, object: group(hillsHouse(style, Number(p.get('seed') ?? 11))), size: 1.2 }];
+  },
+} satisfies Record<string, () => ShowItem[]>);

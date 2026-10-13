@@ -4,6 +4,7 @@ import { PALETTE } from './palette.ts';
 import { palm, tree } from './buildings.ts';
 import { cloudBank } from './models.ts';
 import { Kit, tower } from './towers.ts';
+import { hillsHouse, type HillsStyle } from './hills.ts';
 import { Batch } from './batch.ts';
 import {
   bayBridge,
@@ -100,6 +101,7 @@ export class Scenery {
   private hood = new THREE.Group();
   /** Level terraces for the Hills houses: centre, top and which way they face (downhill). */
   private hillPads: { x: number; z: number; y: number; rot: number }[] = [];
+  private hillKeys: string[] = [];
   private clouds: Record<'hills' | 'island' | 'launch', THREE.Group> = { hills: new THREE.Group(), island: new THREE.Group(), launch: new THREE.Group() };
   private launchPad = new THREE.Group();
   private beam: THREE.Mesh;
@@ -166,8 +168,8 @@ export class Scenery {
     this.object.add(this.beam);
   }
 
-  /** Moves a static model into the batch (its tooltip comes too). */
-  private fix(group: THREE.Group) {
+  /** Moves a static model into the batch (its tooltip comes too). Returns its batch key. */
+  private fix(group: THREE.Group): string {
     const i = this.pickables.indexOf(group);
     if (i >= 0) this.pickables.splice(i, 1);
     const key = `s:${this.batchKeys.length}`;
@@ -179,6 +181,7 @@ export class Scenery {
       this.pickables.push(proxy);
       this.collectGlows(proxy);
     }
+    return key;
   }
 
   private collectGlows(g: THREE.Object3D) {
@@ -863,8 +866,8 @@ export class Scenery {
         const corners = [[-0.55, -0.47], [0.55, -0.47], [-0.55, 0.47], [0.55, 0.47]].map(([cx, cz]) => terrainHeight(x + cx!, z + cz!));
         const top = corners.reduce((a, c) => a + c, 0) / corners.length + 0.03;
         const low = Math.min(...corners);
-        b.box(1.1, Math.max(0.05, top - low + 0.04), 0.95, x, low - 0.04, z, pick(r, [0xb9ad98, 0xc4b8a2, 0xab9f8a] as const), false, rot);
-        b.box(1.06, 0.012, 0.91, x, top, z, 0xd9d2c2, false, rot);
+        b.box(1.18, Math.max(0.05, top - low + 0.04), 1.0, x, low - 0.04, z, pick(r, [0xb9ad98, 0xc4b8a2, 0xab9f8a] as const), false, rot);
+        b.box(1.14, 0.012, 0.96, x, top, z, 0xd9d2c2, false, rot);
         ribbon(b, [[p.x + nx * 0.25, p.z + nz * 0.25], [x - nx * 0.5, z - nz * 0.5]], 0.15, 0xc8c0b0, 0.04);
         this.hillPads.push({ x, z, y: top + 0.012, rot });
       }
@@ -892,8 +895,8 @@ export class Scenery {
         }
       }
     }
-    this.placeHillHouses(b, r);
     this.hood.add(this.add(b, { title: 'TinyTown Hills', detail: 'Opens at $1k MRR, when you move into your first Hills house.' }));
+    this.placeHillHouses();
   }
 
   /**
@@ -968,9 +971,20 @@ export class Scenery {
     for (let k = 0; k < 4; k++) moored(b, r, px - 0.6 + k * 0.42, pz - 0.35);
   }
 
-  /** A house on every terrace. */
-  private placeHillHouses(b: GeoBuilder, r: () => number) {
-    for (const pad of this.hillPads) villa(b, r, pad.x, pad.z, pad.y + 0.15);
+  /** A house on every terrace: a mix of the four Hills styles, batched, shown once the Hills open. */
+  private placeHillHouses() {
+    const styles: HillsStyle[] = ['midcentury', 'spanish', 'modern', 'canyon'];
+    const names: Record<HillsStyle, string> = { midcentury: 'A mid-century house', spanish: 'A Spanish Revival house', modern: 'A modern house', canyon: 'A canyon house' };
+    this.hillPads.forEach((pad, i) => {
+      const style = styles[hash(this.seed, 'hills-style', i) % styles.length]!;
+      const { group } = hillsHouse(style, hash(this.seed, 'hills-house', i));
+      group.position.set(pad.x, pad.y, pad.z);
+      group.rotation.y = pad.rot;
+      group.userData.tip = { title: names[style], detail: 'TinyTown Hills: your neighbours made it too' };
+      const key = this.fix(group);
+      this.hillKeys.push(key);
+      this.batch.setVisible(key, this.state.hills);
+    });
   }
 
   private buildClouds() {
@@ -991,6 +1005,7 @@ export class Scenery {
   setState(next: SceneryState) {
     this.state = next;
     this.hood.visible = next.hills;
+    for (const key of this.hillKeys) this.batch.setVisible(key, next.hills);
     this.clouds.hills.visible = !next.hills;
     this.clouds.island.visible = !next.island;
     this.clouds.launch.visible = !next.launch;
@@ -1145,20 +1160,6 @@ function eucalyptus(b: GeoBuilder, r: () => number, x: number, z: number, y: num
     const g2 = new THREE.IcosahedronGeometry(0.22 * s, 1).scale(1.3, 0.5, 1.1);
     b.transformed(g2, new THREE.Matrix4().makeTranslation(x - 0.12 * s, y + 0.6 * s, z + 0.05 * s), pick(r, [0x2f6a45, 0x3a7a4c] as const), 'smooth');
   }
-}
-
-function villa(b: GeoBuilder, r: () => number, x: number, z: number, y: number) {
-  const wall = pick(r, [0xf8f5ee, 0xf6e7c8, 0xf3c6a2, 0xe8e2d6] as const);
-  b.box(1.0, 0.08, 0.8, x, y - 0.15, z, 0xe8e2d6);
-  b.box(0.75, 0.3, 0.5, x, y - 0.07, z, wall, false, Math.PI / 4);
-  if (r() < 0.5) {
-    b.hip(0.75, 0.14, 0.5, x, y + 0.23, z, PALETTE.roofs[0]);
-  } else {
-    b.box(0.84, 0.035, 0.6, x, y + 0.23, z, PALETTE.trim, false, Math.PI / 4);
-    b.box(0.4, 0.22, 0.32, x - 0.1, y + 0.26, z - 0.08, wall, false, Math.PI / 4);
-  }
-  b.quad(0.42, 0.14, x + 0.19, y + 0.08, z + 0.19, 'z+', [1.6, 1.05, 0.5], true, 0.2 + r() * 0.6);
-  b.box(0.36, 0.015, 0.22, x + 0.32, y - 0.06, z - 0.18, PALETTE.pool, 'glass');
 }
 
 function moored(b: GeoBuilder, r: () => number, x: number, z: number) {
