@@ -66,6 +66,7 @@ Sets live in `src/dev/sets.ts`:
 | Homes and grounds | `homes`, `house`, `townhouse`, `apartment`, `street` (four full blocks at real lot rotations), `trees`, `grounds` |
 | Downtown, items and vehicles | `towers`, `items`, `founder`, `vehicles`, plus the `tt-*` sets: `tt-skyline`, `tt-landmarks`, `tt-hq`, `tt-business`, `tt-civic`, `tt-blocks`, `tt-homes`, `tt-museum`, `tt-vehicles`, `tt-state`, `tt-one` |
 | Neighbourhood families | `nb-streets` (every family as a whole block), `nb-one&family=queen&n=1&at=1.2,1.2&zoom=9`, `nb-homes` (mid-row, corner and park-side homes), `nb-trees` |
+| The bay and the hills | `bay-boats`, `bay-ship`, `bay-wakes` (boats circling with their wakes), `bay-landmarks`, `ls-flora` (the hills' trees and rocks) |
 | Downtown pass | `dt-towers` (`&tier=5`), `dt-tower&style=4&tier=5`, `dt-items&list=shops,cafe`, `dt-focus&what=hq:3&focus=0.9`, `dt-mansions`, `dt-heli` |
 | Street life | `cars`, `people` |
 
