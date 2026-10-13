@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLOW, glassMaterial } from './geo.ts';
+import { bridgeLanes } from './landmarks.ts';
 import { PITCH, blockCentre, type BlockCoord } from '../world/layout.ts';
-import { AIRPORT_ROAD, BAY_APPROACH, EMBARCADERO, GREAT_HIGHWAY, LANDMARKS, MARKET_START, PRESIDIO_PKWY, coastDistance, terrainHeight, type Pt } from '../world/map.ts';
+import { AIRPORT_ROAD, BAY_APPROACH, EMBARCADERO, GREAT_HIGHWAY, MARKET_START, PRESIDIO_PKWY, coastDistance, terrainHeight, type Pt } from '../world/map.ts';
 import { rng } from '../world/rng.ts';
 
 /**
@@ -1055,31 +1056,17 @@ function buildGraph(cells: readonly RoadCell[]): Graph {
     }
   }
 
-  // Bridges: the Golden Gate (two lanes each way) and the Bay Bridge (westbound on top, eastbound below).
+  // Bridges: the Golden Gate (two lanes each way) and the Bay Bridge (westbound on top, eastbound below),
+  // from the ground at one end to the ground at the other, up the ramps and through the Yerba Buena tunnel.
   const bridges: Path[] = [];
-  const gg = LANDMARKS.goldenGate;
-  for (const [o, dir] of [[0.17, 1], [0.45, 1], [0.17, -1], [0.45, -1]] as const) {
-    // Heading +z, right is −x.
-    const x = gg.x - dir * o;
-    const [z0, z1] = dir > 0 ? [6.0, 23.4] : [23.4, 6.0];
-    const p = mkPath(LANE, [x, 2.25, z0, x, 2.25, z1], 1.45 + o * 0.3, null, null);
-    p.bridge = true;
-    bridges.push(p);
-  }
-  const bb = LANDMARKS.bayBridge;
-  const UP = 2.35;
-  // The east span runs on to Oakland off-screen: streams start and end just past the tunnel.
-  const BB_EAST = Math.min(bb.x1, 39);
-  const LOW = 1.9;
-  const westbound = (zSusp: number, zEast: number) => [BB_EAST, UP, bb.z + zEast, 36.4, UP, bb.z + zEast, 33, UP, bb.z + (zEast + zSusp) / 2, 29.8, UP, bb.z + zSusp, bb.x0 + 0.5, UP, bb.z + zSusp];
-  const eastbound = (zSusp: number, zEast: number) => [bb.x0 + 0.5, LOW, bb.z + zSusp, 29.8, LOW, bb.z + zSusp, 33, (LOW + UP) / 2, bb.z + (zEast + zSusp) / 2, 36.4, UP, bb.z + zEast, BB_EAST, UP, bb.z + zEast];
-  for (const xyz of [westbound(-0.2, -0.2), westbound(0.2, -0.48), eastbound(-0.2, 0.2), eastbound(0.2, 0.48)]) {
-    const p = mkPath(LANE, xyz, 1.55, null, null);
-    p.bridge = true;
-    // Through Yerba Buena: hidden between the tunnel portals.
-    const s0 = xyz[0]! > xyz[xyz.length - 3]! ? BB_EAST - 36.2 : 30.1 - bb.x0 - 0.5;
-    p.hide = [s0, s0 + 6.1];
-    bridges.push(p);
+  const streams = bridgeLanes();
+  for (const [lanes, speed] of [[streams.goldenGate, 1.5], [streams.bayBridge, 1.55]] as const) {
+    for (const l of lanes) {
+      const p = mkPath(LANE, l.xyz, speed, null, null);
+      p.bridge = true;
+      p.hide = l.hide;
+      bridges.push(p);
+    }
   }
 
   const spots = lanes.filter((l) => !l.from?.spawn && !l.to?.spawn && l.len > 1.6);
@@ -1344,6 +1331,8 @@ export class Traffic {
     if (!this.graph) return 0;
     let len = 0;
     for (const p of this.graph.bridges) len += p.len;
+    // The bridges' approach ramps doubled the lane length; keep the bridge traffic about where it was.
+    len = Math.min(len, 240);
     return Math.round((len / BRIDGE_SPACING) * (0.35 + 0.65 * Math.min(1, this.target / 100)));
   }
 

@@ -591,7 +591,7 @@ function natural(x: number, z: number): number {
   }
   // The Bay Bridge tunnel runs through Yerba Buena at z −6.5: at least 3.0 of rock over the deck between the portals.
   if (island === 'yerba' && x > 30.25 && x < 35.75) {
-    const band = 1 - smooth(0.6, 1.1, Math.abs(z + 6.5));
+    const band = 1 - smooth(0.9, 1.6, Math.abs(z + 6.5));
     if (band > 0) h = Math.max(h, 3.05 + (h - 3.05) * (1 - band));
   }
   return h;

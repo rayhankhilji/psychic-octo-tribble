@@ -356,7 +356,9 @@ export class Scenery {
       if (x > -37.6 && z < -2.4) continue;
       const blk = BLOCKS.find((q) => Math.abs(q.bx * 5 - x) <= 3 && Math.abs(q.bz * 5 - z) <= 3);
       if (blk && blk.use !== 'presidio' && blk.use !== 'hill') continue;
-      if (Math.abs(x + 34.6) < 0.8 && z > 0) continue; // parkway
+      if (Math.abs(x + 34.6) < 0.8 && z > 0) continue; // the Golden Gate viaduct
+      if (nearPath(PRESIDIO_PKWY, x, z, 0.9)) continue; // and the parkway it comes down onto
+      if (hidesCliffHouse(x, z)) continue;
       if (Math.abs(x + 39.8) < 0.7) continue; // highway
       const y = terrainHeight(x, z);
       eucalyptus(b, r, x, z, y, r() < 0.5);
@@ -1008,6 +1010,7 @@ export class Scenery {
         const z = gz + (r() - 0.5) * step;
         const y = terrainHeight(x, z);
         if (y < 0.4 || coastDistance(x, z) > -0.8 || gradeWeight(x, z) > 0) continue;
+        if (hidesCliffHouse(x, z)) continue;
         const e = 0.4;
         const ex = terrainHeight(x + e, z) + terrainHeight(x - e, z);
         const ez = terrainHeight(x, z + e) + terrainHeight(x, z - e);
@@ -1667,4 +1670,26 @@ function seawall(b: GeoBuilder, r: () => number, poly: readonly Pt[], top = 0) {
       b.box(0.14, 0.06, 0.38, x - nx * 0.06, top - 0.02, z - nz * 0.06, 0xd8d2c4, false, along);
     }
   }
+}
+
+/** Whether (x, z) is within `d` of a polyline. */
+function nearPath(path: readonly Pt[], x: number, z: number, d: number): boolean {
+  for (let i = 0; i < path.length - 1; i++) {
+    const [ax, az] = path[i]!;
+    const [bx, bz] = path[i + 1]!;
+    const dx = bx - ax;
+    const dz = bz - az;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+    if (Math.hypot(x - ax - dx * t, z - az - dz * t) < d) return true;
+  }
+  return false;
+}
+
+/** Ground the Cliff House stands on, and the view of it: no trees on the rise between it and the camera (north-east). */
+function hidesCliffHouse(x: number, z: number): boolean {
+  const dx = x + 46.8;
+  const dz = z + 1.6;
+  const along = (dx + dz) / Math.SQRT2;
+  const across = (dx - dz) / Math.SQRT2;
+  return Math.hypot(dx, dz) < 1.8 || (along > 0 && along < 4.5 && Math.abs(across) < 1.6);
 }

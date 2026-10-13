@@ -349,6 +349,80 @@ Object.assign(SETS, {
     }),
 } satisfies Record<string, () => ShowItem[]>);
 
+// ─── The bay: boats and landmarks (`bay-*` sets) ──────────────────────────
+// Every boat: `?set=bay-boats&zoom=5` (az=225 for the other side).
+import { containerShip, ferryBoat, sloop, tugBoat } from '../render/life.ts';
+import { cityHall, cliffHouse, coitTower, conservatory, ferryBuilding, palaceOfFineArts, sutroTower, windmill } from '../render/landmarks.ts';
+import { terrainHeight as bayHeight } from '../world/map.ts';
+Object.assign(SETS, {
+  'bay-boats': (): ShowItem[] => [
+    { label: 'ferry (Golden Gate)', object: ferryBoat(0x2f6a4f).build().group, size: 1.6 },
+    { label: 'ferry (Bay Ferry)', object: ferryBoat(0x2a5a8a).build().group, size: 1.6 },
+    { label: 'tug', object: tugBoat(0xb8352a, 0x1c1c20).build().group, size: 1.6 },
+    { label: 'harbour tug', object: tugBoat(0x2f6a4f, 0x1c1c20).build().group, size: 1.6 },
+    ...[3, 8, 13].map((seed) => ({ label: `sloop ${seed}`, object: sloop(rng(seed)).build().group, size: 1.6 })),
+  ],
+  'bay-ship': (): ShowItem[] => [{ label: 'container ship', object: containerShip().build().group, size: 5 }],
+  /** The city's landmarks, each moved from its place on the map to the origin: `?set=bay-landmarks&zoom=1.6`. */
+  'bay-landmarks': (): ShowItem[] => {
+    const here = (label: string, g: THREE.Group, size = 4) => {
+      const box = new THREE.Box3().setFromObject(g);
+      const c = box.getCenter(new THREE.Vector3());
+      const inner = g;
+      inner.position.set(-c.x, -Math.max(0, bayHeight(c.x, c.z)), -c.z);
+      const o = new THREE.Group();
+      o.add(inner);
+      return { label, object: o, size };
+    };
+    return [
+      here('Ferry Building', ferryBuilding(), 6),
+      here('Coit Tower', coitTower()),
+      here('Palace of Fine Arts', palaceOfFineArts(), 6),
+      here('City Hall', cityHall(-15, -20), 6),
+      here('Cliff House', cliffHouse(), 6),
+      here('Dutch Windmill', windmill().group),
+      here('Conservatory of Flowers', conservatory(-16.5, -14.6), 5),
+      here('Sutro Tower', sutroTower()),
+    ];
+  },
+} satisfies Record<string, () => ShowItem[]>);
+// Boats under way with their wakes, circling: `?set=bay-wakes&zoom=2.4`.
+import { Wake } from '../render/life.ts';
+import { SEA as BAY_SEA } from '../world/map.ts';
+Object.assign(SETS, {
+  'bay-wakes': (): ShowItem[] =>
+    [
+      { label: 'ferry', model: ferryBoat(0x2f6a4f), L: 1.36, wake: new Wake(0.2, 1.1, 0.5), r: 2.6, v: 0.55 },
+      { label: 'tug', model: tugBoat(0xb8352a, 0x1c1c20), L: 0.56, wake: new Wake(0.1, 0.8, 0.4), r: 1.6, v: 0.45 },
+      { label: 'sloop', model: sloop(rng(3)), L: 0.62, wake: new Wake(0.06, 0.7, 0.3), r: 1.8, v: 0.3 },
+    ].map(({ label, model, L, wake, r, v }) => {
+      // Lifted so the water line sits on the showcase floor.
+      const g = new THREE.Group();
+      g.position.y = -BAY_SEA + 0.01;
+      const boat = model.build().group;
+      const water = new THREE.Mesh(new THREE.CircleGeometry(r + 1.6, 40).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x2a86c8, roughness: 0.4 }));
+      water.position.y = BAY_SEA + 0.004;
+      g.add(water, boat, wake.mesh);
+      const bow = new THREE.Vector3();
+      let t = 0;
+      return {
+        label,
+        object: g,
+        size: 6,
+        // Fixed 60 Hz steps, so a slow software renderer still lays the wake down as a real frame rate would.
+        update: () => {
+          for (let k = 0, steps = t === 0 ? 600 : 8; k < steps; k++) {
+            t += 1 / 60;
+            const a = (t * v) / r;
+            boat.position.set(Math.cos(a) * r, BAY_SEA + 0.02, Math.sin(a) * r);
+            boat.rotation.y = -a - Math.PI / 2;
+            bow.set(Math.cos(a) * r - Math.sin(a) * L * 0.5, 0, Math.sin(a) * r + Math.cos(a) * L * 0.5);
+            wake.update(1 / 60, bow, 1);
+          }
+        },
+      };
+    }),
+} satisfies Record<string, () => ShowItem[]>);
 
 // ─── Landscape: the flora and rock of the open hills: `?set=ls-flora&zoom=6` ──
 import { gum as lsGum, oak as lsOak, pine as lsPine, rock as lsRock, scrub as lsScrub } from '../render/hills.ts';

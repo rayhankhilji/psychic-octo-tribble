@@ -172,9 +172,13 @@ export class Fireworks {
   }
 
   update(dt: number) {
+    // Most frames there's nothing in the sky: don't allocate anything for it.
+    if (!this.queue.length && !this.bursts.length) return;
     for (const q of this.queue) q.delay -= dt;
-    for (const q of this.queue.filter((q) => q.delay <= 0)) this.spawn(q.at, q.colour);
-    this.queue = this.queue.filter((q) => q.delay > 0);
+    if (this.queue.length) {
+      for (const q of this.queue.filter((q) => q.delay <= 0)) this.spawn(q.at, q.colour);
+      this.queue = this.queue.filter((q) => q.delay > 0);
+    }
 
     for (const b of this.bursts) {
       const geo = b.points.geometry;
@@ -254,6 +258,9 @@ export class Train {
   /** Share of the line per second (kept for the old loop's units). */
   speed = 0.02;
   private boost = 0;
+  /** Scratch vectors for the per-frame update. */
+  private at = new THREE.Vector3();
+  private heading = new THREE.Vector3();
 
   constructor(path: readonly (readonly [number, number])[], height: (x: number, z: number) => number = () => 0) {
     const pts = densify(path, 1).map(([x, z]) => new THREE.Vector3(x, height(x, z), z));
@@ -323,8 +330,8 @@ export class Train {
         }
       }
       const u = car.d / this.length;
-      const p = this.curve.getPointAt(u);
-      const t = this.curve.getTangentAt(u);
+      const p = this.curve.getPointAt(u, this.at);
+      const t = this.curve.getTangentAt(u, this.heading);
       if (car.dir < 0) t.negate();
       // Keep right: each direction has its own track.
       car.group.position.set(p.x + t.z * 0.36, p.y + 0.02, p.z - t.x * 0.36);
