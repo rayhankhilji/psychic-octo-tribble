@@ -1,4 +1,4 @@
-import { render, type Block, type Brand } from './templates.ts';
+import { cityPicture, render, type Block, type Brand } from './templates.ts';
 
 /**
  * Supabase Auth's own emails (magic link, confirm sign-up, change email,
@@ -29,8 +29,8 @@ const brand: Brand = { appUrl: SITE, replies: false, supportEmail: null, postalA
 
 const fallback: Block = { kind: 'note', parts: ['Button not working? Copy this link into your browser: ', { a: CONFIRM, href: CONFIRM }] };
 
-function build(file: string, name: string, subject: string, title: string, preheader: string, blocks: Block[], reason: string): AuthTemplate {
-  const html = render(brand, { subject, preheader, title, blocks, reason }).html
+function build(file: string, name: string, subject: string, eyebrow: string, title: string, preheader: string, blocks: Block[], reason: string): AuthTemplate {
+  const html = render(brand, { subject, preheader, eyebrow, title, blocks, reason }).html
     .replaceAll(CONFIRM, '{{ .ConfirmationURL }}')
     .replaceAll(`${SITE}/`, '{{ .SiteURL }}/')
     .replaceAll(SITE, '{{ .SiteURL }}')
@@ -46,6 +46,7 @@ export function authTemplates(): AuthTemplate[] {
       'magic_link.html',
       'Magic link',
       'Your TinyTown sign-in link',
+      'Sign-in link',
       'Sign in to TinyTown',
       'Your sign-in link. It works once and expires in an hour.',
       [
@@ -60,6 +61,7 @@ export function authTemplates(): AuthTemplate[] {
       'confirmation.html',
       'Confirm signup',
       'Confirm your email for TinyTown',
+      'New account',
       'Confirm your email',
       'Confirm your email and you’re in.',
       [
@@ -74,6 +76,7 @@ export function authTemplates(): AuthTemplate[] {
       'email_change.html',
       'Change email address',
       'Confirm your new TinyTown email',
+      'Your account',
       'Confirm your new email',
       'Confirm the change to your TinyTown sign-in address.',
       [
@@ -89,10 +92,12 @@ export function authTemplates(): AuthTemplate[] {
       'invite.html',
       'Invite user',
       'You’re invited to TinyTown',
+      'Your invite',
       'You’re invited',
       'Your startup’s real numbers, built into a little San Francisco Bay.',
       [
         { kind: 'p', parts: ['You’ve been invited to TinyTown, where your startup’s real numbers build a little San Francisco Bay. Every $1 of MRR is $10,000 to build with, and your own house climbs from a hacker house to the moon.'] },
+        cityPicture(brand),
         { kind: 'button', label: 'Accept the invite', url: CONFIRM },
         { kind: 'note', parts: ['The link works once. ', IGNORE] },
         fallback,
@@ -103,6 +108,7 @@ export function authTemplates(): AuthTemplate[] {
       'reauthentication.html',
       'Reauthentication',
       'Your TinyTown verification code',
+      'Verification',
       'Confirm it’s you',
       'Your verification code for TinyTown.',
       [
@@ -116,6 +122,7 @@ export function authTemplates(): AuthTemplate[] {
       'recovery.html',
       'Reset password',
       'Sign in to TinyTown',
+      'Sign-in link',
       'Sign in to TinyTown',
       'TinyTown has no passwords: this link signs you in.',
       [

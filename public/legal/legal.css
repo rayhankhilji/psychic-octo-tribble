@@ -29,9 +29,12 @@
   --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   --edge: 16px;
-  --measure: 680px;
-  /* The nav column, the gap and the text column, plus the gutters: header, body and footer share one width. */
-  --page: 976px;
+  /* About 70 characters a line at the body size: long enough to flow, short enough to track back. */
+  --measure: 640px;
+  /* The side column, the gap and the text column, plus the gutters: header, body and footer share one width. */
+  --page: 968px;
+  --ink-4: #8e8c93;
+  --warn-line: rgba(110, 72, 0, 0.16);
   color-scheme: light;
 }
 
@@ -48,8 +51,10 @@
     --accent: #ff6a3d;
     --accent-text: #ff8a62;
     --accent-soft: rgba(255, 106, 61, 0.16);
-    --warn-soft: #3a2f17;
+    --warn-soft: #2b2617;
     --warn-text: #f6cf7d;
+    --warn-line: rgba(246, 207, 125, 0.2);
+    --ink-4: #75778d;
     --focus: #78b2ef;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     color-scheme: dark;
@@ -65,7 +70,13 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  scroll-padding-top: 24px;
+  scroll-padding-top: 28px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 body {
@@ -115,15 +126,26 @@ a:hover {
 .draft {
   margin: 0;
   padding: 9px var(--edge);
-  background: var(--warn-soft);
+  /* Faint hazard stripes, as on a building site: this page is still going up. */
+  background: repeating-linear-gradient(-45deg, transparent 0 10px, var(--warn-line) 10px 11px), var(--warn-soft);
+  border-bottom: 1px solid var(--warn-line);
   color: var(--warn-text);
   font-size: 13.5px;
   line-height: 1.45;
   text-align: center;
+  text-wrap: balance;
 }
 
 .draft strong {
-  font-weight: 650;
+  display: inline-block;
+  margin-right: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warn-line);
+  font: 600 11px/1.4 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: 1px;
 }
 
 /* Header */
@@ -190,6 +212,10 @@ a:hover {
   gap: 20px;
 }
 
+.side {
+  min-width: 0;
+}
+
 .docs {
   display: flex;
   gap: 4px;
@@ -224,21 +250,30 @@ a:hover {
   border-bottom-color: var(--accent);
 }
 
-.docs .label {
+.docs .label,
+.toc {
   display: none;
 }
 
 @media (min-width: 960px) {
   .layout {
-    grid-template-columns: 200px minmax(0, var(--measure));
-    gap: 64px;
+    grid-template-columns: 216px minmax(0, var(--measure));
+    gap: 72px;
     padding-top: 40px;
   }
 
-  .docs {
+  /* The documents, then this page's sections, held in view while the text scrolls. */
+  .side {
     position: sticky;
-    top: 32px;
+    top: 28px;
     align-self: start;
+    max-height: calc(100vh - 56px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    padding-bottom: 8px;
+  }
+
+  .docs {
     flex-direction: column;
     gap: 2px;
     margin: 0;
@@ -247,13 +282,57 @@ a:hover {
     overflow: visible;
   }
 
-  .docs .label {
+  .side .label {
     display: block;
     margin: 0 0 8px 10px;
     color: var(--ink-3);
     font: 500 11.5px/1 var(--font-mono);
     letter-spacing: 0.06em;
     text-transform: uppercase;
+  }
+
+  .toc {
+    display: block;
+    margin-top: 28px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+  }
+
+  .toc ol {
+    margin: 0;
+    padding: 0 0 0 10px;
+    list-style: none;
+  }
+
+  .toc li {
+    margin: 0;
+    padding: 0;
+  }
+
+  .toc a {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 0 4px 12px;
+    margin-left: -1px;
+    border-left: 1px solid var(--line);
+    color: var(--ink-3);
+    font-size: 13px;
+    line-height: 1.4;
+    text-decoration: none;
+    transition: color 120ms, border-color 120ms;
+  }
+
+  .toc a:hover {
+    color: var(--ink);
+    border-left-color: var(--accent);
+  }
+
+  .toc .n {
+    flex: none;
+    min-width: 1.4em;
+    color: var(--ink-4);
+    font: 500 11px/1 var(--font-mono);
   }
 
   .docs a {
@@ -352,18 +431,24 @@ h1 {
 }
 
 h2 {
-  margin: 48px 0 0;
-  padding-top: 24px;
+  margin: 56px 0 0;
+  padding-top: 28px;
   border-top: 1px solid var(--line);
-  font: 700 23px/1.25 var(--font-display);
-  font-stretch: 94%;
-  letter-spacing: -0.02em;
+  font: 750 24px/1.25 var(--font-display);
+  font-stretch: 92%;
+  letter-spacing: -0.022em;
   text-wrap: balance;
+}
+
+h2 + p,
+h2 + ul,
+h2 + ol {
+  margin-top: 14px;
 }
 
 h2 .n {
   display: inline-block;
-  min-width: 1.6em;
+  min-width: 1.9em;
   color: var(--ink-3);
   font: 500 15px/1 var(--font-mono);
   letter-spacing: 0;
@@ -371,10 +456,22 @@ h2 .n {
 }
 
 h3 {
-  margin: 28px 0 0;
+  margin: 32px 0 0;
   font-size: 17px;
   font-weight: 650;
   line-height: 1.4;
+  letter-spacing: -0.005em;
+}
+
+h3 + p,
+h3 + ul {
+  margin-top: 6px;
+}
+
+p,
+li {
+  text-wrap: pretty;
+  hanging-punctuation: first;
 }
 
 p,
@@ -499,36 +596,103 @@ td:first-child {
   word-break: break-all;
 }
 
-/* Footer */
+/* Footer: the mark and the five pages, then the small print over a faint skyline. */
 .foot {
   border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
 }
 
 .foot-inner {
   max-width: var(--page);
   margin: 0 auto;
-  padding: 22px var(--edge) 32px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  justify-content: space-between;
+  padding: 32px var(--edge) 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px 32px;
   color: var(--ink-3);
   font-size: 13.5px;
 }
 
-.foot nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
+.foot-brand .brand {
+  font-size: 19px;
 }
 
-.foot a {
-  color: var(--ink-3);
+.foot-brand .brand img {
+  width: 26px;
+  height: 26px;
+}
+
+.foot-brand p {
+  margin: 8px 0 0;
+}
+
+.foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 4px 20px;
+  padding-top: 4px;
+}
+
+.foot-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--ink-2);
+  font-weight: 520;
   text-decoration: none;
 }
 
-.foot a:hover {
+.foot-links a:hover {
   color: var(--ink);
+}
+
+.foot-base {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.foot-sky {
+  flex: none;
+  width: 168px;
+  height: auto;
+  overflow: visible;
+  opacity: 0.7;
+}
+
+.foot-sky path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+
+.foot-sky .c {
+  stroke: var(--ink-3);
+}
+
+.foot-sky .b {
+  stroke: var(--accent);
+}
+
+.foot-sky .s {
+  stroke: #f6b53d;
+}
+
+.foot-sky .w {
+  stroke: var(--focus);
+  opacity: 0.6;
+}
+
+@media (max-width: 640px) {
+  .foot-inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 520px) {
@@ -547,17 +711,52 @@ td:first-child {
 }
 
 @media print {
-  .draft,
+  @page {
+    margin: 18mm 16mm;
+  }
+
   .top .to-city,
-  .docs,
-  .foot nav {
+  .side,
+  .skip,
+  .foot-links,
+  .foot-sky,
+  .foot-brand p {
     display: none;
+  }
+
+  :root {
+    --ink: #000;
+    --ink-2: #222;
+    --ink-3: #555;
+    --line: #ccc;
+    --surface: #fff;
+    --surface-2: #f2f2f2;
+    --accent-text: #000;
   }
 
   body {
     background: #fff;
     color: #000;
-    font-size: 11pt;
+    font-size: 10.5pt;
+    line-height: 1.5;
+  }
+
+  /* Keep the draft warning on paper too, as a plain line. */
+  .draft {
+    padding: 0 0 8px;
+    background: none;
+    border-bottom: 1px solid #000;
+    color: #000;
+    text-align: left;
+  }
+
+  .draft strong {
+    padding: 0;
+    background: none;
+  }
+
+  .top {
+    padding: 12px 0;
   }
 
   .layout {
@@ -565,9 +764,64 @@ td:first-child {
     padding: 0;
   }
 
+  article {
+    max-width: none;
+  }
+
+  h1 {
+    font-size: 26pt;
+  }
+
+  h2 {
+    margin-top: 22pt;
+    padding-top: 10pt;
+    font-size: 14pt;
+    break-after: avoid;
+  }
+
+  h3 {
+    break-after: avoid;
+  }
+
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+
   .summary,
   .table,
-  .card {
+  .card,
+  .note,
+  tr {
     box-shadow: none;
+    break-inside: avoid;
+  }
+
+  .summary li::before {
+    background: #000;
+  }
+
+  /* On paper a link can't be followed, so print where it goes. */
+  article a[href^='http']::after,
+  article a[href^='/']::after {
+    content: ' (' attr(href) ')';
+    font-size: 0.85em;
+    color: #555;
+    word-break: break-all;
+  }
+
+  .foot {
+    border: 0;
+    background: none;
+  }
+
+  .foot-inner {
+    display: block;
+    padding: 12pt 0 0;
+  }
+
+  .foot-base {
+    border-top: 1px solid #ccc;
   }
 }

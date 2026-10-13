@@ -40,8 +40,9 @@ describe('email templates', () => {
     expect(e.html).toContain('<html lang="en"');
     expect(e.html).toContain('<meta name="color-scheme" content="light dark">');
     expect(e.html).toContain('@media (prefers-color-scheme: dark)');
-    expect(e.html).toContain('max-width:560px');
-    expect(e.html).toContain('src="https://tinytown.test/apple-touch-icon.png"');
+    expect(e.html).toContain('max-width:600px');
+    expect(e.html).toContain('src="https://tinytown.test/email/header@2x.png"');
+    expect(e.html).toContain('src="https://tinytown.test/email/header-night@2x.png"');
     expect(e.html).toContain('Reply to this email');
     // No scripts, no remote styles, no tracking pixels.
     expect(e.html).not.toMatch(/<script|<link|<iframe/i);
@@ -109,7 +110,7 @@ describe('Supabase auth templates', () => {
     if (process.env.UPDATE_EMAIL_TEMPLATES) writeFileSync(new URL(file, dir), t.html);
     // Regenerate with: UPDATE_EMAIL_TEMPLATES=1 npx vitest run tests/server-email-templates.test.ts
     expect(readFileSync(new URL(file, dir), 'utf8')).toBe(t.html);
-    expect(t.html).toContain('{{ .SiteURL }}/apple-touch-icon.png');
+    expect(t.html).toContain('{{ .SiteURL }}/email/header@2x.png');
     expect(t.html).not.toContain('.invalid');
     if (file === 'reauthentication.html') expect(t.html).toContain('{{ .Token }}');
     else expect(t.html).toContain('href="{{ .ConfirmationURL }}"');

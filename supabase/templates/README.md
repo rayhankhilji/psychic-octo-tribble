@@ -57,7 +57,7 @@ Once custom SMTP is on, Supabase starts the email limit at **30 an hour** for th
 
 Also check **Authentication → Providers → Email**: keep **Email OTP Expiration** at `3600` seconds (the emails say links expire in an hour), and leave **Confirm email** on.
 
-And **Authentication → URL Configuration → Site URL** must be the app's address with no trailing slash (the same value as `APP_URL`): the emails load the logo from `{{ .SiteURL }}/apple-touch-icon.png`.
+And **Authentication → URL Configuration → Site URL** must be the app's address with no trailing slash (the same value as `APP_URL`): the emails load their masthead from `{{ .SiteURL }}/email/header@2x.png` (and the invite its picture of the city from `{{ .SiteURL }}/email/city@2x.jpg`). Those images live in `public/email/` and are rendered by `node tools/email-assets.mjs`; they must stay at those paths, because emails already sent keep pointing at them.
 
 Release waves in steps (for example 500, then 1,000, then 2,000 at a time) and watch Resend's **Logs** for bounces and 429s between them.
 
