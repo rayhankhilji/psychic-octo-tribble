@@ -22,7 +22,8 @@ Built and committed (2026-10-13): accounts, billing, the paywall, onboarding, th
 - [ ] **Owner: capacity for launch day** (from the load test, `tools/loadtest.mjs`): one founder opening their city and building costs ~36 database calls, so the database is the main risk at 10,000 founders. Run Supabase on Small or Medium compute for launch week and watch database CPU. Raise Supabase's auth "Email sent" limit past the wave size. Ask Stripe Support for higher limits only if you expect a sale-sized rush (they want weeks of notice).
 - [ ] Cut database calls per session (the load test counted `subscriptions` read 7 times and `profiles` 6 times per page load): fold the plan into `/api/me`'s response for the page's lifetime, batch the world and actions reads. Never cache "has paid" across requests: revocation must be immediate.
 - [ ] Optional: env-overridable provider base URLs (loopback only) so e2e can run without the fetch-rewriting preload (patch in the QA report, kept in `tools/fake-providers.mjs` comments).
-- [ ] Known gaps: admins should need MFA (`aal2`); founders must remove the Stripe App themselves after deleting; per-instance limits on telemetry; `style-src 'unsafe-inline'`; one Stripe account can connect to several cities; no in-app email preferences screen yet.
+- [x] Admins need a second factor: `/api/admin/*` refuses sessions below `aal2` (`mfa_required`), and the console walks an admin through adding an authenticator the first time. `ADMIN_MFA=off` for local testing.
+- [ ] Known gaps: founders must remove the Stripe App themselves after deleting; per-instance limits on telemetry; `style-src 'unsafe-inline'`; one Stripe account can connect to several cities; no in-app email preferences screen yet.
 
 ## P1: The reference-image quality push (in progress)
 

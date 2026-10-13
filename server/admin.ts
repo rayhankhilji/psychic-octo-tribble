@@ -293,7 +293,27 @@ async function authorize(ctx: Ctx): Promise<{ h: Hosted; admin: Admin }> {
     throw err;
   }
   if (!isAdmin(ctx, user)) throw notFound();
+  // The console can give plans away and read every founder: a stolen email
+  // inbox mustn't be enough. Admins confirm with an authenticator app (aal2).
+  if (ctx.env.ADMIN_MFA !== 'off' && assurance(bearer(ctx.req)!) !== 'aal2') {
+    throw new HttpError(403, 'Confirm it’s you with your authenticator app to open the console.', 'mfa_required');
+  }
   return { h, admin: { id: user.id, email: normalizeEmail(user.email)! } };
+}
+
+/**
+ * The assurance level Supabase wrote into the access token: `aal2` once the
+ * session has passed a second factor. Read without checking the signature,
+ * which is safe only because requireUser has just had Supabase accept this
+ * exact token.
+ */
+function assurance(token: string): string | null {
+  try {
+    const claims = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as { aal?: unknown };
+    return typeof claims.aal === 'string' ? claims.aal : null;
+  } catch {
+    return null;
+  }
 }
 
 // ─── Overview ─────────────────────────────────────────────────────────────

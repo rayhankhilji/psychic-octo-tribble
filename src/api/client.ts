@@ -71,6 +71,7 @@ function codeForStatus(status: number): ErrorCode {
 const FALLBACK: Record<ErrorCode | 'network', string> = {
   unauthenticated: 'Your session has ended. Sign in again to carry on.',
   payment_required: 'This needs an active TinyTown plan.',
+  mfa_required: 'Confirm it’s you with your authenticator app.',
   rejected: "The game didn't allow that.",
   not_configured: "Accounts aren't set up on this server.",
   not_connected: "That account isn't connected yet.",

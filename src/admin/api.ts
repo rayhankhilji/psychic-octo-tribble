@@ -7,9 +7,12 @@ import { ADMIN_ROUTES, INVITE_BATCH_MAX, type AdminMe, type AuditEntry, type Inv
 
 export class AdminError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** The server's error code, e.g. `mfa_required`. */
+  code: string | undefined;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -41,8 +44,8 @@ export class AdminApi {
     } catch {
       throw new AdminError(0, "Couldn't reach the server. Check your connection.");
     }
-    const data = (await res.json().catch(() => null)) as { error?: string } | null;
-    if (!res.ok) throw new AdminError(res.status, data?.error ?? `The server answered ${res.status}.`);
+    const data = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
+    if (!res.ok) throw new AdminError(res.status, data?.error ?? `The server answered ${res.status}.`, data?.code);
     return data as T;
   }
 

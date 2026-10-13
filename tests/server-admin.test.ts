@@ -170,7 +170,11 @@ class AdminFake extends FakeSupabase {
 }
 
 const ADMIN = { id: '6f1c2b7e-0000-4000-8000-0000000000ad', email: 'Boss@TinyTown.test' };
-const ADMIN_TOKEN = 'admin-access-token';
+/** A token shaped like Supabase's after a second factor (aal2); the fake auth accepts it as the admin. */
+const jwt = (claims: Record<string, unknown>) => `e30.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.sig`;
+const ADMIN_TOKEN = jwt({ aal: 'aal2', sub: 'admin' });
+/** The same admin, signed in with a password or link only (aal1). */
+const ADMIN_AAL1 = jwt({ aal: 'aal1', sub: 'admin' });
 const OTHER = { id: '6f1c2b7e-0000-4000-8000-000000000002', email: 'second@example.com' };
 const OTHER_TOKEN = 'other-access-token';
 
@@ -194,6 +198,7 @@ beforeEach(() => {
   db = new AdminFake();
   db.users.set(TOKEN, USER);
   db.users.set(ADMIN_TOKEN, ADMIN);
+  db.users.set(ADMIN_AAL1, ADMIN);
   db.users.set(OTHER_TOKEN, OTHER);
   db.account(USER.id, USER.email);
   db.account(ADMIN.id, ADMIN.email.toLowerCase());
@@ -326,6 +331,16 @@ describe('/api/admin is invisible to everyone but admins', () => {
     }
     expect(db.tables.waitlist).toHaveLength(0);
     expect(db.tables.admin_audit).toHaveLength(0);
+  });
+
+  it('asks an admin without a second factor to confirm it, and lets them in once they have', async () => {
+    stubFetch(db);
+    const res = await call('GET', '/api/admin/overview', { token: ADMIN_AAL1, env: WAITLIST_ENV });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: expect.stringContaining('authenticator'), code: 'mfa_required' });
+    expect((await call('GET', '/api/admin/me', { token: ADMIN_TOKEN, env: WAITLIST_ENV })).status).toBe(200);
+    // The owner can switch it off (say, before setting up an authenticator).
+    expect((await call('GET', '/api/admin/me', { token: ADMIN_AAL1, env: { ...WAITLIST_ENV, ADMIN_MFA: 'off' } })).status).toBe(200);
   });
 
   it('serves an admin, and 404s their unknown routes and wrong methods too', async () => {

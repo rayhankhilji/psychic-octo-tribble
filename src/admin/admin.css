@@ -1032,6 +1032,9 @@ dialog .actions {
   margin: 0;
   color: var(--ink-2);
 }
+.gate-card .form-error {
+  color: var(--bad);
+}
 .gate-card form {
   display: grid;
   gap: 10px;
@@ -1040,6 +1043,29 @@ dialog .actions {
 .gate-card .btn {
   width: 100%;
   height: 36px;
+}
+/* Second factor: the QR code sits on white in both themes, so every phone can read it. */
+.gate-card img.mfa-qr {
+  width: 168px;
+  height: 168px;
+  padding: 10px;
+  border-radius: var(--r-md);
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.mfa-secret {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--t-sm);
+  letter-spacing: 0.08em;
+  word-break: break-all;
+  user-select: all;
+  color: var(--ink);
+}
+.mfa-input {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.4em;
+  text-align: center;
+  font-size: var(--t-lg);
 }
 .or {
   display: flex;

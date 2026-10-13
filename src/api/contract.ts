@@ -15,7 +15,7 @@
 import { DAY, type Timeline } from '../data/types.ts';
 import type { Action, SimOptions } from '../game/economy.ts';
 
-export type ErrorCode = 'unauthenticated' | 'payment_required' | 'rejected' | 'not_configured' | 'not_connected' | 'upstream' | 'bad_request' | 'not_invited' | 'rate_limited';
+export type ErrorCode = 'unauthenticated' | 'payment_required' | 'rejected' | 'not_configured' | 'not_connected' | 'upstream' | 'bad_request' | 'not_invited' | 'rate_limited' | 'mfa_required';
 
 export interface ApiError {
   error: string;

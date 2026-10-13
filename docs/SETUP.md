@@ -170,6 +170,7 @@ Public values can be seen by anyone; secret ones must only ever live in Vercel a
 | `STRIPE_API_VERSION` | Optional override of the pinned version | Public |
 | `ACCESS_MODE` | `waitlist` for launch, `open` after the last wave; unset locally | Public |
 | `ADMIN_EMAILS` | Your email (comma-separated list) for `/admin.html` | Keep server-side |
+| `ADMIN_MFA` | Leave unset: the console asks admins for an authenticator code (Supabase → Authentication → Multi-factor: TOTP on, the default). `off` only for local testing | Public |
 | `SUPPORT_EMAIL` | The address founders write to | Public |
 | `TURNSTILE_SITE_KEY` | Cloudflare → Turnstile → your widget → site key (the secret key goes into Supabase → Auth → Bot protection) | Public |
 | `RESEND_API_KEY` | Resend → API keys (sending access) | **Secret** |

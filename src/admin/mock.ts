@@ -242,6 +242,9 @@ export async function mockFetch(input: string, init: RequestInit = {}): Promise<
   const method = init.method ?? 'GET';
   const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
 
+  if (new URLSearchParams(location.search).has('mfa') && sessionStorage.getItem('tt-mock-aal2') !== '1') {
+    return new Response(JSON.stringify({ error: 'Confirm it’s you with your authenticator app to open the console.', code: 'mfa_required' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+  }
   if (path === '/me') return ok({ email: 'owner@tinytown.dev', access: 'waitlist', now: Date.now() });
   if (path === '/overview') return ok(overview());
   if (path === '/waitlist' && method === 'GET') return ok(waitlistPage(url.searchParams));

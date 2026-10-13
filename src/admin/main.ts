@@ -73,6 +73,7 @@ async function boot() {
   try {
     me = await api.me();
   } catch (err) {
+    if (err instanceof AdminError && err.code === 'mfa_required') return secondFactor(auth, email);
     if (err instanceof AdminError && (err.status === 404 || err.status === 401)) {
       return gate(
         'Not an admin account',
@@ -127,6 +128,74 @@ function signIn(auth: ConsoleAuth) {
     } catch (err) {
       error.textContent = err instanceof Error ? err.message : 'That didn’t work.';
       error.hidden = false;
+    }
+  });
+}
+
+/**
+ * The console needs a session that has passed a second factor. Admins with an
+ * authenticator enter a code; the first time, they add one by scanning a QR
+ * code. Either way the session is raised to aal2 and the console reloads.
+ */
+async function secondFactor(auth: ConsoleAuth, email: string) {
+  let factorId: string | null;
+  try {
+    factorId = await auth.mfa.factor();
+  } catch (err) {
+    return gate('Two-step sign-in didn’t load', `<p>${esc(err instanceof Error ? err.message : 'Unknown error')}</p><button class="btn" type="button" data-signout>Sign out</button>`, auth);
+  }
+  let setup: { qr: string; secret: string } | null = null;
+  if (!factorId) {
+    try {
+      const started = await auth.mfa.enroll();
+      factorId = started.factorId;
+      setup = started;
+    } catch (err) {
+      return gate(
+        'Two-step sign-in isn’t available',
+        `<p>${esc(err instanceof Error ? err.message : 'Unknown error')}</p><p class="note">Turn on TOTP under Supabase → Authentication → Multi-factor, or set ADMIN_MFA=off while you do.</p><button class="btn" type="button" data-signout>Sign out</button>`,
+        auth,
+      );
+    }
+  }
+  gate(
+    setup ? 'Add an authenticator' : 'Confirm it’s you',
+    `${
+      setup
+        ? `<p>The console can give plans away and see every founder, so it asks for a second step. Scan this with an authenticator app (1Password, Google Authenticator, Authy), then enter the 6-digit code it shows.</p>
+           <img class="mfa-qr" src="${esc(setup.qr)}" alt="QR code for your authenticator app" width="168" height="168" />
+           <p class="note">Can’t scan? Enter this key instead: <code class="mfa-secret">${esc(setup.secret)}</code></p>`
+        : `<p>Signed in as <b>${esc(email)}</b>. Enter the 6-digit code from your authenticator app.</p>`
+    }
+     <form data-code class="mfa-form">
+       <label class="field"><span>Code</span><input class="input mfa-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required aria-describedby="mfa-error" /></label>
+       <button class="btn primary" type="submit">${setup ? 'Turn on and continue' : 'Continue'}</button>
+       <p class="form-error" id="mfa-error" role="alert" hidden></p>
+     </form>
+     <button class="btn ghost sm" type="button" data-signout>Sign out</button>`,
+    auth,
+  );
+  const form = app.querySelector<HTMLFormElement>('[data-code]')!;
+  const input = form.querySelector<HTMLInputElement>('input')!;
+  const error = form.querySelector<HTMLElement>('.form-error')!;
+  input.focus();
+  input.addEventListener('input', () => {
+    input.value = input.value.replace(/\D/g, '').slice(0, 6);
+    if (input.value.length === 6) form.requestSubmit();
+  });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const button = form.querySelector<HTMLButtonElement>('button[type=submit]')!;
+    button.disabled = true;
+    try {
+      await auth.mfa.verify(factorId!, input.value);
+      location.reload();
+    } catch (err) {
+      error.textContent = err instanceof Error ? err.message : 'That code didn’t work.';
+      error.hidden = false;
+      input.setAttribute('aria-invalid', 'true');
+      input.select();
+      button.disabled = false;
     }
   });
 }
