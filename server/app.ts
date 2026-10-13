@@ -86,7 +86,7 @@ async function route(ctx: Ctx): Promise<Response> {
   await checkAccess(h, user);
   if (connectDelete && method === 'DELETE') {
     await requirePaid(h, user);
-    rateLimit(`connect:${user.id}`, 20, ctx.now);
+    await rateLimit(`connect:${user.id}`, 20, ctx.now, { ctx: h });
     return json(await disconnect(h, user.id, connectDelete[1] as Provider));
   }
   const fn = handler![method];
@@ -101,7 +101,7 @@ const paid =
   (limit: number | null, fn: Handler): Handler =>
   async (ctx, user) => {
     await requirePaid(ctx, user);
-    if (limit !== null) rateLimit(`${ctx.req.method} ${ctx.url.pathname}:${user.id}`, limit, ctx.now);
+    if (limit !== null) await rateLimit(`${ctx.req.method} ${ctx.url.pathname}:${user.id}`, limit, ctx.now, { ctx });
     return fn(ctx, user);
   };
 
@@ -109,13 +109,13 @@ const ROUTE_TABLE: Record<string, Record<string, Handler>> = {
   [ROUTES.me]: { GET: async (ctx, user) => json(await me(ctx, user)) },
   [ROUTES.checkout]: {
     POST: async (ctx, user) => {
-      rateLimit(`checkout:${user.id}`, 10, ctx.now);
+      await rateLimit(`checkout:${user.id}`, 10, ctx.now, { ctx });
       return json(await checkout(ctx, user, await readJson(ctx.req)));
     },
   },
   [ROUTES.portal]: {
     POST: async (ctx, user) => {
-      rateLimit(`portal:${user.id}`, 10, ctx.now);
+      await rateLimit(`portal:${user.id}`, 10, ctx.now, { ctx });
       return json(await portal(ctx, user));
     },
   },

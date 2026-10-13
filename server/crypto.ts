@@ -32,13 +32,37 @@ export function encrypt(plain: string, keyBase64: string, context: string): stri
   return ['v1', iv.toString('base64url'), data.toString('base64url'), cipher.getAuthTag().toString('base64url')].join('.');
 }
 
-export function decrypt(sealed: string, keyBase64: string, context: string): string {
+function open(sealed: string, keyBase64: string, context: string): string {
   const [version, iv, data, tag] = sealed.split('.');
   if (version !== 'v1' || !iv || data === undefined || !tag) throw new Error('Unreadable secret');
   const decipher = createDecipheriv('aes-256-gcm', aesKey(keyBase64), Buffer.from(iv, 'base64url'));
   decipher.setAAD(Buffer.from(context));
   decipher.setAuthTag(Buffer.from(tag, 'base64url'));
   return Buffer.concat([decipher.update(Buffer.from(data, 'base64url')), decipher.final()]).toString('utf8');
+}
+
+/**
+ * Opens a sealed secret with the first key that fits, current key first
+ * (`decryptionKeys()` in env.ts). `stale` says it needed an older key, so
+ * the caller can seal it again under the current one; once nothing is stale,
+ * TOKEN_ENCRYPTION_KEY_OLD can go. GCM's tag makes a wrong key fail loudly,
+ * never decrypt to rubbish.
+ */
+export function openSecret(sealed: string, keys: string | readonly string[], context: string): { plain: string; stale: boolean } {
+  const list = typeof keys === 'string' ? [keys] : keys;
+  let failure: unknown = new Error('Unreadable secret');
+  for (let i = 0; i < list.length; i++) {
+    try {
+      return { plain: open(sealed, list[i]!, context), stale: i > 0 };
+    } catch (err) {
+      failure = err;
+    }
+  }
+  throw failure;
+}
+
+export function decrypt(sealed: string, keys: string | readonly string[], context: string): string {
+  return openSecret(sealed, keys, context).plain;
 }
 
 // ─── OAuth state: HMAC-signed, expiring ───────────────────────────────────

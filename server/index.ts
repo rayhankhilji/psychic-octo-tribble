@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handle } from './app.ts';
-import { settings } from './env.ts';
+import { reportEnv, settings } from './env.ts';
 import { nodeHandler } from './node.ts';
 import { staticPath } from './static.ts';
 import { readConfig } from './timeline.ts';
@@ -56,6 +56,7 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, () => {
+  reportEnv(process.env);
   const s = settings(process.env);
   if (s.supabase) {
     const on = [s.billing && 'billing', s.stripeApp && `Stripe App (${s.stripeApp.livemode ? 'live' : 'test'})`, s.githubApp && 'GitHub App'].filter(Boolean);

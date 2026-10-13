@@ -1,6 +1,7 @@
-import { simOptionsFor, type ActionsResponse, type MeResponse, type WorldInfo } from '../src/api/contract.ts';
+import { isPaid, simOptionsFor, type ActionsResponse, type MeResponse, type WorldInfo } from '../src/api/contract.ts';
 import type { Action } from '../src/game/economy.ts';
 import { track } from './analytics.ts';
+import { hasAccess } from './billing.ts';
 import type { Hosted } from './context.ts';
 import { checkAction, parseAction } from './game.ts';
 import { HttpError, badRequest } from './http.ts';
@@ -15,7 +16,10 @@ export async function me(ctx: Hosted, user: AuthUser): Promise<MeResponse> {
     ctx.db.one<SubscriptionRow>('subscriptions', { user_id: user.id }),
     ctx.db.many<ConnectionRow>('connections', { user_id: user.id }),
   ]);
-  return { user: { id: user.id, email: user.email }, plan: planOf(sub), connections: connectionsOf(profile, rows), world: worldInfo(profile) };
+  const plan = planOf(sub);
+  // Agree with requirePaid: a plan cancelled at period end shows as ended once that period is over, even if its last webhook was lost.
+  if (sub && isPaid(plan.status) && !hasAccess(sub, ctx.now)) plan.status = 'canceled';
+  return { user: { id: user.id, email: user.email }, plan, connections: connectionsOf(profile, rows), world: worldInfo(profile) };
 }
 
 // Control characters and the bidi overrides people use to spoof text.

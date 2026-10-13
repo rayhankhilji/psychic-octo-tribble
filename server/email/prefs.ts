@@ -98,7 +98,7 @@ export async function handleUnsubscribe(ctx: Ctx): Promise<Response> {
   if (!ctx.s.supabase || !secret) return htmlPage(503, appUrl, 'Email settings aren’t available', ['This server isn’t set up to change email settings yet. Try again later.']);
   const raw = ctx.url.searchParams.get('token');
   // A speed bump per link against anyone hammering the endpoint.
-  rateLimit(`unsubscribe:${sha256(raw ?? '').slice(0, 24)}`, 20, ctx.now);
+  await rateLimit(`unsubscribe:${sha256(raw ?? '').slice(0, 24)}`, 20, ctx.now, { ctx });
   const token = readUnsubscribeToken(secret, raw);
   if (!token) return htmlPage(400, appUrl, 'That link doesn’t work', ['This unsubscribe link is incomplete or has been changed. Use the link from the latest email, or reply to any TinyTown email and we’ll sort it out.']);
 

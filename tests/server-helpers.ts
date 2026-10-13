@@ -22,6 +22,8 @@ export class FakeSupabase {
   /** access token → user */
   users = new Map<string, { id: string; email: string | null }>();
   authCalls = 0;
+  /** public.rate_hit(): hits per (hashed) key. Windows never roll over within a test. */
+  rateHits = new Map<string, number>();
   /** Called before each PATCH; lets a test change the row underneath (a race). */
   beforePatch: ((table: string) => void) | null = null;
 
@@ -41,6 +43,12 @@ export class FakeSupabase {
       const token = /^Bearer (.+)$/.exec(new Headers(init.headers).get('Authorization') ?? '')?.[1];
       const user = token ? this.users.get(token) : undefined;
       return user ? Response.json(user) : Response.json({ msg: 'invalid JWT' }, { status: 401 });
+    }
+    if (url.pathname === '/rest/v1/rpc/rate_hit') {
+      const b = JSON.parse(String(init.body)) as { p_key: string; p_window_s: number; p_max: number };
+      const n = (this.rateHits.get(b.p_key) ?? 0) + 1;
+      this.rateHits.set(b.p_key, n);
+      return Response.json([{ allowed: n <= b.p_max, retry_after_s: b.p_window_s }]);
     }
     const m = /^\/rest\/v1\/(\w+)$/.exec(url.pathname);
     if (!m) return Response.json({}, { status: 404 });

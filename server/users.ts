@@ -1,7 +1,8 @@
 import type { Connections } from '../src/api/contract.ts';
 import { startOfDay, type Snapshot } from '../src/data/types.ts';
 import type { Hosted } from './context.ts';
-import { decrypt, encrypt } from './crypto.ts';
+import { encrypt, openSecret } from './crypto.ts';
+import { decryptionKeys } from './env.ts';
 import { badRequest, notConfigured } from './http.ts';
 import { PERSONAL_KEY, PROJECT_ID, monthlyActiveUsers, posthogOrigin } from './posthog.ts';
 import { connectionsOf, ensureProfile, type ConnectionRow, type ProfileRow } from './store.ts';
@@ -85,7 +86,12 @@ export async function applyUsers(ctx: Hosted, profile: ProfileRow, rows: Connect
   }
   const ph = rows.find((r) => r.provider === 'posthog');
   if (profile.users_source === 'posthog' && ph?.secret && ctx.s.secrets) {
-    const key = decrypt(ph.secret, ctx.s.secrets.encryptionKey, `${profile.user_id}:posthog`);
+    const { plain: key, stale } = openSecret(ph.secret, decryptionKeys(ctx.s.secrets), `${profile.user_id}:posthog`);
+    // Sealed under the previous key: seal it again under the current one (key rotation, docs/SECURITY.md).
+    if (stale) {
+      const secret = encrypt(key, ctx.s.secrets.encryptionKey, `${profile.user_id}:posthog`);
+      await ctx.db.update('connections', { user_id: profile.user_id, provider: 'posthog' }, { secret }).catch(() => {});
+    }
     // Re-checked against today's allow-list, in case POSTHOG_HOSTS has changed since.
     const mau = await monthlyActiveUsers(posthogOrigin(String(ph.metadata.host), ctx.s.posthog.hosts), ph.account_id, key);
     return snapshots.map((s) => (mau.has(s.t) ? { ...s, users: mau.get(s.t)! } : s));

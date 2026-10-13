@@ -7,6 +7,8 @@ import { founderGithub } from './github-app.ts';
 import { HttpError } from './http.ts';
 import type { ConnectionRow, ProfileRow, TimelineRow } from './store.ts';
 import { founderSubscriptions } from './stripe-app.ts';
+import { Rest } from './pipelines/rest.ts';
+import { storedHistory, withStoredHistory } from './pipelines/snapshots.ts';
 import { applyUsers } from './users.ts';
 
 /**
@@ -78,7 +80,17 @@ async function build(ctx: Hosted, profile: ProfileRow): Promise<Timeline> {
   ]);
   const revenue = subs ? revenueHistory(subs, ctx.now) : { currency: 'usd', days: [] };
   const shipping = github ? shippingActivity(github.commits, github.releases) : null;
-  const snapshots = await applyUsers(ctx, profile, rows, mergeHistory(revenue.days, shipping, ctx.now));
+  const live = await applyUsers(ctx, profile, rows, mergeHistory(revenue.days, shipping, ctx.now));
+  // Days already written down (metric_snapshots, by the scheduled jobs) win
+  // over a rebuild of the past, so a refund, a deleted repository or GitHub's
+  // sliding commit window can't rewrite a day the founder has already lived.
+  // Only rows in the same currency are comparable. Without the history (a
+  // missing table, a database hiccup) the live build stands on its own.
+  const stored = await storedHistory(new Rest(ctx.supabase), profile.user_id).catch((err: unknown) => {
+    console.error(`Stored history unavailable for ${profile.user_id}: ${err instanceof Error ? err.message : 'unknown'}`);
+    return [];
+  });
+  const snapshots = withStoredHistory(live, stored.filter((r) => r.currency === revenue.currency), ctx.now);
 
   const timeline: Timeline = {
     name: profile.name,

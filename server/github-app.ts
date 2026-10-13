@@ -164,7 +164,8 @@ export async function repos(ctx: Hosted, user: AuthUser): Promise<ReposResponse>
   return { repos: out };
 }
 
-export const REPO_NAME = /^[\w.-]{1,100}\/[\w.-]{1,100}$/;
+// Neither half may be `.` or `..`: the name goes into an api.github.com path, and `../..` would walk out of /repos.
+export const REPO_NAME = /^(?!\.{1,2}\/)[\w.-]{1,100}\/(?!\.{1,2}$)[\w.-]{1,100}$/;
 
 /** `PUT /api/connect/github/repo { repo }`: choose the repository whose releases and commits count. */
 export async function setRepo(ctx: Hosted, user: AuthUser, body: Record<string, unknown>): Promise<Connections> {

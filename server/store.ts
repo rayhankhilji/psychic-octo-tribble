@@ -26,6 +26,8 @@ export interface SubscriptionRow {
   current_period_end: string | null;
   cancel_at_period_end: boolean;
   livemode: boolean | null;
+  /** A plan the owner gave away from the admin console (no Stripe subscription). */
+  comp?: boolean;
 }
 
 export type Provider = 'stripe' | 'github' | 'posthog';

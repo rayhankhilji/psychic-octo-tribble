@@ -889,8 +889,8 @@ export const adminExtension: Extension = {
     for (const r of ROUTES) {
       const m = r.path.exec(sub);
       if (!m || r.method !== ctx.req.method) continue;
-      rateLimit(`admin:${admin.id}`, READS_PER_MINUTE, ctx.now);
-      if (r.write) rateLimit(`admin-write:${admin.id}`, WRITES_PER_MINUTE, ctx.now);
+      await rateLimit(`admin:${admin.id}`, READS_PER_MINUTE, ctx.now, { ctx });
+      if (r.write) await rateLimit(`admin-write:${admin.id}`, WRITES_PER_MINUTE, ctx.now, { ctx });
       return r.run(h, admin, m.slice(1));
     }
     throw notFound();

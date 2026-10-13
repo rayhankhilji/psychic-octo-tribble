@@ -5,7 +5,7 @@ import { startOfDay } from '../src/data/types.ts';
 import { track } from './analytics.ts';
 import type { Ctx, Hosted } from './context.ts';
 import { decrypt, encrypt } from './crypto.ts';
-import type { Settings } from './env.ts';
+import { decryptionKeys, type Settings } from './env.ts';
 import { HttpError, notConfigured } from './http.ts';
 import { backHome, callbackUrl, finishState, startState } from './oauth.ts';
 import { fetchStripeSubscriptions } from './sources.ts';
@@ -138,7 +138,8 @@ const refreshing = new Map<string, Promise<string>>();
 export function accessToken(ctx: Hosted, row: ConnectionRow): Promise<string> {
   const app = requireStripeApp(ctx);
   const ctxKey = `${row.user_id}:stripe`;
-  const dec = (s: string) => decrypt(s, app.secrets.encryptionKey, ctxKey);
+  // Any key still in rotation opens it; every refresh re-seals under the current key.
+  const dec = (s: string) => decrypt(s, decryptionKeys(app.secrets), ctxKey);
   if (row.access_token && row.access_expires_at && Date.parse(row.access_expires_at) > ctx.now + 2 * 60_000) {
     return Promise.resolve(dec(row.access_token));
   }
