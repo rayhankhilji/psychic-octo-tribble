@@ -2516,74 +2516,8 @@ export function encampment(spots: { x: number; z: number; rot: number }[], seed:
   return b.build();
 }
 
-/**
- * Every cloud bank shares this material, so the city can turn them all
- * moonlit at once (see `setCloudLight`). Smooth, matte, vertex-coloured,
- * like the smooth bucket.
- */
-export const cloudMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.05, envMapIntensity: 0 });
-// Shared by every cloud bank: disposing one bank must not dispose it.
-cloudMaterial.userData.shared = true;
-
-/**
- * What white cloud becomes under a full moon: a fixed, slightly cool grey.
- * It deliberately ignores the haze colour, which tinted the clouds mauve
- * in-game under the warm night fill. Kept a touch lighter than the land so
- * locked ground still reads as "under cloud".
- */
-const MOONLIT_CLOUD = new THREE.Color(0.4, 0.56, 0.56);
-
-/**
- * Tints the cloud banks with the hour. By day (`night` 0) they are exactly
- * the smooth bucket's white; as night falls they ease into the moonlit
- * blue-grey so they sit back behind the lit city instead of glowing over
- * it. Call every frame with the atmosphere's `night`; `fog` is accepted for
- * API stability but not used for the tint.
- */
-export function setCloudLight(night: number, fog: THREE.Color) {
-  void fog;
-  const n = Math.min(1, Math.max(0, night));
-  cloudMaterial.color.setRGB(1, 1, 1).lerp(MOONLIT_CLOUD, n);
-  // Share the sky reflection the smooth bucket gets by day, and let it go at night (it would light them up again).
-  if (cloudMaterial.envMap !== smoothMaterial.envMap) {
-    cloudMaterial.envMap = smoothMaterial.envMap;
-    cloudMaterial.needsUpdate = true;
-  }
-  cloudMaterial.envMapIntensity = smoothMaterial.envMapIntensity * (1 - n);
-}
-
-/** A bank of soft, layered cumulus over land that isn't open yet. */
-export function cloudBank(x: number, z: number, w: number, d: number, seed: number, y = 0.5): Built {
-  const r = rng(seed);
-  const b = new GeoBuilder();
-  const n = Math.max(5, Math.round((w * d) / 1.9));
-  const tops = [0xffffff, 0xfdfdfd, 0xf8fbff] as const;
-  for (let i = 0; i < n; i++) {
-    const cx = x + (r() - 0.5) * w * 0.9;
-    const cz = z + (r() - 0.5) * d * 0.9;
-    const s = 0.5 + r() * 0.35;
-    // Flat, slightly shadowed base
-    for (let k = 0; k < 3; k++) {
-      const g = new THREE.IcosahedronGeometry(s * (0.8 + r() * 0.3), 1).scale(1.4, 0.42, 1.2);
-      put(b, g, cx + (r() - 0.5) * s * 1.2, y, cz + (r() - 0.5) * s * 1.0, [0.82, 0.86, 0.92], 'smooth', r() * 3);
-    }
-    // Billowing tops
-    const puffs = 2 + Math.floor(r() * 3);
-    for (let k = 0; k < puffs; k++) {
-      const a = r() * Math.PI * 2;
-      const rr = s * (0.45 + r() * 0.35);
-      const g = new THREE.IcosahedronGeometry(rr, 1).scale(1.05, 0.85 + r() * 0.2, 1.0);
-      put(b, g, cx + Math.cos(a) * s * 0.45, y + s * 0.22 + rr * 0.35, cz + Math.sin(a) * s * 0.4, pick(r, tops), 'smooth', r() * 3);
-    }
-    const g = new THREE.IcosahedronGeometry(s * 0.55, 1).scale(1, 0.95, 1);
-    put(b, g, cx, y + s * 0.45, cz, 0xffffff, 'smooth', r() * 3);
-  }
-  const built = b.build();
-  built.group.traverse((o) => {
-    if (o instanceof THREE.Mesh && o.material === smoothMaterial) o.material = cloudMaterial;
-  });
-  return built;
-}
+// Fog over land that isn't open yet lives in fog.ts (Karl the Fog, one draw call per layer).
+export { cloudBank, setCloudLight } from './fog.ts';
 
 /** An empty plot for sale: graded dirt, survey stakes and string, a sign. */
 export function plotMarker(x: number, z: number): Built {

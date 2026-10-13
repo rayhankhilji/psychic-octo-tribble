@@ -39,7 +39,7 @@ const FEED: Record<string, { icon: IconName; tone: Tone; kicker: string; linger?
   'game.moon': { icon: 'rocket', tone: 'brand', kicker: 'Moon trip', linger: 7000 },
   'game.heli': { icon: 'heli', tone: 'brand', kicker: 'Helicopter', linger: 6000 },
   'game.land.opened': { icon: 'map', tone: 'good', kicker: 'New land', linger: 7000 },
-  'game.region.opened': { icon: 'cloudSun', tone: 'good', kicker: 'Clouds cleared', linger: 7000 },
+  'game.region.opened': { icon: 'cloudSun', tone: 'good', kicker: 'Fog lifted', linger: 7000 },
   'game.home.moved': { icon: 'home', tone: 'brand', kicker: 'You moved', linger: 7000 },
   'game.sign.dark': { icon: 'bulbOff', tone: 'bad', kicker: 'Upkeep' },
   'game.sign.lit': { icon: 'bulb', tone: 'good', kicker: 'Lights on', linger: 12000 },
@@ -54,7 +54,7 @@ const LEGEND: { icon: IconName; tone: Tone; title: string; text: string }[] = [
   { icon: 'users', tone: 'info', title: 'Your users live here.', text: 'Each needs $0.20 of MRR to be housed: 1,000 users need $200. Short of that, people end up in tents.' },
   { icon: 'bulbOff', tone: 'bad', title: 'Upkeep keeps the lights on.', text: "Buildings cost upkeep. Short of it, the TINYTOWN sign goes dark first, then lamps fail, the bridge rusts and the train stops." },
   { icon: 'home', tone: 'brand', title: 'Your home moves up', text: 'with every extra digit of MRR: hacker house, studio, the Hills, an island, the moon.' },
-  { icon: 'map', tone: 'good', title: 'Land opens', text: 'as you fill your plots and grow MRR: clouds clear over new blocks, the Hills, the pier, the marina and your island.' },
+  { icon: 'map', tone: 'good', title: 'Land opens', text: 'as you fill your plots and grow MRR: the fog lifts over new blocks, the Hills, the pier, the marina and your island.' },
   { icon: 'cloudRain', tone: 'info', title: 'Rain', text: 'when MRR falls more than 1% in a week. HQ gains a floor per release; the train speeds up with commits.' },
 ];
 

@@ -381,7 +381,7 @@ export function describeGame(e: GameEvent): string {
     case 'land.opened':
       return `New land: ${e.name} is open for building`;
     case 'region.opened':
-      return `The clouds cleared over ${e.name}`;
+      return `The fog lifted over ${e.name}`;
     case 'home.moved':
       return `You moved into your ${e.name}`;
     case 'sign.dark':

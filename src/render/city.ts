@@ -3,8 +3,9 @@ import { disposeGroup, GeoBuilder, GLOW, glassMaterial, glowMaterial, setEnviron
 import { PALETTE } from './palette.ts';
 import { home, neighbourhoodGrounds, tree, type Built } from './buildings.ts';
 import { headquarters, type HQ } from './towers.ts';
-import { cloudBank, encampment, setCloudLight, ESTATE_HELIPAD, founderHome, helicopter, HELI_ROTOR, itemModel, plane, plotMarker, rocket, yacht } from './models.ts';
+import { encampment, ESTATE_HELIPAD, founderHome, helicopter, HELI_ROTOR, itemModel, plane, plotMarker, rocket, yacht } from './models.ts';
 import { Fireworks, Rain, Train } from './effects.ts';
+import { FogBanks, setFogLight } from './fog.ts';
 import { Moon } from './moon.ts';
 import { Traffic } from './traffic.ts';
 import { Life, SHADOW_ONLY_LAYER } from './life.ts';
@@ -100,6 +101,9 @@ export class City {
   private builds = new Map<string, { group: THREE.Object3D; fade?: Fade; lit: boolean }>();
   private markers = new Map<string, THREE.Group>();
   private bases = new Map<string, THREE.Group>();
+  /** Karl the Fog over the build blocks that aren't open yet: one mesh for all of them. */
+  private fog = new FogBanks();
+  /** Each fogged block's pick proxy (it carries the tooltip). */
   private blockClouds = new Map<string, THREE.Group>();
   private homesOfFounder = new Map<string, THREE.Object3D>();
   private tents: { count: number; group: THREE.Group } | null = null;
@@ -176,6 +180,7 @@ export class City {
     );
     this.flame.visible = false;
     this.scene.add(this.scenery.object, this.roadLayer, this.fireworks.object, this.rain.object, this.moon.object, this.train.object, this.traffic.object, this.highlights);
+    this.scene.add(this.fog.object);
   }
 
   // ─── Reconciliation ─────────────────────────────────────────────────────
@@ -212,7 +217,7 @@ export class City {
       signLit: !decay.signDark,
       lampsFailing: decay.lampsFailing,
       bridgeRusting: decay.bridgeRusting,
-    });
+    }, animate);
     for (const [key, b] of this.builds) {
       if (!b.fade) continue;
       const item = ITEMS.get(key.split('|')[1]!);
@@ -238,7 +243,7 @@ export class City {
 
   /** Anything animating right now (pop-ins, building sites, fireworks, a launch): the stage keeps full frame rate. */
   get lively(): boolean {
-    return this.anims.length > 0 || this.sites.size > 0 || this.busy || this.volleys.length > 0 || this.launch !== null || !!this.heli?.flight || (this.heli?.spin ?? 0) > 0;
+    return this.anims.length > 0 || this.fog.busy || this.scenery.fogBusy || this.sites.size > 0 || this.busy || this.volleys.length > 0 || this.launch !== null || !!this.heli?.flight || (this.heli?.spin ?? 0) > 0;
   }
 
   /** Builds everything still queued, now (for screenshots and tests). */
@@ -712,7 +717,7 @@ export class City {
 
   // ─── The founder's city ─────────────────────────────────────────────────
 
-  /** Pavements under open build blocks, for-sale signs on empty plots, clouds over closed land. */
+  /** Pavements under open build blocks, for-sale signs on empty plots, fog over closed land. */
   private syncLand(game: GameState, animate: boolean) {
     for (const block of BUILD_BLOCKS) {
       const open = game.openBlocks.includes(block.id);
@@ -733,19 +738,19 @@ export class City {
         this.bases.delete(block.id);
       }
       if (!open && !cloud) {
-        const g = cloudBank(c.x, c.z, BLOCK + 0.6, BLOCK + 0.6, hash(this.seed, 'cloud', block.id), 0.5).group;
-        g.userData.tip = {
-          title: `${block.name} (under cloud)`,
-          detail: block.gate > game.peakMrr ? `Clears at $${block.gate.toLocaleString('en-US')} MRR` : 'Clears once every open plot is built on',
-        } satisfies Tip;
-        this.scene.add(g);
+        // The fog spills half a street past the block on every side.
+        const g = this.fog.add(block.id, { x: c.x, z: c.z, w: BLOCK, d: BLOCK, seed: hash(this.seed, 'cloud', block.id) });
+        g.userData.tip = { title: `${block.name} (in the fog)`, detail: fogDetail(block.gate, game.peakMrr) } satisfies Tip;
         this.pickables.push(g);
         this.blockClouds.set(block.id, g);
       } else if (open && cloud) {
+        // Burns off: thins from the edges, lifts and is gone in about a second.
         this.blockClouds.delete(block.id);
-        this.remove(cloud, animate);
+        const i = this.pickables.indexOf(cloud);
+        if (i >= 0) this.pickables.splice(i, 1);
+        this.fog.remove(block.id, animate);
       } else if (cloud) {
-        cloud.userData.tip.detail = block.gate > game.peakMrr ? `Clears at $${block.gate.toLocaleString('en-US')} MRR` : 'Clears once every open plot is built on';
+        cloud.userData.tip.detail = fogDetail(block.gate, game.peakMrr);
       }
     }
 
@@ -1042,6 +1047,7 @@ export class City {
       if (a.t >= 1) a.done?.();
     }
     this.anims = this.anims.filter((a) => a.t < 1);
+    this.fog.update(dt);
 
     for (const f of this.fades) {
       if (Math.abs(f.level - f.target) < 0.001) {
@@ -1229,8 +1235,8 @@ export class City {
     GLOW.night.value = a.night;
     GLOW.time.value = time;
     setEnvironment(glassMaterial.envMap, 0.25 + 0.75 * (1 - a.night));
-    // Clouds over locked land go moonlit blue-grey instead of glowing white.
-    setCloudLight(a.night, fog.color);
+    // Fog over locked land: sunlit by day, golden at sunset, moonlit silver-blue at night.
+    setFogLight(a);
     if (this.pools) this.pools.opacity = 0.45 * a.night * (this.lampsFailing ? 0.25 : 1);
     if (this.hq) this.hq.sign.color.setScalar(1 + 1.2 * a.night);
     this.warm.intensity = 8 * a.night;
@@ -1253,6 +1259,11 @@ function moodTip(game: GameState, weakest: 'housing' | 'upkeep' | 'amenities' | 
     momentum: game.satisfaction.momentum < 0.5 ? 'MRR fell over the last four weeks' : 'MRR has barely grown in four weeks',
   }[weakest];
   return { title: 'Protest at City Hall', detail: `Satisfaction ${score}/100. ${why}.` };
+}
+
+/** What a fogged block's tooltip says about when it opens. */
+function fogDetail(gate: number, peakMrr: number): string {
+  return gate > peakMrr ? `The fog lifts at $${gate.toLocaleString('en-US')} MRR` : 'The fog lifts once every open plot is built on';
 }
 
 /** Paying-customer counts worth a fireworks show. */

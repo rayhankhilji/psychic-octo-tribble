@@ -1,0 +1,714 @@
+import * as THREE from 'three';
+import { GLOW } from './geo.ts';
+import { atmosphereAt, type Atmosphere } from '../world/daylight.ts';
+import { rng } from '../world/rng.ts';
+import type { Built } from './buildings.ts';
+
+/**
+ * Karl the Fog over land that isn't open yet: San Francisco's marine layer,
+ * low and soft, lying over a block like it does over the Sunset on a June
+ * morning. Each bank is a thin, wide haze that spills into the streets and,
+ * on it, one rolling surface of broad billows heaped into a crown or two
+ * (on a city block, one thin spot where the pavement shows through), with a
+ * couple of wisps drifting just above. Over the Hills and the islands the
+ * bank lies level on the land's broad lie, so the higher tops poke through.
+ *
+ * Every bank in a layer is merged into one mesh with one shader, so all the
+ * fog in the city costs one draw call. The shader does the look: soft edges
+ * where the surface turns away from the camera and where it thins out, folds
+ * in shade and crests in light, sunlit tops over blue-violet shade, peach at
+ * golden hour, moonlit silver-blue with a warm glow from the streets below at
+ * night, and a slow swell (one shared time uniform; nothing per frame on the
+ * CPU). When land opens, its bank burns off over 1.2 s: it lifts, spreads
+ * and thins, its edges and thin patches clearing first. One uniform per bank
+ * drives it.
+ */
+
+/** Banks a layer can hold at once (each has a slot in the shader's uniform array). */
+const SLOTS = 24;
+/** How long a bank takes to burn off, in seconds. */
+const BURN = 1.2;
+/** Grid spacing of a bank's surface, in map units. */
+const STEP = 0.24;
+
+export interface FogSpec {
+  /** Centre of the land under the bank. */
+  x: number;
+  z: number;
+  /** Footprint to cover. The fog spills a little past it. */
+  w: number;
+  d: number;
+  /** Plateau height above the ground, before the billows. */
+  height?: number;
+  /** How far past the footprint the fog spills (into the streets around a block). */
+  spill?: number;
+  /** Ground height under the bank (the Hills and islands); flat at 0 otherwise. */
+  ground?: (x: number, z: number) => number;
+  /** Size of the billows on top (1 for a city block). Bigger is calmer: broad swells over open country. */
+  billow?: number;
+  /**
+   * The broad lie of the land the bank rests on (see `smoothGround`). Banks that share one lie
+   * flat into each other without seams. Without it, a terrain bank fits a plane to its own ground.
+   */
+  floor?: (x: number, z: number) => number;
+  seed: number;
+}
+
+/** One bank's surface, ready to merge: positions, normals, uvs, fog data, triangles. */
+interface BankGeo {
+  pos: Float32Array;
+  nrm: Float32Array;
+  uv: Float32Array;
+  /** Per vertex: slot, height above the ground, burn order (1 burns first), opacity (below zero for a wisp). */
+  fog: Float32Array;
+  index: number[];
+  /** The bank's main layer, as triangles of the same vertices: the soft-shadow pass's stand-in (see `shieldMaterial`). */
+  solid: number[];
+  /** Radius the burn-off measures "edge" against, and the pick volume. */
+  radius: number;
+  lo: number;
+  hi: number;
+}
+
+// ─── Light ──────────────────────────────────────────────────────────────────
+
+/** Shared by every fog material, so the hour changes all of them at once. */
+const LIGHT = {
+  uTime: GLOW.time,
+  uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+  uLit: { value: new THREE.Color(1, 1, 1) },
+  uShade: { value: new THREE.Color(0.7, 0.74, 0.9) },
+  uSky: { value: new THREE.Color(0.8, 0.9, 1) },
+  uGlow: { value: new THREE.Color(0, 0, 0) },
+  uHaze: { value: new THREE.Color(0.84, 0.92, 0.97) },
+  uDensity: { value: 0.96 },
+};
+
+const WHITE = new THREE.Color(1, 1, 1);
+/** Shade under a bank by day: the blue-violet of a cool shadow on white. */
+const VIOLET = new THREE.Color(0.42, 0.44, 0.88);
+/** Under a full moon: silver-blue tops, deep blue shade. Kept lighter than the land at night, so fogged blocks never read as holes. */
+const MOON_LIT = new THREE.Color(0.075, 0.1, 0.18);
+const MOON_SHADE = new THREE.Color(0.025, 0.033, 0.07);
+/** Sodium streetlight glow on the underside of the fog, at night. */
+const CITY_GLOW = new THREE.Color(0.05, 0.025, 0.008);
+const tmp = new THREE.Color();
+const tmp2 = new THREE.Color();
+
+/**
+ * Lights the fog for the hour. By day the tops take the sun's colour
+ * (white at noon, peach at golden hour) over blue-violet shade; as night
+ * falls they go moonlit silver-blue and the streets below warm their
+ * undersides. Call every frame with the world's atmosphere.
+ */
+export function setFogLight(a: Atmosphere) {
+  // `night` is already halfway up at golden hour (it switches the windows on): the fog stays sunlit until the sun is really down.
+  const n = THREE.MathUtils.smoothstep(a.night, 0.5, 1);
+  const [lx, ly, lz] = a.lightDir;
+  LIGHT.uSunDir.value.set(lx, ly, lz).normalize();
+  // Sunlit tops: the light's colour, eased toward white so noon fog stays white rather than cream.
+  const sun = Math.min(1.15, a.lightIntensity / 2.6);
+  tmp.setRGB(...a.lightColor);
+  const lit = LIGHT.uLit.value.copy(WHITE).lerp(tmp, 0.6).multiplyScalar(0.56 + 0.24 * sun);
+  lit.lerp(MOON_LIT, n);
+  // Shade: the sky's colour pulled toward violet (mauve at golden hour), then night blue.
+  tmp2.setRGB(...a.skyColor);
+  LIGHT.uShade.value.copy(tmp2).lerp(VIOLET, 0.65).multiplyScalar(0.52).lerp(MOON_SHADE, n);
+  LIGHT.uSky.value.setRGB(...a.skyColor).multiplyScalar(Math.min(1, a.hemiIntensity / 1.5) * (1 - 0.7 * n));
+  LIGHT.uGlow.value.copy(CITY_GLOW).multiplyScalar(n * n);
+  LIGHT.uHaze.value.setRGB(...a.fog);
+  // A little more see-through at night, so the dark blocks underneath tie the fog to the ground.
+  LIGHT.uDensity.value = 0.96 - 0.08 * n;
+}
+
+/** The old API: tints by `night` alone (the dev showcase uses it). */
+export function setCloudLight(night: number, fog?: THREE.Color) {
+  void fog;
+  setFogLight(atmosphereAt(13 + 9 * Math.min(1, Math.max(0, night))));
+}
+
+const VERT = /* glsl */ `
+  attribute vec4 aFog;
+  uniform float uTime;
+  uniform vec4 uBank[SLOTS];
+  varying vec3 vN;
+  varying float vFacing;
+  varying float vH;
+  varying float vKeep;
+  varying float vKind;
+  varying float vDensity;
+  varying vec2 vUv;
+
+  void main() {
+    vec4 bank = uBank[int(aFog.x + 0.5)];
+    float burn = bank.z;
+    float h = aFog.y;
+    float kind = aFog.w < 0.0 ? 1.0 : 0.0;
+    vec3 p = position;
+    // A slow swell: the billows rise and settle, out of step across the bank.
+    float t = uTime;
+    p.y += h * 0.075 * sin(t * 0.32 + p.x * 0.85 + p.z * 0.6) * (1.0 - kind);
+    p.xz += h * 0.05 * vec2(sin(t * 0.21 + p.z * 0.7), cos(t * 0.17 + p.x * 0.6)) * (1.0 - kind);
+    // Wisps drift back and forth over the bank.
+    float ph = aFog.z * 6.2832;
+    p.xz += kind * vec2(sin(t * 0.09 + ph), cos(t * 0.07 + ph * 1.3)) * 0.32;
+
+    // Burning off: the edges and thin parts go first, the rest thins, lifts and spreads as it goes.
+    vec2 off = p.xz - bank.xy;
+    float edge = clamp(length(off) / bank.w, 0.0, 1.0);
+    float order = 0.55 * edge + 0.45 * aFog.z;
+    float gone = 0.42 + 0.56 * (1.0 - order);
+    vKeep = (1.0 - smoothstep(gone - 0.3, gone, burn)) * (1.0 - 0.2 * burn * burn);
+    p.xz = bank.xy + off * (1.0 + burn * 0.22);
+    p.y += burn * burn * 0.8 + burn * h * 0.4;
+
+    vN = normal;
+    vFacing = (normalMatrix * normal).z;
+    vH = h;
+    vKind = kind;
+    vDensity = abs(aFog.w);
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }`;
+
+const FRAG = /* glsl */ `
+  uniform vec3 uSunDir;
+  uniform vec3 uLit;
+  uniform vec3 uShade;
+  uniform vec3 uSky;
+  uniform vec3 uGlow;
+  uniform vec3 uHaze;
+  uniform float uDensity;
+  varying vec3 vN;
+  varying float vFacing;
+  varying float vH;
+  varying float vKeep;
+  varying float vKind;
+  varying float vDensity;
+  varying vec2 vUv;
+
+  void main() {
+    vec3 N = normalize(vN);
+    // Soft terminator: fog scatters light deep into its shade.
+    // The light rakes a little lower than the real sun, so the billows show their shape even at noon.
+    vec3 L = normalize(vec3(uSunDir.x * 2.0, uSunDir.y, uSunDir.z * 2.0));
+    float sun = smoothstep(-0.4, 0.65, dot(N, L));
+    // Billows read as round: brightest where they face you, cooler as they turn away.
+    float limb = smoothstep(0.05, 0.75, vFacing);
+    // The crowns catch the light; lower down the bank is in its own shade.
+    float top = smoothstep(0.0, 0.7, vH);
+    // Folds between billows fall into shade; crests catch a little extra light.
+    float fold = smoothstep(0.0, -0.09, vUv.y);
+    float crest = smoothstep(0.0, 0.08, vUv.y);
+    float light = sun * mix(0.72, 1.0, top) * mix(0.68, 1.0, limb) * (1.0 - 0.45 * fold);
+    vec3 col = mix(uShade, uLit, clamp(light + 0.15 * crest, 0.0, 1.0));
+    // The thin haze at the foot of the bank is light and even, never a dark rim.
+    col = mix(col, mix(uLit, uShade, 0.4), (1.0 - smoothstep(0.0, 0.22, vH)) * 0.7);
+    col += uSky * max(N.y, 0.0) * 0.07;
+    // At night the streets light the fog from below.
+    col += uGlow * (1.0 - top * 0.75);
+    col = mix(col, uHaze, 0.07);
+
+    float a;
+    if (vKind < 0.5) {
+      // Soft where each layer thins out (uv.x is its thickness), and at its rim where it turns away
+      // from the camera. Deep in the bank a fold turning away stays solid, so the land never shows in streaks.
+      float rim = mix(smoothstep(0.0, 0.42, vFacing), 1.0, smoothstep(0.12, 0.3, vUv.x));
+      a = vDensity * uDensity * rim * smoothstep(0.0, 0.12, vUv.x);
+    } else {
+      float r = length(vUv - 0.5) * 2.0;
+      a = vDensity * uDensity * (1.0 - smoothstep(0.1, 1.0, r));
+    }
+    a *= vKeep;
+    if (a < 0.003) discard;
+    gl_FragColor = vec4(col, a);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }`;
+
+function fogMaterial(): THREE.ShaderMaterial {
+  const bank = Array.from({ length: SLOTS }, () => new THREE.Vector4(0, 0, 0, 1));
+  const m = new THREE.ShaderMaterial({
+    name: 'KarlTheFog',
+    defines: { SLOTS },
+    uniforms: { ...LIGHT, uBank: { value: bank } },
+    vertexShader: VERT,
+    fragmentShader: FRAG,
+    transparent: true,
+    depthWrite: false,
+  });
+  return m;
+}
+
+// ─── Geometry ───────────────────────────────────────────────────────────────
+
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+interface Stratum {
+  /** Centre offset from the bank's centre, and half-sizes of its outline. */
+  ox: number;
+  oz: number;
+  hx: number;
+  hz: number;
+  /** Height of its underside above the ground, and its thickness before the billows. */
+  base: number;
+  thick: number;
+  /** How far its edge wanders in and out. */
+  wander: number;
+  /** Billows on its top: [x, z, radius, height], relative to the bank's centre. */
+  bumps: [number, number, number, number][];
+  /** Opacity at its thickest. */
+  density: number;
+  /** How wide its edge is, from nothing to full height: wide for haze, narrow for a bank with a rounded shoulder. */
+  edge: number;
+  /** It stands in for the whole bank in the soft-shadow pass (one smooth surface, so no creases where layers cross). */
+  solid?: boolean;
+}
+
+/** Arrays a bank's strata and wisps are written into. */
+class Out {
+  pos: number[] = [];
+  nrm: number[] = [];
+  uv: number[] = [];
+  fog: number[] = [];
+  index: number[] = [];
+  solid: number[] = [];
+  lo = Infinity;
+  hi = -Infinity;
+}
+
+/**
+ * One layer of fog: a soft-edged lens over part of the footprint, its top
+ * a rolling surface. `uv.x` carries its thickness, which the shader fades
+ * the edges by.
+ */
+function stratum(out: Out, spec: FogSpec, s: Stratum, slot: number, order: (x: number, z: number) => number, floor: (x: number, z: number) => number, r: () => number) {
+  const ground = spec.ground ?? (() => 0);
+  const corner = Math.min(s.hx, s.hz) * 0.55;
+  const wob = [r() * 6.28, r() * 6.28, r() * 6.28];
+  const ex = s.hx + 0.5;
+  const ez = s.hz + 0.5;
+  const nx = Math.max(4, Math.ceil((2 * ex) / STEP));
+  const nz = Math.max(4, Math.ceil((2 * ez) / STEP));
+  const cols = nx + 1;
+  const first = out.pos.length / 3;
+  const pos: number[] = [];
+  const mask: number[] = [];
+  const thick: number[] = [];
+  /** How much fog actually stands over the ground at each point (less where a hilltop pokes up into it). */
+  const depth: number[] = [];
+  for (let j = 0; j <= nz; j++) {
+    for (let i = 0; i <= nx; i++) {
+      const u = -ex + (i / nx) * 2 * ex;
+      const v = -ez + (j / nz) * 2 * ez;
+      // Signed distance to a rounded rectangle, its edge pushed in and out.
+      const ang = Math.atan2(v / s.hz, u / s.hx);
+      const wander = s.wander * (Math.sin(3 * ang + wob[0]!) * 0.55 + Math.sin(5 * ang + wob[1]!) * 0.3 + Math.sin(9 * ang + wob[2]!) * 0.15);
+      const qx = Math.abs(u) - (s.hx - corner);
+      const qz = Math.abs(v) - (s.hz - corner);
+      const sd = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - corner - wander;
+      const m = smoothstep(0.15, 0.15 - s.edge, sd);
+      const bx = s.ox + u;
+      const bz = s.oz + v;
+      let bumps = 0;
+      for (const [x, z, rad, amp] of s.bumps) bumps += amp * Math.exp(-((bx - x) ** 2 + (bz - z) ** 2) / (rad * rad));
+      const t = Math.max(0, Math.sqrt(m) * (s.thick + bumps));
+      const x = spec.x + bx;
+      const z = spec.z + bz;
+      // The fog lies level over the land's broad lie (`floor`), not over every bump in it; a rise that
+      // reaches up into the bank thins it, and a top that pokes through is left bare.
+      const g = ground(x, z);
+      const y = Math.max(floor(x, z) + s.base + t, g + 0.01);
+      pos.push(x, y, z);
+      mask.push(m);
+      thick.push(t);
+      depth.push(y - g);
+      out.fog.push(slot, s.base + t, order(x, z), s.density);
+      out.lo = Math.min(out.lo, g);
+      out.hi = Math.max(out.hi, y);
+    }
+  }
+  // How far each point stands above or sinks below its surroundings: the shader darkens the folds
+  // between billows and brightens their crests. (uv.x is the thickness, uv.y this relief.)
+  const R = 4;
+  for (let j = 0; j <= nz; j++) {
+    for (let i = 0; i <= nx; i++) {
+      let sum = 0;
+      let n = 0;
+      for (let dj = -R; dj <= R; dj++) {
+        for (let di = -R; di <= R; di++) {
+          const jj = Math.min(nz, Math.max(0, j + dj));
+          const ii = Math.min(nx, Math.max(0, i + di));
+          sum += thick[jj * cols + ii]!;
+          n++;
+        }
+      }
+      const t = thick[j * cols + i]!;
+      out.uv.push(Math.min(t, depth[j * cols + i]!), t - sum / n);
+    }
+  }
+  const index: number[] = [];
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const a = j * cols + i;
+      const b = a + 1;
+      const c = a + cols;
+      const d = c + 1;
+      // Skip the bare ground around the lens.
+      if (mask[a]! < 0.02 && mask[b]! < 0.02 && mask[c]! < 0.02 && mask[d]! < 0.02) continue;
+      index.push(a, c, b, b, c, d);
+      if (s.solid) out.solid.push(first + a, first + c, first + b, first + b, first + c, first + d);
+    }
+  }
+  // Smooth normals over the surface.
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  const nrm = (g.getAttribute('normal') as THREE.BufferAttribute).array;
+  g.dispose();
+  for (let k = 0; k < pos.length; k++) {
+    out.pos.push(pos[k]!);
+    out.nrm.push(nrm[k]!);
+  }
+  for (const i of index) out.index.push(first + i);
+}
+
+/**
+ * One bank, in layers: a thin, wide haze that spills into the streets, the
+ * bank itself over the land (billows and crowns on one surface, so nothing
+ * in it crosses), and wisps drifting just above. Translucent where it thins,
+ * so the ground underneath shows through at the edges.
+ */
+function bankGeometry(spec: FogSpec, slot: number): BankGeo {
+  const r = rng(spec.seed);
+  const H = spec.height ?? 0.5;
+  const spill = spec.spill ?? 0.55;
+  const hx = spec.w / 2;
+  const hz = spec.d / 2;
+  const k = Math.min(1.6, Math.sqrt((spec.w * spec.d) / 16));
+  // Burn order: a smooth field, so the fog breaks up into a few soft patches rather than speckle.
+  const bo = [r() * 6.28, r() * 6.28, 1.1 + r() * 0.6, 1.0 + r() * 0.6];
+  const order = (x: number, z: number) => 0.5 + 0.5 * Math.sin(x * bo[2]! + bo[0]!) * Math.sin(z * bo[3]! + bo[1]!);
+  const bumps = (n: number, w: number, d: number, rad: [number, number], amp: [number, number]) =>
+    Array.from({ length: n }, () => [(r() - 0.5) * w, (r() - 0.5) * d, rad[0] + r() * (rad[1] - rad[0]), amp[0] + r() * (amp[1] - amp[0])] as [number, number, number, number]);
+
+  // The broad lie of the land under the bank: flat for a city block; a plane fitted to the slope
+  // for the Hills and the islands, so the bank lies on the hillside like a sheet rather than
+  // draping every fold of it like snow.
+  let floor = spec.floor ?? ((_x: number, _z: number) => 0);
+  if (spec.ground && !spec.floor) {
+    const ground = spec.ground;
+    let n = 0, sg = 0, sx = 0, sz = 0, sxx = 0, szz = 0, sxg = 0, szg = 0;
+    const samples: [number, number, number][] = [];
+    for (let i = 0; i <= 8; i++) {
+      for (let j = 0; j <= 8; j++) {
+        const u = (i / 8 - 0.5) * spec.w;
+        const v = (j / 8 - 0.5) * spec.d;
+        const g = ground(spec.x + u, spec.z + v);
+        samples.push([u, v, g]);
+        n++;
+        sg += g;
+        sx += u;
+        sz += v;
+        sxx += u * u;
+        szz += v * v;
+        sxg += u * g;
+        szg += v * g;
+      }
+    }
+    // Least squares on a symmetric grid: the slopes separate.
+    const mean = sg / n;
+    const bxs = (sxg - (sx * sg) / n) / (sxx - (sx * sx) / n);
+    const bzs = (szg - (sz * sg) / n) / (szz - (sz * sz) / n);
+    // Then raised until it lies over all but the highest few rises, so the land under it stays hidden.
+    const above = samples.map(([u, v, g]) => g - (mean + bxs * u + bzs * v)).sort((a, b) => a - b);
+    const lift = Math.max(0, above[Math.floor(above.length * 0.9)]!);
+    floor = (x, z) => mean + lift + bxs * (x - spec.x) + bzs * (z - spec.z);
+  }
+
+  const out = new Out();
+  // Low stratus: wide and thin, out over the streets.
+  stratum(out, spec, { ox: 0, oz: 0, hx: hx + spill, hz: hz + spill, base: 0, thick: H * 0.35, wander: 0.35, bumps: bumps(5, spec.w, spec.d, [0.6, 1.2], [0.02, 0.06]), density: 0.5, edge: 1.1 }, slot, order, floor, r);
+  // The bank itself: a sea of low billows over the land, reaching halfway across the streets,
+  // heaped up here and there into crowns that catch the sun. One surface, so nothing in it crosses.
+  const holes = spec.ground ? [] : bumps(1, spec.w * 0.5, spec.d * 0.5, [0.35, 0.5], [-H * 0.8, -H * 0.6]);
+  const B = spec.billow ?? 1;
+  const billows = bumps(Math.round((12 * k * k) / (B * B)), spec.w, spec.d, [0.55 * B, 0.95 * B], [(H * 0.35) / B, (H * 0.9) / B]);
+  const crowns = bumps(Math.max(1, Math.round((2 * k) / B)), spec.w * 0.6, spec.d * 0.6, [0.6 * B, 0.9 * B], [H * 0.8, H * 1.2]);
+  stratum(out, spec, { ox: 0, oz: 0, hx: hx + spill * 0.6, hz: hz + spill * 0.6, base: H * 0.1, thick: H * 0.45, wander: 0.3, bumps: [...billows, ...crowns, ...holes], density: 0.95, edge: 0.6, solid: true }, slot, order, floor, r);
+
+  // Wisps: thin, soft sheets lying just over the bank, drifting. Density below zero marks a wisp.
+  const ground = spec.ground ?? (() => 0);
+  // (Not over hills: a flat sheet would cut into the slope.)
+  const wisps = spec.ground ? 0 : 2 + (r() < 0.5 ? 1 : 0);
+  for (let i = 0; i < wisps; i++) {
+    const cx = spec.x + (r() - 0.5) * spec.w * 0.7;
+    const cz = spec.z + (r() - 0.5) * spec.d * 0.7;
+    const y = ground(cx, cz) + H * 1.2 + r() * 0.25;
+    const sx = (1.5 + r() * 1.3) * Math.min(1, spec.w / 4.6) ** 0.5;
+    const sz = sx * (0.42 + r() * 0.2);
+    const rot = r() * Math.PI;
+    const c = Math.cos(rot);
+    const sn = Math.sin(rot);
+    const base = out.pos.length / 3;
+    const o = 0.6 + 0.4 * r();
+    for (const [du, dv] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+      const lx = du * sx;
+      const lz = dv * sz;
+      out.pos.push(cx + c * lx - sn * lz, y, cz + sn * lx + c * lz);
+      out.nrm.push(0, 1, 0);
+      out.uv.push((du + 1) / 2, (dv + 1) / 2);
+      out.fog.push(slot, H * 1.4, o, -0.3);
+    }
+    out.index.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+    out.hi = Math.max(out.hi, y);
+  }
+  return {
+    pos: new Float32Array(out.pos),
+    nrm: new Float32Array(out.nrm),
+    uv: new Float32Array(out.uv),
+    fog: new Float32Array(out.fog),
+    index: out.index,
+    solid: out.solid,
+    radius: Math.max(hx, hz) + spill,
+    lo: out.lo,
+    hi: out.hi,
+  };
+}
+
+/**
+ * Merges banks into one geometry, lowest first so the tops draw over the
+ * shade beneath, and a second one over the same vertices with just their
+ * main layers.
+ */
+function merge(banks: BankGeo[]): { fog: THREE.BufferGeometry; solid: THREE.BufferGeometry } {
+  let verts = 0;
+  let tris = 0;
+  for (const b of banks) {
+    verts += b.pos.length / 3;
+    tris += b.index.length;
+  }
+  const pos = new Float32Array(verts * 3);
+  const nrm = new Float32Array(verts * 3);
+  const uv = new Float32Array(verts * 2);
+  const fog = new Float32Array(verts * 4);
+  const index = new Uint32Array(tris);
+  const solid: number[] = [];
+  let v = 0;
+  let t = 0;
+  for (const b of banks) {
+    pos.set(b.pos, v * 3);
+    nrm.set(b.nrm, v * 3);
+    uv.set(b.uv, v * 2);
+    fog.set(b.fog, v * 4);
+    for (const i of b.index) index[t++] = i + v;
+    for (const i of b.solid) solid.push(i + v);
+    v += b.pos.length / 3;
+  }
+  // Order triangles by height: from above, the higher fog is nearer the camera in every rotation.
+  const order = Array.from({ length: tris / 3 }, (_, i) => i);
+  const yOf = (i: number) => pos[index[i * 3]! * 3 + 1]! + pos[index[i * 3 + 1]! * 3 + 1]! + pos[index[i * 3 + 2]! * 3 + 1]!;
+  const ys = order.map(yOf);
+  order.sort((a, b) => ys[a]! - ys[b]!);
+  const sorted = new Uint32Array(tris);
+  order.forEach((tri, k) => sorted.set(index.subarray(tri * 3, tri * 3 + 3), k * 3));
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('aFog', new THREE.BufferAttribute(fog, 4));
+  g.setIndex(new THREE.BufferAttribute(sorted, 1));
+  g.computeBoundingSphere();
+  // Shares the vertex buffers: only the triangle list is new.
+  const h = new THREE.BufferGeometry();
+  h.setAttribute('position', g.getAttribute('position'));
+  h.setAttribute('normal', g.getAttribute('normal'));
+  h.setIndex(new THREE.BufferAttribute(new Uint32Array(solid), 1));
+  return { fog: g, solid: h };
+}
+
+/**
+ * Draws nothing in the picture. The soft-shadow pass (GTAO) leaves see-through
+ * things out, so without a stand-in it would shade the kerbs and block edges
+ * hidden under the fog and lay their outlines over it; this opaque stand-in
+ * (each bank's main layer) hides them, and that pass draws every mesh with
+ * its own material, so it sees this one as a solid surface.
+ */
+const shieldMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+shieldMaterial.userData.shared = true;
+
+/**
+ * The land's broad lie over an area: its height blurred over `radius`, so a fog bank resting on it
+ * follows valleys and slopes but not every fold, and the tops of rises poke up through. Sampled
+ * once on a coarse grid, then read back smoothly.
+ */
+export function smoothGround(ground: (x: number, z: number) => number, x0: number, z0: number, x1: number, z1: number, radius = 2.5, step = 0.5): (x: number, z: number) => number {
+  const pad = radius + step;
+  const ax = x0 - pad;
+  const az = z0 - pad;
+  const nx = Math.ceil((x1 - x0 + 2 * pad) / step) + 1;
+  const nz = Math.ceil((z1 - z0 + 2 * pad) / step) + 1;
+  let grid = new Float32Array(nx * nz);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) grid[j * nx + i] = ground(ax + i * step, az + j * step);
+  // A box blur, along x then along z.
+  const k = Math.round(radius / step);
+  for (const along of ['x', 'z'] as const) {
+    const out = new Float32Array(nx * nz);
+    for (let j = 0; j < nz; j++) {
+      for (let i = 0; i < nx; i++) {
+        let sum = 0;
+        let n = 0;
+        for (let d = -k; d <= k; d++) {
+          const ii = along === 'x' ? i + d : i;
+          const jj = along === 'z' ? j + d : j;
+          if (ii < 0 || jj < 0 || ii >= nx || jj >= nz) continue;
+          sum += grid[jj * nx + ii]!;
+          n++;
+        }
+        out[j * nx + i] = sum / n;
+      }
+    }
+    grid = out;
+  }
+  return (x, z) => {
+    const fx = Math.min(nx - 1.001, Math.max(0, (x - ax) / step));
+    const fz = Math.min(nz - 1.001, Math.max(0, (z - az) / step));
+    const i = Math.floor(fx);
+    const j = Math.floor(fz);
+    const tx = fx - i;
+    const tz = fz - j;
+    const at = (ii: number, jj: number) => grid[jj * nx + ii]!;
+    return (at(i, j) * (1 - tx) + at(i + 1, j) * tx) * (1 - tz) + (at(i, j + 1) * (1 - tx) + at(i + 1, j + 1) * tx) * tz;
+  };
+}
+
+// ─── Banks ──────────────────────────────────────────────────────────────────
+
+/** Invisible boxes the tooltips pick against: one per bank. */
+const pickMaterial = new THREE.MeshBasicMaterial({ visible: false });
+pickMaterial.userData.shared = true;
+const pickBox = new THREE.BoxGeometry(1, 1, 1);
+
+interface Bank {
+  slot: number;
+  geo: BankGeo;
+  proxy: THREE.Group;
+  /** Burn-off progress in seconds, or null while the fog is settled. */
+  burn: number | null;
+}
+
+/**
+ * All the fog in one layer (the city's blocks, or the scenery's regions),
+ * drawn as one mesh. Add a bank per locked area; remove it to burn it off.
+ */
+export class FogBanks {
+  readonly object = new THREE.Group();
+  private material = fogMaterial();
+  private mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.material);
+  private shield = new THREE.Mesh(new THREE.BufferGeometry(), shieldMaterial);
+  private banks = new Map<string, Bank>();
+  private dirty = false;
+
+  constructor() {
+    this.mesh.frustumCulled = false;
+    // After the city's other see-through things, before Karl's sprites over the ocean.
+    this.mesh.renderOrder = 1;
+    this.mesh.name = 'Fog';
+    this.shield.frustumCulled = false;
+    this.shield.name = 'Fog (shadow stand-in)';
+    // Only the soft-shadow pass needs it, and that pass draws the scene with an override material:
+    // in every other pass (the picture itself) an empty draw range skips the draw call entirely.
+    this.shield.onBeforeRender = (_r, scene) => this.shield.geometry.setDrawRange(0, scene.overrideMaterial ? Infinity : 0);
+    this.object.add(this.mesh, this.shield);
+  }
+
+  /** Lays fog over an area. Returns the bank's pick proxy (already in `object`); give it a `userData.tip`. */
+  add(key: string, spec: FogSpec): THREE.Group {
+    const had = this.banks.get(key);
+    if (had) {
+      // Closed again while burning off (a scrub backwards): let it settle back.
+      had.burn = null;
+      this.uniform(had.slot).z = 0;
+      this.object.add(had.proxy);
+      return had.proxy;
+    }
+    const used = new Set([...this.banks.values()].map((b) => b.slot));
+    let slot = 0;
+    while (used.has(slot) && slot < SLOTS - 1) slot++;
+    const geo = bankGeometry(spec, slot);
+    const proxy = new THREE.Group();
+    const box = new THREE.Mesh(pickBox, pickMaterial);
+    box.visible = false;
+    box.scale.set(spec.w + 0.4, geo.hi - geo.lo + 0.1, spec.d + 0.4);
+    box.position.set(spec.x, (geo.hi + geo.lo) / 2, spec.z);
+    proxy.add(box);
+    this.object.add(proxy);
+    this.uniform(slot).set(spec.x, spec.z, 0, geo.radius);
+    this.banks.set(key, { slot, geo, proxy, burn: null });
+    this.dirty = true;
+    return proxy;
+  }
+
+  has(key: string): boolean {
+    const b = this.banks.get(key);
+    return !!b && b.burn === null;
+  }
+
+  /** Clears a bank: burning off over a second or so, or at once. */
+  remove(key: string, animate: boolean) {
+    const b = this.banks.get(key);
+    if (!b) return;
+    this.object.remove(b.proxy);
+    if (animate) {
+      b.burn ??= 0;
+      return;
+    }
+    this.banks.delete(key);
+    this.dirty = true;
+  }
+
+  /** A bank is burning off right now (keep the frame rate up). */
+  get busy(): boolean {
+    for (const b of this.banks.values()) if (b.burn !== null) return true;
+    return false;
+  }
+
+  update(dt: number) {
+    for (const [key, b] of this.banks) {
+      if (b.burn === null) continue;
+      b.burn += dt;
+      const t = Math.min(1, b.burn / BURN);
+      // Even progress: the shader eases the lift and staggers the dissolve itself.
+      this.uniform(b.slot).z = t;
+      if (t >= 1) {
+        this.banks.delete(key);
+        this.dirty = true;
+      }
+    }
+    if (!this.dirty) return;
+    this.dirty = false;
+    this.mesh.geometry.dispose();
+    this.shield.geometry.dispose();
+    const { fog, solid } = merge([...this.banks.values()].map((b) => b.geo));
+    this.mesh.geometry = fog;
+    this.shield.geometry = solid;
+    this.mesh.visible = this.shield.visible = this.banks.size > 0;
+  }
+
+  private uniform(slot: number): THREE.Vector4 {
+    return (this.material.uniforms.uBank!.value as THREE.Vector4[])[slot]!;
+  }
+}
+
+/** One standalone bank as a model (the dev showcase). */
+export function cloudBank(x: number, z: number, w: number, d: number, seed: number, y = 0.5): Built {
+  void y;
+  const fog = new FogBanks();
+  fog.add('bank', { x, z, w, d, seed });
+  fog.update(0);
+  return { group: fog.object };
+}

@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { GeoBuilder, smoothMaterial, solidMaterial, type ColorLike } from './geo.ts';
 import { PALETTE } from './palette.ts';
 import { palm, tree, type TreeKind } from './buildings.ts';
-import { airliner, cloudBank } from './models.ts';
+import { airliner } from './models.ts';
+import { FogBanks, smoothGround, type FogSpec } from './fog.ts';
 import { Kit, neonOf, pixelText, shade, tower, wall, winOf } from './towers.ts';
 import { gum, hillsHouse, hillsLots, hillsStreets, oak, pine, rock, scrub, strip, type HillsStyle } from './hills.ts';
 import { Batch } from './batch.ts';
@@ -114,7 +115,10 @@ export class Scenery {
   private coaster = new THREE.Group();
   /** Batch keys of everything in TinyTown Hills that clears with the cloud. */
   private hillKeys: string[] = [];
-  private clouds: Record<'hills' | 'island' | 'launch', THREE.Group> = { hills: new THREE.Group(), island: new THREE.Group(), launch: new THREE.Group() };
+  /** Karl the Fog over the regions that haven't opened yet (the Hills, the island, the launch site): one mesh for all of them. */
+  private fog = new FogBanks();
+  /** Each region's fog banks, laid while it's closed and burnt off when it opens. */
+  private clouds: Record<'hills' | 'island' | 'launch', { key: string; spec: FogSpec; tip: string; proxy: THREE.Object3D | null }[]> = { hills: [], island: [], launch: [] };
   private launchKey = '';
   private beam: THREE.Mesh;
   private beamMat: THREE.ShaderMaterial;
@@ -173,7 +177,7 @@ export class Scenery {
     for (const l of [cityHall(civic.x, civic.z), ferryBuilding(), ...optional.filter((f): f is () => THREE.Group => !!f).map((f) => f())]) this.fix(l);
     for (const part of [this.roads(), this.marketPlazas(), this.parks(), this.marina(), this.airport(), this.island(), this.suburbs()]) this.fix(part);
     this.object.add(this.waterfront());
-    this.object.add(this.clouds.hills, this.clouds.island, this.clouds.launch);
+    this.object.add(this.fog.object);
     this.buildHood();
     this.buildClouds();
 
@@ -1510,36 +1514,59 @@ export class Scenery {
   }
 
   private buildClouds() {
-    const bank = (target: THREE.Group, x: number, z: number, w: number, d: number, y: number, key: string, tip: string) => {
-      const { group } = cloudBank(x, z, w, d, hash(this.seed, key), y);
-      group.userData.tip = { title: 'Under cloud', detail: tip };
-      this.pickables.push(group);
-      target.add(group);
+    // Banks drape over the land (or lie on the water just off it), so they follow the terrain.
+    const ground = (x: number, z: number) => Math.max(0, terrainHeight(x, z));
+    const bank = (region: 'hills' | 'island' | 'launch', x: number, z: number, w: number, d: number, height: number, key: string, tip: string, floor?: (x: number, z: number) => number) => {
+      this.clouds[region].push({ key, spec: { x, z, w, d, height, spill: 0.4, ground, floor, billow: 1.7, seed: hash(this.seed, key) }, tip, proxy: null });
     };
     // The Hills: a bank over each cluster of lots (the streets and lots are hidden until they clear).
     const cells = new Map<string, number>();
     const plan = hillsPlan();
     const cell = (x: number, z: number) => `${Math.floor((x + 2) / 6.5)},${Math.floor((z + 1) / 6)}`;
     for (const l of plan.lots) cells.set(cell(l.x, l.z), (cells.get(cell(l.x, l.z)) ?? 0) + 1);
-    for (const [key, n] of cells) {
-      if (n < 3) continue;
+    const banks = [...cells].filter(([, n]) => n >= 3).map(([key]) => {
       const [i, j] = key.split(',').map(Number) as [number, number];
-      const x = i * 6.5 - 2 + 3.25;
-      const z = j * 6 - 1 + 3;
-      bank(this.clouds.hills, x, z, 6.2, 5.2, Math.max(0.6, terrainHeight(x, z)) + 1.1, `hills-${key}`, 'TinyTown Hills clear at $1k MRR');
+      return { key, x: i * 6.5 - 2 + 3.25, z: j * 6 - 1 + 3 };
+    });
+    // One broad lie of the land for all of them, so neighbouring banks run into one sheet of fog.
+    const xs = banks.map((b) => b.x);
+    const zs = banks.map((b) => b.z);
+    const lie = banks.length ? smoothGround(ground, Math.min(...xs) - 4, Math.min(...zs) - 4, Math.max(...xs) + 4, Math.max(...zs) + 4) : ground;
+    for (const b of banks) bank('hills', b.x, b.z, 6.8, 6.2, 0.5, `hills-${b.key}`, 'The fog over TinyTown Hills lifts at $1k MRR', lie);
+    bank('island', ISLANDS.founder.x - 0.3, ISLANDS.founder.z - 0.2, 10.0, 9.8, 0.6, 'island', 'The fog over your island lifts at $100k MRR');
+    // Offset away from the estate, so the fog never sits on the house or its helipad.
+    bank('launch', ISLANDS.launch.x + 0.35, ISLANDS.launch.z - 0.35, 5.6, 5.6, 0.5, 'launch', 'The fog over the launch site lifts at $1M MRR');
+    for (const region of ['hills', 'island', 'launch'] as const) this.setFog(region, true, false);
+  }
+
+  /** Lays or clears a region's fog (burning it off when `animate`). Its tooltips come and go with it. */
+  private setFog(region: 'hills' | 'island' | 'launch', on: boolean, animate: boolean) {
+    for (const b of this.clouds[region]) {
+      if (on && !b.proxy) {
+        b.proxy = this.fog.add(b.key, b.spec);
+        b.proxy.userData.tip = { title: 'In the fog', detail: b.tip };
+        this.pickables.push(b.proxy);
+      } else if (!on && b.proxy) {
+        const i = this.pickables.indexOf(b.proxy);
+        if (i >= 0) this.pickables.splice(i, 1);
+        b.proxy = null;
+        this.fog.remove(b.key, animate);
+      }
     }
-    bank(this.clouds.island, ISLANDS.founder.x - 0.3, ISLANDS.founder.z - 0.2, 10.6, 10.4, 1.5, 'island', 'Your island clears at $100k MRR');
-    // Offset away from the estate, so the cloud never sits on the house or its helipad.
-    bank(this.clouds.launch, ISLANDS.launch.x + 0.35, ISLANDS.launch.z - 0.35, 6.0, 6.0, 1.1, 'launch', 'The launch site clears at $1M MRR');
+  }
+
+  /** A region's fog is burning off right now. */
+  get fogBusy(): boolean {
+    return this.fog.busy;
   }
 
   /** Reflect the game: what's open, what's built, what's falling apart. */
-  setState(next: SceneryState) {
+  setState(next: SceneryState, animate = false) {
     this.state = next;
     for (const key of this.hillKeys) this.batch.setVisible(key, next.hills);
-    this.clouds.hills.visible = !next.hills;
-    this.clouds.island.visible = !next.island;
-    this.clouds.launch.visible = !next.launch;
+    this.setFog('hills', !next.hills, animate);
+    this.setFog('island', !next.island, animate);
+    this.setFog('launch', !next.launch, animate);
     if (this.launchKey) this.batch.setVisible(this.launchKey, next.launch);
     this.wheelSet.visible = next.ferris;
     this.coaster.visible = next.coaster;
@@ -1551,6 +1578,7 @@ export class Scenery {
 
   update(dt: number, time: number, a: Atmosphere, sunDir: THREE.Vector3) {
     this.terrain.update(time, a, sunDir);
+    this.fog.update(dt);
     const night = a.night;
     const turn = time * 0.12;
     if (this.wheelSet.visible) {
