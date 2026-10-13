@@ -6,7 +6,7 @@ import type { Hosted } from './context.ts';
 import { checkAction, parseAction } from './game.ts';
 import { HttpError, badRequest } from './http.ts';
 import { userTimeline } from './hosted-timeline.ts';
-import { connectionsOf, ensureProfile, planOf, worldInfo, type ConnectionRow, type SubscriptionRow, type WorldRow } from './store.ts';
+import { connectionsOf, ensureProfile, planOf, worldInfo, type ConnectionRow, type ProfileRow, type SubscriptionRow, type WorldRow } from './store.ts';
 import type { AuthUser } from './supabase.ts';
 
 /** `GET /api/me`: everything the shell needs to decide what to show. Creates the profile on first sight. */
@@ -38,10 +38,15 @@ export async function patchWorld(ctx: Hosted, user: AuthUser, body: Record<strin
     if (typeof t !== 'number' || !Number.isSafeInteger(t) || t <= 0 || t > ctx.now + 86_400_000) throw badRequest('lastSeen should be a day in the past.');
     patch.last_seen = t;
   }
-  const profile = await ensureProfile(ctx.db, user.id);
-  if (Object.keys(patch).length === 0) return worldInfo(profile);
-  const [updated] = await ctx.db.update<typeof profile>('profiles', { user_id: user.id }, { ...patch, updated_at: new Date(ctx.now).toISOString() });
-  return worldInfo(updated ?? profile);
+  if (Object.keys(patch).length === 0) return worldInfo(await ensureProfile(ctx.db, user.id));
+  // Write straight away (one call); only a founder with no profile yet needs it made first.
+  const write = () => ctx.db.update<ProfileRow>('profiles', { user_id: user.id }, { ...patch, updated_at: new Date(ctx.now).toISOString() });
+  let [updated] = await write();
+  if (!updated) {
+    await ensureProfile(ctx.db, user.id);
+    [updated] = await write();
+  }
+  return worldInfo(updated ?? (await ensureProfile(ctx.db, user.id)));
 }
 
 async function worldRow(ctx: Hosted, userId: string): Promise<WorldRow> {

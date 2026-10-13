@@ -102,7 +102,9 @@ const paid =
   (limit: number | null, fn: Handler): Handler =>
   async (ctx, user) => {
     await requirePaid(ctx, user);
-    if (limit !== null) await rateLimit(`${ctx.req.method} ${ctx.url.pathname}:${user.id}`, limit, ctx.now, { ctx });
+    // Writes are counted in Postgres across every instance; reads only in this
+    // instance's memory, which stops a loop without a database call per page load.
+    if (limit !== null) await rateLimit(`${ctx.req.method} ${ctx.url.pathname}:${user.id}`, limit, ctx.now, ctx.req.method === 'GET' ? {} : { ctx });
     return fn(ctx, user);
   };
 

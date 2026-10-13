@@ -245,7 +245,10 @@ class App {
     if (now < 1 || (this.timeline.source === 'demo' && !preview)) return;
     const seen = preview ? snaps[Math.max(0, now - forced)]!.t : this.hosted ? this.hosted.world.lastSeen : lastSeen(this.saveKey);
     if (!preview) {
-      if (this.hosted) void this.hosted.api.patchWorld({ lastSeen: snaps[now]!.t }).catch(() => {});
+      // Only when there's a newer day to record: a second visit the same day costs the server nothing.
+      if (this.hosted) {
+        if (this.hosted.world.lastSeen !== snaps[now]!.t) void this.hosted.api.patchWorld({ lastSeen: snaps[now]!.t }).catch(() => {});
+      }
       else markSeen(this.saveKey, snaps[now]!.t);
     }
     if (seen === null) return;
