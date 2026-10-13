@@ -9,6 +9,21 @@ Every task follows the visual bar in `CLAUDE.md`: screenshot it, day and night, 
 - [ ] **Base branch.** There's no `main`: work lives on `claude/*` branches. The owner opened PR #1 (`claude/friendly-darwin-sjkcz1` → `claude/tender-keller-mnunoy`). Still worth creating `main` so CI's `push: [main]` trigger means something; ask before creating it.
 - [ ] **Seeded cities (asked the owner, awaiting "go").** The owner wants every founder's city to be different: same size, same number of plots, different layout and structure. Proposal: keep a recognisable sunny bay city, but seed the coastline shape, hill and park placement, which neighbourhoods and landmarks you get and where, house styles, palettes and tree mix; the plot count and unlock gates stay fixed for fairness; the demo keeps today's layout as one seed. Touches `world/map.ts` (pure, testable) first.
 
+## P1: The reference-image quality push (in progress)
+
+The owner sent reference images (the Silicon Valley title slide is the art-direction target; GTA's Vinewood Hills for the Hills; SimCity BuildIt and 2013 for tidy blocks) and a screenshot of our bay they hate. Four agents worked on it, each owning its own files. See CONVERSATION_LOG for their words.
+
+- [x] **CPU.** Frames are paced: 60 fps while anything moves, 30 fps once the city has been calm for 4 s; hover raycasts at most every 100 ms and never while dragging.
+- [x] **Places menu** (pin button or G): one click to Downtown, the Hills, the Wharf, the Marina, the Airport and your island.
+- [x] **Downtown and brand assets.** Two new tower styles, a roof and signage kit, richer plot items and HQ levels, new yacht hulls and plane liveries.
+- [x] **Mansion choices.** Three Hills houses and three island estates to choose from. The first pick is free; rebuilding costs 25% of the tier's value in game money.
+- [x] **Neighbourhoods.** One street style per block, the same building line on every street, corner homes that turn the corner, richer homes, block grounds with evenly spaced street trees, gardens and corner stores.
+- [ ] **Helicopter** (written, waiting on the landscape commit for `HELIPAD`). It comes with the island, parks on the airport helipad, and flies you to your estate's pad from the home dialog, with the camera following.
+- [ ] **Landscape** (agent running): the Hills as a real neighbourhood on contour streets that connect to the city; terrain without the odd humps; the island further out and bigger; an airport you can see.
+- [ ] **Bay** (agent running): a whole, grounded Bay Bridge; Yerba Buena and Treasure Island; better boats; bulbs on the TINYTOWN sign that light up at night.
+- [ ] **Over-budget models** (from the downtown agent): the stadium (7.9k triangles), the amusement park (6.1k) and the supertall (8.5k). Trim them.
+- [ ] The rocket on the launch site stands right in front of the estate's helipad from the default camera. Move one of them.
+
 ## P1: Finish the visual overhaul (leftovers from the parallel agents)
 
 The four agents' work is committed. Items each one reported as unfinished are listed here.

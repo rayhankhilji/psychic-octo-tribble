@@ -32,7 +32,7 @@ Everything above `src/render` is **pure and unit-tested** (`tests/`). The same n
 | `src/main.ts` | The `App`: loads live data (`/api/timeline`) or the demo, runs the replay/timeline, applies saved actions, connects HUD/GameUI handlers to the City and Stage, and builds the share image. Reads URL params (below). |
 | `src/data/` | `types.ts` (Snapshot = one day of metrics), `stripe.ts` (subscriptions → MRR history), `github.ts`, `merge.ts`, `demo.ts`. |
 | `src/world/map.ts` | **The Bay geometry.** No rendering. Coastline polygons (MAINLAND, MARIN, EAST_BAY), ISLANDS, hills (Twin Peaks, Sutro, Telegraph…), `terrainHeight(x,z)`, the block lattice and each block's use (`hq`, `city`, `market`, `park`, `presidio`, `hill`, `civic`), Market Street, arterial polylines (EMBARCADERO, GREAT_HIGHWAY, PRESIDIO_PKWY, BAY_APPROACH, AIRPORT_ROAD), `LANDMARKS`, site coordinates (pier, marina, airport, launch). |
-| `src/world/layout.ts` | Which blocks are districts or neighbourhoods, lots per block (12 edge lots, 10 homes, 2 corner tree lots), home kinds by density, `planWorld()`. |
+| `src/world/layout.ts` | Which blocks are districts or neighbourhoods, lots per block (12 edge lots, 10 homes, 2 corner tree lots), home kinds by density, `planWorld()`. Each home's `seed` is packed (`packHomeSeed`/`readHomeSeed`): its lot role (corner side street, pocket-park side), its lot, the density ring and a seed shared by the whole block, so a block reads as one street. Homes sit behind a street wall `SETBACK` (0.2) in from the block edge, over a `SIDEWALK` of 0.1. |
 | `src/world/daylight.ts` | `atmosphereAt(hour, wet)`: keyframed sun, sky, fog, exposure and bloom, plus `night` 0–1. Follows the local clock. |
 | `src/world/events.ts`, `history.ts` | Day-to-day events (with copy that quotes the real number) and rain rules. |
 | `src/game/catalog.ts` | Every buyable item (price, upkeep, unlock MRR, placement, model key), `HOME_TIERS` (house ladder), `BUILD_BLOCKS`, `REGIONS`, sites. |
@@ -44,7 +44,7 @@ Everything above `src/render` is **pure and unit-tested** (`tests/`). The same n
 | `src/render/scenery.ts` | Everything metrics don't drive: terrain and water, roads, Market Street plazas and flatirons, parks, the waterfront and piers, marina, airport, island, suburbs, the sign, bridge lights. |
 | `src/render/landmarks.ts` | Golden Gate, Bay Bridge, Ferry Building, Coit Tower, Palace of Fine Arts, Sutro Tower, windmill, City Hall, the TINYTOWN sign. |
 | `src/render/terrain.ts` | One sculpted terrain mesh (vertex colours: beach, grass, chaparral, rock) and the water `ShaderMaterial` (depth texture, waves, fresnel, specular, surf). |
-| `src/render/buildings.ts` | Homes (`home(kind, seed)`), trees (`tree`, `palm`, kinds round/cypress/plane/ficus/eucalyptus), `neighbourhoodGrounds()`. |
+| `src/render/buildings.ts` | Homes (`home(kind, seed)`) in nine street families (Sunset, Marina, cottage; Italianate, Queen Anne, Stick; Edwardian, brick, deco), with finished corners; trees (`tree`, `palm`, kinds round/plane/pine/cypress/ficus/eucalyptus); `neighbourhoodGrounds()` (curbs, street trees, lamps, mid-block gardens and pools by ring, a corner store every third block). Cheap boxes (`bx`/`ledge`) skip hidden faces: call `seal(b)` before `build()`. |
 | `src/render/towers.ts` | Downtown: `tower`, `pyramid`, `spire`, `deco`, `campus`, `headquarters(name, floors, seed, level)` with sign and beacon. |
 | `src/render/models.ts` | `itemModel(model, x, z, seed)` for every catalogue item, `founderHome`, `plane`, `airliner`, `yacht`, `rocket`, `cloudBank`, `plotMarker`, `encampment`. |
 | `src/render/traffic.ts` | `Traffic`: lane graph from `roadNetwork(STREET_BLOCKS)` plus arterials, instanced car models, bridge streams, pedestrians. API: `setRoads`, `setCount`, `setLuxury`, `update`. |
@@ -105,7 +105,7 @@ Colours are hex or linear RGB triples; values above 1 glow under bloom. `build()
 
 | Thing | Triangles |
 |---|---|
-| Home (about 350 at once) | ≤ ~1,500 (measured average about 1,280) |
+| Home (about 350 at once) | ≤ ~1,500 (measured averages: house ~810, townhouse ~1,200, flats ~1,210) |
 | Tree or palm (thousands) | ≤ ~120 |
 | Tower | ≤ ~8k |
 | Plot item | ≤ ~5k |
