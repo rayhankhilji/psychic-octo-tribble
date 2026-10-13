@@ -21,7 +21,7 @@ The owner sent reference images (the Silicon Valley title slide is the art-direc
 - [ ] **Helicopter** (written, waiting on the landscape commit for `HELIPAD`). It comes with the island, parks on the airport helipad, and flies you to your estate's pad from the home dialog, with the camera following.
 - [ ] **Landscape** (agent running): the Hills as a real neighbourhood on contour streets that connect to the city; terrain without the odd humps; the island further out and bigger; an airport you can see.
 - [ ] **Bay** (agent running): a whole, grounded Bay Bridge; Yerba Buena and Treasure Island; better boats; bulbs on the TINYTOWN sign that light up at night.
-- [ ] **Over-budget models** (from the downtown agent): the stadium (7.9k triangles), the amusement park (6.1k) and the supertall (8.5k). Trim them.
+- [ ] **Over-budget plot items** (low priority: each is a one-off, so the cost is a few thousand triangles in all): the stadium (7.9k triangles), the university (6.4k) and the amusement park (6.1k), against a ~5k budget for plot items. The supertall (8.5k) is near the 8k tower budget.
 - [ ] The rocket on the launch site stands right in front of the estate's helipad from the default camera. Move one of them.
 
 ## P1: Finish the visual overhaul (leftovers from the parallel agents)
