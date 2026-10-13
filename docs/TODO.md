@@ -7,7 +7,19 @@ Every task follows the visual bar in `CLAUDE.md`: screenshot it, day and night, 
 ## P0: Housekeeping
 
 - [x] **Base branch.** `main` created (2026-10-13, owner's go) from the latest work. The GitHub default branch is still `claude/tender-keller-mnunoy`: the owner can switch it to `main` in the repo's Settings → General.
-- [ ] **Seeded cities (owner said go, 2026-10-13; agent working).** The owner wants every founder's city to be different: same size, same number of plots, different layout and structure. Proposal: keep a recognisable sunny bay city, but seed the coastline shape, hill and park placement, which neighbourhoods and landmarks you get and where, house styles, palettes and tree mix; the plot count and unlock gates stay fixed for fairness; the demo keeps today's layout as one seed. Touches `world/map.ts` (pure, testable) first.
+- [x] **Seeded cities.** Every founder's world comes from their profile's seed: same 34 home blocks, build blocks and HQ, a different coast, Golden Gate, island, Twin Peaks and Hills plan, parks, landmarks, towns and palette. Seed 0 is the classic map, exactly. Tested over 50+ seeds.
+- [ ] Seeded leftovers: Market's angle is fixed (only its length varies); no lakes yet; the central park and squares aren't in the showcase; Coit Tower next to the Presidio can read as a lone column; a North Point's beach is wide.
+
+## P0: Launch (the owner is going live to a 10,000-person waitlist)
+
+Built and committed (2026-10-13): accounts, billing, the paywall, onboarding, the account menu, server-checked saves, export and deletion, email, scheduled pipelines, the waitlist and admin console, security, observability, CI/CD, legal pages, and the launch docs. What's left is mostly the owner's: accounts, keys, money, a domain and a lawyer. **Follow `docs/LAUNCH.md`.**
+
+- [ ] **Owner: long-lead items, 14+ days out.** Submit the Stripe App for review (4 business days a round; until it's published only 25 accounts can connect, so no paid wave before then). Activate live Stripe. Buy the domain. Start warming the Resend sending domain.
+- [ ] **Owner: accounts and settings** (`docs/SETUP.md`): Supabase Pro (migrations 0001–0006, auth providers, custom SMTP and raised email limits, the six templates), Stripe (`tools/stripe-setup.mjs`, then dashboard settings), the Stripe App, the GitHub App, Resend, Vercel Pro and every env var, Turnstile, Sentry, an uptime monitor, `docs/SECURITY.md` settings, `docs/RELEASE.md` repo settings (default branch `main`, ruleset, environments and secrets).
+- [ ] **Owner and lawyer:** fill the placeholders in `public/legal/*.html` and `public/.well-known/security.txt`; decide governing law and the entity; the EU/UK 14-day withdrawal right against "no refunds" (if waived, add the consent text to Checkout); retention periods; US auto-renewal reminders; whether the repository should stay public.
+- [ ] **Owner decisions:** void unpaid invoices when a past-due founder deletes their account? Do cancelled cities expire?
+- [ ] **First real run in test mode** end to end on a Vercel preview (sign in → pay → connect → build → delete), then wave 0 (about 25 friends) with real money.
+- [ ] Known gaps: admins should need MFA (`aal2`); founders must remove the Stripe App themselves after deleting; per-instance limits on telemetry; `style-src 'unsafe-inline'`; one Stripe account can connect to several cities; no in-app email preferences screen yet.
 
 ## P1: The reference-image quality push (in progress)
 
