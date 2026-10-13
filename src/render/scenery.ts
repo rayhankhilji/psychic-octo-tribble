@@ -1055,6 +1055,13 @@ export class Scenery {
     const b = new GeoBuilder();
     hillsStreets(b, r, plan, naturalHeight);
     hillsLots(b, r, plan, naturalHeight);
+    // Your lot's driveway carries on level across the pad to the front of the house.
+    const [edge] = plan.homeDrive;
+    if (edge) {
+      const ux = (edge[0] - HILLS_HOME.x) / 1.85;
+      const uz = (edge[1] - HILLS_HOME.z) / 1.85;
+      strip(b, [[HILLS_HOME.x + ux * 0.6, HILLS_HOME.z + uz * 0.6, edge[2]], [edge[0] + ux * 0.05, edge[1] + uz * 0.05, edge[2]]], 0.26, 0xd6cfc0, 0.035);
+    }
     const group = this.add(b);
     group.userData.tip = { title: 'TinyTown Hills', detail: 'Opens at $1k MRR, when you move into your first Hills house.' };
     this.hillKeys.push(this.fix(group));
@@ -1319,7 +1326,8 @@ export class Scenery {
       bank(this.clouds.hills, x, z, 6.2, 5.2, Math.max(0.6, terrainHeight(x, z)) + 1.1, `hills-${key}`, 'TinyTown Hills clear at $1k MRR');
     }
     bank(this.clouds.island, ISLANDS.founder.x - 0.3, ISLANDS.founder.z - 0.2, 10.6, 10.4, 1.5, 'island', 'Your island clears at $100k MRR');
-    bank(this.clouds.launch, ISLANDS.launch.x + 0.2, ISLANDS.launch.z + 0.2, 6.4, 6.4, 1.1, 'launch', 'The launch site clears at $1M MRR');
+    // Offset away from the estate, so the cloud never sits on the house or its helipad.
+    bank(this.clouds.launch, ISLANDS.launch.x + 0.35, ISLANDS.launch.z - 0.35, 6.0, 6.0, 1.1, 'launch', 'The launch site clears at $1M MRR');
   }
 
   /** Reflect the game: what's open, what's built, what's falling apart. */

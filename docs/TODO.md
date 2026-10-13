@@ -23,7 +23,7 @@ The owner sent reference images (the Silicon Valley title slide is the art-direc
 - [ ] Landscape leftovers: parks, waterfront and Marina polish; Hills street lamps have no light pools at night; backdrop town windows barely show at night; the island's cove and jetty face away from the default camera; check the Hills from `az=225`.
 - [ ] **Bay** (agent running): a whole, grounded Bay Bridge; Yerba Buena and Treasure Island; better boats; bulbs on the TINYTOWN sign that light up at night.
 - [ ] **Over-budget plot items** (low priority: each is a one-off, so the cost is a few thousand triangles in all): the stadium (7.9k triangles), the university (6.4k) and the amusement park (6.1k), against a ~5k budget for plot items. The supertall (8.5k) is near the 8k tower budget.
-- [ ] The rocket on the launch site stands right in front of the estate's helipad from the default camera. The landscape agent is moving the launch site.
+- [x] The launch site moved south-east of the estate, so the rocket no longer hides the estate's helipad from the default camera (a map test keeps it off the camera side). The founder's Hills driveway now joins the house pad.
 
 ## P1: Finish the visual overhaul (leftovers from the parallel agents)
 

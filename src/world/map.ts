@@ -99,7 +99,8 @@ export const ISLANDS: Record<'founder' | 'launch' | 'yerba' | 'treasure' | 'ange
   // Your island sits well out in the bay, north of the shipping lane: you fly there (helicopter or jet).
   founder: { id: 'founder', x: 12, z: 39, r: 4.5, h: 1.2 },
   /** The clouded end of your island, unlocked at $1M. */
-  launch: { id: 'launch', x: 16.8, z: 42.8, r: 2.6, h: 0.25 },
+  // South-east of the estate, so from the north-east camera the rocket never stands in front of the house.
+  launch: { id: 'launch', x: 16.3, z: 34.5, r: 2.6, h: 0.25 },
   yerba: { id: 'yerba', x: 33, z: -7, r: 3.6, h: 3.2 },
   treasure: { id: 'treasure', x: 35.5, z: -0.5, r: 3.2, h: 0.25 },
   angel: { id: 'angel', x: -16, z: 38, r: 6.5, h: 6 },
@@ -1000,6 +1001,7 @@ function finishPlan(streets: HillsStreet[]): HillsPlan {
   const home = pads()[0]![4];
   const ux = (near[0] - HILLS_HOME.x) / nd;
   const uz = (near[1] - HILLS_HOME.z) / nd;
+  // From the edge of the level pad down to the street (scenery carries it on across the pad to the house).
   const homeDrive: [number, number, number][] = [
     [HILLS_HOME.x + ux * 1.85, HILLS_HOME.z + uz * 1.85, home],
     [near[0] - ux * 0.2, near[1] - uz * 0.2, near[2]],
@@ -1352,8 +1354,11 @@ function grades(): Map<number, Grade[]> {
     const fz = (l.z - sz) / len2(l.x - sx, l.z - sz);
     capsule(sx, sz, sy, l.x - fx * (l.d / 2 - 0.05), l.z - fz * (l.d / 2 - 0.05), l.y, 0.17, 0.22);
   }
-  const [a, b] = plan.homeDrive;
-  if (a && b) capsule(a[0], a[1], a[2], b[0], b[1], b[2], 0.2, 0.25);
+  for (let i = 1; i < plan.homeDrive.length; i++) {
+    const a = plan.homeDrive[i - 1]!;
+    const b = plan.homeDrive[i]!;
+    capsule(a[0], a[1], a[2], b[0], b[1], b[2], 0.2, 0.25);
+  }
   // The towns: their streets and lots, more lightly (they're seen from afar).
   for (const town of backdropTowns()) {
     for (const line of town.streets) {

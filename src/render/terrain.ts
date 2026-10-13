@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { AIRPORT_FILL, SEA, TOWN_GROUND, TREASURE_COAST, coastDistance, fbm, gradeWeight, hillsPlan, isBeach, naturalHeight, polygonDistance, terrainHeight } from '../world/map.ts';
+import { AIRPORT_FILL, ISLANDS, SEA, TOWN_GROUND, TREASURE_COAST, coastDistance, fbm, gradeWeight, hillsPlan, isBeach, naturalHeight, polygonDistance, terrainHeight } from '../world/map.ts';
 import type { Atmosphere } from '../world/daylight.ts';
 
 /** Area the terrain mesh covers; beyond it, open water. */
@@ -206,7 +206,7 @@ function groundColour(c: THREE.Color, x: number, h: number, z: number, slope: nu
   // Green near the city and low down; golden dry grass higher up, with sage scrub in patches.
   c.copy(GRASS);
   // Your island is watered: lawns and gardens, not dry grass.
-  const lush = Math.hypot(x - 12.6, z - 39.6) < 6.2 ? 0.25 : 1;
+  const lush = Math.hypot(x - ISLANDS.founder.x, z - ISLANDS.founder.z) < 5.6 || Math.hypot(x - ISLANDS.launch.x, z - ISLANDS.launch.z) < 3.4 ? 0.25 : 1;
   const dry = Math.min(1, Math.max(0, (h - 0.25) / 1.5 + (noise - 0.5) * 0.9)) * lush;
   c.lerp(fine > 0.55 ? GOLD : STRAW, dry);
   c.lerp(SAGE, Math.max(0, Math.min(0.6, (noise - 0.55) * 2.4)) * dry);

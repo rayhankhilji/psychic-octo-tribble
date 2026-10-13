@@ -87,6 +87,11 @@ describe('TinyTown Hills and the landscape', () => {
     expect(level(HELIPAD.x, HELIPAD.z, 0.7)).toBeLessThan(0.02);
     expect(coastDistance(HELIPAD.x, HELIPAD.z)).toBeLessThan(-0.5);
     expect(coastDistance(SUPERYACHT.x, SUPERYACHT.z)).toBeGreaterThan(0.2);
+    // The launch site: on land, level, and never between the north-east camera and the estate.
+    const L = ISLANDS.launch;
+    expect(coastDistance(L.x, L.z)).toBeLessThan(-1.5);
+    expect(level(L.x, L.z, 1.4)).toBeLessThan(0.02);
+    expect(L.x - ISLANDS.founder.x + (L.z - ISLANDS.founder.z)).toBeLessThan(0);
     for (const s of AIRPORT_SLOTS) expect(Math.abs(terrainHeight(s.x, s.z))).toBeLessThan(0.02);
   });
 
