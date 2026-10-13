@@ -1,20 +1,161 @@
+# Checks every pull request and every push to main. The job names are the
+# status checks that branch protection requires (docs/RELEASE.md), so rename
+# them only together with the ruleset.
+#
+# Vercel builds and deploys on its own (its Git integration); this workflow is
+# the gate in front of a merge, and on main it hands over to migrate.yml once
+# the code has passed.
 name: CI
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
+
+# Read-only by default; a job that needs more asks for it.
+permissions:
+  contents: read
+
+# A new push to a pull request supersedes the run in progress. Each push to
+# main gets a group of its own, so none is ever cancelled or skipped: one may be
+# applying a migration, and each one checks its own commit.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: true
 
 jobs:
-  check:
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
+          persist-credentials: false
+      - uses: ./.github/actions/setup
       - run: npm run typecheck
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # Includes the migrations lint (every table has row-level security on).
       - run: npm test
-      - run: npx vite build
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # The same two commands Vercel runs (vercel.json), so a green Build here
+      # means the deploy's build step will pass too.
+      - name: Build the app
+        run: npm run build
+      - name: Package for Vercel and smoke-test the API function
+        run: node server/build-vercel.mjs
+      # The exact files this commit would serve, for a reviewer to download
+      # from the run's summary page and inspect.
+      - name: Upload dist
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Blocking: a high or critical advisory in anything that ships to
+      # founders' browsers or runs in the API. The runtime tree is two
+      # packages, so this rarely fires, and when it does it should stop a merge.
+      - name: Runtime dependencies (blocking)
+        run: npm audit --omit=dev --audit-level=high
+      # Report only: build and test tools never reach production, and their
+      # advisories (often in a dev server) shouldn't hold up a fix. Dependabot
+      # opens the upgrade.
+      - name: All dependencies (report only)
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Catches a vulnerable package as it's added, before it's in the lockfile on main.
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Matches the global Playwright in the cloud dev containers (docs/DEV_WORKFLOW.md).
+      PLAYWRIGHT_VERSION: 1.56.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The end-to-end suite lands separately; until tools/e2e.mjs is in the
+      # commit this job passes without running anything.
+      - name: Look for the suite
+        id: suite
+        run: |
+          if [ -f tools/e2e.mjs ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=E2E skipped::tools/e2e.mjs isn't in this commit yet."
+          fi
+      - if: steps.suite.outputs.present == 'true'
+        uses: ./.github/actions/setup
+      # tools/playwright.mjs imports `playwright`; use the project's copy if it
+      # has one, otherwise install the pinned version without touching the lockfile.
+      - name: Install Playwright and Chromium
+        if: steps.suite.outputs.present == 'true'
+        run: |
+          if ! npm ls playwright --depth=0 > /dev/null 2>&1; then
+            npm install --no-save --no-audit --no-fund "playwright@${PLAYWRIGHT_VERSION}"
+          fi
+          npx playwright install --with-deps chromium
+      - name: Run the suite
+        if: steps.suite.outputs.present == 'true'
+        run: node tools/e2e.mjs
+      - name: Upload screenshots and traces
+        if: failure() && steps.suite.outputs.present == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-output
+          path: e2e-output/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Applies supabase/migrations to staging, then (after approval) production.
+  # Only for pushes to main in this repository: never for pull requests or forks.
+  migrate:
+    name: Migrate database
+    needs: [typecheck, test, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'rayhankhilji/psychic-octo-tribble'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/migrate.yml

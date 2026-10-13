@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in TinyTown is broken or wrong.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. Please leave out API keys, tokens and anything from a founder's account: this repository is public.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      placeholder: |
+        1. Open /?demo
+        2. Drag the timeline to day 300
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Live site
+        - Preview deploy
+        - Local dev (npm run dev)
+        - Demo world (/?demo)
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: URL
+      description: The page you were on, including anything after the `?`.
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device
+      placeholder: Chrome 141 on a 2021 MacBook Pro
+  - type: input
+    id: release
+    attributes:
+      label: Build
+      description: The release id from an error report, or the commit a preview was built from, if you know it.
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or console output
+      description: Drag images in. For anything visual, say whether it was day or night in the city.

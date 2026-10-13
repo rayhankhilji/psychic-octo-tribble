@@ -106,6 +106,10 @@ Founders never paste keys. They install the TinyTown Stripe App, which asks for 
 
 Founders who use PostHog can make it the source of their population (monthly active users). They paste their own **personal API key** in TinyTown; it's stored encrypted and only the server uses it. In PostHog they create it under **Settings** → **Personal API keys** with the **Query: Read** scope for their project. TinyTown accepts PostHog Cloud (`us.posthog.com`, `eu.posthog.com`). If you ever want to allow a self-hosted PostHog, list its host in `POSTHOG_HOSTS`.
 
+### Database changes after launch
+
+Later migrations are applied by CI when they reach `main` (`.github/workflows/migrate.yml`, staging first, then production after your approval). If you pasted `0001` into the SQL editor by hand, tell the CLI once, per database: `supabase migration repair --status applied 0001`. The workflow needs your database password as the `SUPABASE_DB_PASSWORD` environment secret: see `docs/RELEASE.md` for the GitHub environments and secrets, branch rules and the Vercel production branch (`main`).
+
 ## 6. Vercel (the live site)
 
 1. [vercel.com/new](https://vercel.com/new) → import the GitHub repository. Leave the build settings alone: `vercel.json` in the repo sets them (framework "Other", build `npm run build && node server/build-vercel.mjs`).

@@ -6,3 +6,5 @@ dist/
 
 # Vercel build output (server/build-vercel.mjs)
 .vercel
+supabase/.temp/
+e2e-output/
