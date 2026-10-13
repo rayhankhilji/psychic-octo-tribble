@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { GeoBuilder, smoothMaterial, solidMaterial, type ColorLike } from './geo.ts';
 import { PALETTE } from './palette.ts';
 import { palm, tree } from './buildings.ts';
-import { cloudBank } from './models.ts';
-import { Kit, tower } from './towers.ts';
-import { hillsHouse, type HillsStyle } from './hills.ts';
+import { airliner, cloudBank } from './models.ts';
+import { Kit, neonOf, pixelText, shade, tower, wall, winOf } from './towers.ts';
+import { gum, hillsHouse, hillsLots, hillsStreets, oak, pine, rock, scrub, strip, type HillsStyle } from './hills.ts';
 import { Batch } from './batch.ts';
 import {
   bayBridge,
@@ -25,12 +25,14 @@ import {
 import { Terrain } from './terrain.ts';
 import { hash, pick, rng } from '../world/rng.ts';
 import {
-  AIRPORT,
+  AIRPORT_FILL,
   AIRPORT_SLOTS,
+  HELIPAD,
+  ISLAND_COVE,
+  TREASURE_COAST,
   BLOCKS,
   CIVIC_BLOCK,
   HILLS_HOME,
-  HILLS_HOOD,
   ISLANDS,
   LANDMARKS,
   MARINA_SLOTS,
@@ -44,9 +46,19 @@ import {
   PRESIDIO_PKWY,
   RUNWAY,
   SEA,
+  SUPERYACHT,
+  TWIN_PEAKS_SUMMITS,
   blockCentre,
   coastDistance,
+  fbm,
+  gradeWeight,
+  hillsPlan,
+  inSignZone,
+  isBeach,
+  naturalHeight,
   terrainHeight,
+  TOWN_STREET,
+  backdropTowns,
   type Pt,
 } from '../world/map.ts';
 import type { Atmosphere } from '../world/daylight.ts';
@@ -70,12 +82,6 @@ export interface SceneryState {
 
 const LAMP: ColorLike = [2.4, 1.75, 0.95];
 
-/** Twin Peaks Boulevard: from the end of Market up through TinyTown Hills. */
-const HILL_ROAD: Pt[] = [
-  [MARKET_END[0], MARKET_END[1]], [-11.5, -25.6], [-4.6, -26], [-3.6, -27.4], [-10.8, -28], [-12.4, -29.3],
-  [-5, -30], [-3.8, -31.4], [-9.2, -32.6],
-];
-
 /**
  * Everything around the city that metrics don't drive: terrain and water,
  * the bridges, the waterfront, parks, landmarks, the airport, your island,
@@ -98,12 +104,10 @@ export class Scenery {
   private tmpMatrix = new THREE.Matrix4();
   private wheelSet = new THREE.Group();
   private coaster = new THREE.Group();
-  private hood = new THREE.Group();
-  /** Level terraces for the Hills houses: centre, top and which way they face (downhill). */
-  private hillPads: { x: number; z: number; y: number; rot: number }[] = [];
+  /** Batch keys of everything in TinyTown Hills that clears with the cloud. */
   private hillKeys: string[] = [];
   private clouds: Record<'hills' | 'island' | 'launch', THREE.Group> = { hills: new THREE.Group(), island: new THREE.Group(), launch: new THREE.Group() };
-  private launchPad = new THREE.Group();
+  private launchKey = '';
   private beam: THREE.Mesh;
   private beamMat: THREE.ShaderMaterial;
   private beamCentre = new THREE.Vector3();
@@ -123,7 +127,7 @@ export class Scenery {
   private batchKeys: string[] = [];
   private lampsDimmed = false;
   private flags: THREE.Object3D[] = [];
-  /** The Hills road, for the cars that drive it. */
+  /** Twin Peaks Boulevard, for anything that drives it. */
   readonly hillRoad: THREE.CatmullRomCurve3;
   private state: SceneryState = { hills: false, island: false, launch: false, ferris: false, coaster: false, signLit: true, lampsFailing: false, bridgeRusting: false };
   private signFade = 1;
@@ -131,7 +135,7 @@ export class Scenery {
   constructor(seed: number) {
     this.seed = seed;
     this.object.add(this.terrain.object);
-    this.hillRoad = new THREE.CatmullRomCurve3(HILL_ROAD.map(([x, z]) => new THREE.Vector3(x, terrainHeight(x, z) + 0.05, z)), false, 'centripetal');
+    this.hillRoad = new THREE.CatmullRomCurve3(hillsPlan().streets[0]!.pts.filter((_, i) => i % 3 === 0).map(([x, z, y]) => new THREE.Vector3(x, y + 0.05, z)), false, 'centripetal');
 
     const gg = goldenGate();
     this.bay = bayBridge();
@@ -157,7 +161,7 @@ export class Scenery {
     for (const l of [cityHall(civic.x, civic.z), ferryBuilding(), coitTower(), palaceOfFineArts(), sutroTower(), conservatory(-16.5, -14.6), cliffHouse()]) this.fix(l);
     for (const part of [this.roads(), this.marketPlazas(), this.parks(), this.marina(), this.airport(), this.island(), this.suburbs()]) this.fix(part);
     this.object.add(this.waterfront());
-    this.object.add(this.hood, this.clouds.hills, this.clouds.island, this.clouds.launch, this.launchPad);
+    this.object.add(this.clouds.hills, this.clouds.island, this.clouds.launch);
     this.buildHood();
     this.buildClouds();
 
@@ -357,7 +361,7 @@ export class Scenery {
       const y = terrainHeight(x, z);
       eucalyptus(b, r, x, z, y, r() < 0.5);
     }
-    // Telegraph Hill and Twin Peaks: scattered trees on the slopes
+    // Telegraph Hill: scattered trees on the slopes
     for (let i = 0; i < 70; i++) {
       const a = r() * Math.PI * 2;
       const d = 0.8 + r() * 2.4;
@@ -365,16 +369,6 @@ export class Scenery {
       const z = LANDMARKS.coitTower.z + Math.sin(a) * d;
       if (d < 1.1) continue;
       tree(b, r, x, z, 0.8, terrainHeight(x, z) - 0.03, r() < 0.6 ? 'round' : 'cypress');
-    }
-    for (let i = 0; i < 260; i++) {
-      const x = -34 + r() * 34;
-      const z = -48 + r() * 24;
-      const h = terrainHeight(x, z);
-      if (h < 0.6 || inSign(x, z) || inHood(x, z)) continue;
-      const blk = BLOCKS.find((q) => Math.abs(q.bx * 5 - x) <= 2.6 && Math.abs(q.bz * 5 - z) <= 2.6);
-      if (blk && blk.use !== 'hill') continue;
-      if (r() > 0.55) continue;
-      tree(b, r, x, z, 1, h - 0.05, r() < 0.5 ? 'cypress' : 'round');
     }
     // Marina Green
     b.box(7, 0.012, 1.3, -20.5, 0.005, 9.6, 0x7fc252);
@@ -601,76 +595,349 @@ export class Scenery {
     return this.add(b, { title: 'The Marina', detail: 'Yacht berths open at $10k MRR.' });
   }
 
+  /**
+   * The airport, SFO-style, on fill out into the bay behind a riprap seawall:
+   * one long runway with its markings, lights and approach lights out over
+   * the water on piers; a parallel taxiway; a terminal under a wing of a
+   * roof with two boarding piers, jet bridges and airliners at the gates; the
+   * private apron where the founder's jets park; the control tower, hangars,
+   * a parking garage, and the helipad.
+   */
   private airport(): THREE.Group {
     const r = rng(hash(this.seed, 'airport'));
-    const b = new GeoBuilder();
-    const { x0, x1, z0, z1 } = AIRPORT;
-    b.box(x1 - x0, 0.012, z1 - z0, (x0 + x1) / 2, 0, (z0 + z1) / 2, 0x86b860);
-    // Runway with markings, taxiway, apron
+    const b = new Kit();
     const rx = RUNWAY.x;
-    b.box(1.8, 0.016, RUNWAY.z1 - RUNWAY.z0, rx, 0, (RUNWAY.z0 + RUNWAY.z1) / 2, 0x4a4e58);
-    for (let z = RUNWAY.z0 + 1.6; z < RUNWAY.z1 - 1.6; z += 1.2) b.box(0.07, 0.004, 0.6, rx, 0.017, z, PALETTE.trim);
-    for (const end of [RUNWAY.z0 + 0.6, RUNWAY.z1 - 0.6]) for (let k = -3; k <= 3; k++) b.box(0.1, 0.004, 0.55, rx + k * 0.22, 0.017, end, PALETTE.trim);
-    for (const s of [-1, 1]) b.box(0.04, 0.004, RUNWAY.z1 - RUNWAY.z0, rx + s * 0.86, 0.017, (RUNWAY.z0 + RUNWAY.z1) / 2, PALETTE.trim);
-    b.box(0.8, 0.014, RUNWAY.z1 - RUNWAY.z0 - 2, rx - 2.1, 0, (RUNWAY.z0 + RUNWAY.z1) / 2, 0x5d616c);
-    b.box(2.6, 0.014, 11, 19.6, 0, -43, 0x6a6e78);
-    for (const s of AIRPORT_SLOTS) b.box(1.8, 0.004, 0.03, s.x, 0.016, s.z + 1.1, 0xf2c84b);
-    for (let z = RUNWAY.z0; z <= RUNWAY.z1; z += 1) for (const s of [-1, 1]) b.blob(0.03, rx + s * 1.0, 0.05, z, [2.6, 2.4, 1.6], true);
-    // Terminal with a curved roof and glass front, control tower, hangars
-    b.box(1.6, 0.55, 6, 17.3, 0, -43, 0xe9eef2);
-    const roof = new THREE.CylinderGeometry(3.2, 3.2, 1.7, 24, 1, false, -0.35, 0.7).rotateZ(Math.PI / 2).scale(1, 0.18, 1.02);
-    b.transformed(roof, new THREE.Matrix4().makeTranslation(17.3, 0.0, -43), 0xc9d2dc, 'glass');
-    b.windows({ w: 1.6, d: 6, x: 17.3, z: -43, y0: 0, rows: 1, rowHeight: 0.55, cols: 14, faces: ['x+'] }, r, 0.95, PALETTE.windowCool, { w: 0.34, h: 0.4 });
-    b.cylinder(0.2, 0.26, 2.6, 17.4, 0, -38.6, PALETTE.trim, 10);
-    b.cylinder(0.55, 0.42, 0.45, 17.4, 2.6, -38.6, 0x6f9fc8, 10, 'glass');
-    b.cylinder(0.58, 0.58, 0.06, 17.4, 3.05, -38.6, PALETTE.trim, 10);
-    b.blob(0.06, 17.4, 3.25, -38.6, [3, 0.3, 0.2], true);
-    for (const hz of [-48.6, -46]) {
-      b.box(2.3, 0.85, 2.1, 17.6, 0, hz, 0xd9dde4);
-      const vault = new THREE.CylinderGeometry(1.15, 1.15, 2.1, 16, 1, false, 0, Math.PI).rotateX(Math.PI / 2).rotateY(Math.PI / 2).scale(1, 0.45, 1);
-      b.transformed(vault, new THREE.Matrix4().makeTranslation(17.6, 0.85, hz), 0xb9c0ca, 'glass');
-      b.quad(1.6, 0.7, 18.76, 0.38, hz, 'x+', 0x4a515c, false);
+    const y = 0.0;
+    const asphalt = 0x4c5059;
+    const concrete = 0xc9c4b8;
+    const yellow = PALETTE.roadYellow;
+    const white = PALETTE.trim;
+    const EDGE: ColorLike = [2.6, 2.3, 1.5];
+    const BLUE: ColorLike = [0.5, 1.0, 2.8];
+    const GREEN: ColorLike = [0.5, 2.6, 0.9];
+    const RED: ColorLike = [2.8, 0.35, 0.25];
+    const paint = (w: number, d: number, x: number, z: number, color: ColorLike, lift = 0.018, rot = 0) => b.box(w, 0.003, d, x, y + lift, z, color, false, rot);
+    // Seawall: riprap where the fill meets the bay, a concrete coping along the top.
+    seawall(b, r, AIRPORT_FILL);
+    // The runway: grooved asphalt, blast pads, piano keys, touchdown bars, aiming points, centreline, edge lines.
+    const z0 = RUNWAY.z0;
+    const z1 = RUNWAY.z1;
+    b.box(1.8, 0.016, z1 - z0 + 1.6, rx, y, (z0 + z1) / 2, asphalt);
+    for (const end of [z0 - 0.8, z1 + 0.8]) {
+      for (let k = 0; k < 5; k++) paint(1.5, 0.05, rx, end + (end < z0 ? 1 : -1) * (-0.3 + k * 0.15), yellow, 0.018, 0);
     }
-    b.box(0.03, 0.6, 0.03, 27.2, 0, -37, PALETTE.steel);
-    b.box(0.3, 0.08, 0.08, 27.35, 0.55, -37, 0xf28a3a);
-    for (let i = 0; i < 26; i++) palm(b, r, x0 + 0.3 + r() * 0.5, z0 + 0.6 + r() * (z1 - z0 - 1.2), 1.0, 0);
-    return this.add(b, { title: 'Airport', detail: 'Free infrastructure for every city. Planes are what you buy.' });
+    for (const [end, dir] of [[z0, 1], [z1, -1]] as const) {
+      for (let k = -3; k <= 3; k++) if (k !== 0) paint(0.11, 0.6, rx + k * 0.21, end + dir * 0.4, white);
+      paint(1.7, 0.05, rx, end, white);
+      runwayNumber(b, dir > 0 ? '36' : '18', rx, y + 0.019, end + dir * 1.15, dir);
+      // Aiming points and touchdown bars
+      for (const s of [-1, 1]) {
+        paint(0.16, 0.9, rx + s * 0.42, end + dir * 2.6, white);
+        for (let k = 0; k < 3; k++) paint(0.06, 0.4, rx + s * 0.38, end + dir * (1.8 + k * 0.0) + dir * (k * 0.6 + 1.4), white);
+      }
+    }
+    for (let z = z0 + 3.2; z < z1 - 3.2; z += 0.9) paint(0.05, 0.5, rx, z, white);
+    for (const s of [-1, 1]) paint(0.035, z1 - z0, rx + s * 0.84, (z0 + z1) / 2, white);
+    // Runway lights: white edges, green thresholds, red ends; approach lights out over the bay on piers.
+    for (let z = z0; z <= z1 + 0.01; z += 0.8) for (const s of [-1, 1]) b.blob(0.028, rx + s * 0.95, y + 0.04, z, EDGE, true);
+    for (let k = -4; k <= 4; k++) {
+      b.blob(0.03, rx + k * 0.2, y + 0.04, z0 - 0.08, GREEN, true);
+      b.blob(0.03, rx + k * 0.2, y + 0.04, z1 + 0.08, GREEN, true);
+    }
+    for (let z = z0 - 1.4; z > -56.4; z -= 0.75) {
+      const over = z < AIRPORT_FILL[6]![1];
+      if (over) {
+        b.box(0.06, 0.6, 0.06, rx, SEA - 0.1, z, 0x8f8a80);
+        b.box(0.7, 0.04, 0.05, rx, SEA + 0.5, z, 0x8f8a80);
+      }
+      const ly = over ? SEA + 0.55 : y + 0.04;
+      for (let k = -2; k <= 2; k++) b.blob(0.026, rx + k * 0.14, ly, z, k === 0 ? EDGE : [2.6, 2.4, 2.0], true);
+    }
+    // Taxiway A, parallel to the runway, and the turn-offs the airliners use.
+    const tx = rx - 2.1;
+    b.box(0.72, 0.014, 11.6, tx, y, -43.2, 0x5a5e68);
+    paint(0.03, 11.4, tx, -43.2, yellow, 0.016);
+    for (const link of [[[rx - 0.2, -38.3], [tx + 0.6, -38.8], [tx, -39.6]], [[tx, -46.8], [tx + 0.5, -48.6], [rx - 0.2, -49.2]]] as const) {
+      const pts = link.map(([x, z]) => [x, z, y + 0.002] as const);
+      strip(b, pts, 0.72, 0x5a5e68, 0.012);
+      strip(b, pts, 0.03, yellow, 0.015);
+    }
+    for (let z = -48.8; z <= -37.8; z += 1) for (const s of [-1, 1]) b.blob(0.022, tx + s * 0.4, y + 0.035, z, BLUE, true);
+    // The private apron, where your jets park nose-out: stands with lead-in lines and stop bars.
+    b.box(4.6, 0.014, 10.4, 20.3, y, -43.1, concrete);
+    for (let k = 0; k < 5; k++) paint(4.6, 0.012, 20.3, -48.3 + k * 2.6, 0xb5b0a4, 0.016);
+    for (const slot of AIRPORT_SLOTS) {
+      paint(3.6, 0.03, slot.x + 1.5, slot.z, yellow, 0.017);
+      paint(0.03, 0.5, slot.x + 1.02, slot.z, yellow, 0.017);
+      b.box(0.08, 0.14, 0.08, 18.15, y, slot.z + 0.85, 0x3a3f4a);
+      b.blob(0.025, 18.15, y + 0.16, slot.z + 0.85, [1.6, 2.4, 1.2], true);
+    }
+    // The terminal: a long hall under a wing of a roof, glass to the airfield, a lit name along the top.
+    const tw = 2.6;
+    const tl = 10.6;
+    const tcx = 16.3;
+    const tcz = -43.0;
+    b.box(tw + 0.6, 0.012, tl + 0.8, tcx, y, tcz, 0xd8d2c4);
+    b.box(tw, 0.62, tl, tcx, y, tcz, 0xe9eef2);
+    b.windows({ w: tw, d: tl, x: tcx, z: tcz, y0: y + 0.04, rows: 2, rowHeight: 0.28, cols: 30, faces: ['x+', 'x-'] }, r, 0.92, PALETTE.windowCool, { w: 0.3, h: 0.22 });
+    b.windows({ w: tw, d: tl, x: tcx, z: tcz, y0: y + 0.04, rows: 2, rowHeight: 0.28, cols: 7, faces: ['z+', 'z-'] }, r, 0.92, PALETTE.windowCool, { w: 0.28, h: 0.22 });
+    // The roof: a shallow vault along the hall, overhanging the glass on the airfield side, ribbed, with skylights.
+    const R = 3.4;
+    const half = 0.5;
+    const roof = new THREE.CylinderGeometry(R, R, tl + 0.6, 28, 1, true, Math.PI - half, half * 2).rotateX(Math.PI / 2).translate(0, -R, 0).scale(1, 0.55, 1);
+    const lift = y + 0.62 + R * (1 - Math.cos(half)) * 0.55;
+    b.transformed(roof, new THREE.Matrix4().makeTranslation(tcx + 0.25, lift, tcz), 0xdfe5ea, 'smooth');
+    const under = roof.clone().scale(1, 1, 1);
+    b.transformed(under.applyMatrix4(new THREE.Matrix4().makeScale(-1, 1, 1)), new THREE.Matrix4().makeTranslation(tcx + 0.25, lift - 0.02, tcz), 0x9aa4ae, 'smooth');
+    for (let k = 0; k < 12; k++) {
+      const zk = tcz - tl / 2 + 0.4 + k * ((tl - 0.8) / 11);
+      b.box(R * 2 * Math.sin(half) + 0.04, 0.025, 0.05, tcx + 0.25, lift + 0.005, zk, 0xb8c2cc);
+      if (k % 3 === 1) b.box(0.5, 0.02, 0.6, tcx + 0.25, lift + 0.01, zk + 0.45, 0x8fb8d8, 'glass');
+    }
+    for (let k = 0; k < 9; k++) b.box(0.04, 0.05, 0.04, tcx + tw / 2 + 0.25, y + 0.62, tcz - tl / 2 + 0.6 + k * 1.18, 0xb8c0c8);
+    pixelText(neonOf(b), 'glow', 'TINYTOWN INTL', tcx + tw / 2 + 0.012, y + 0.48, tcz, 1, 0, 0.034, [2.2, 2.0, 1.6]);
+    // Two boarding piers with gates, jet bridges and airliners nosed in.
+    const piers: { z: number; side: number; gates: number[] }[] = [
+      { z: -37.2, side: 1, gates: [18.9] },
+      { z: -49.0, side: -1, gates: [18.9, 21.3] },
+    ];
+    for (const pier of piers) {
+      const px0 = tcx + tw / 2;
+      const px1 = pier.gates.at(-1)! + 0.9;
+      b.box(px1 - px0, 0.34, 0.56, (px0 + px1) / 2, y, pier.z, 0xe4e9ee);
+      b.box(px1 - px0 + 0.06, 0.04, 0.62, (px0 + px1) / 2, y + 0.34, pier.z, 0xb8c0c8);
+      b.windows({ w: px1 - px0, d: 0.56, x: (px0 + px1) / 2, z: pier.z, y0: y + 0.06, rows: 1, rowHeight: 0.22, cols: Math.round((px1 - px0) * 4), faces: ['z+', 'z-'] }, r, 0.95, PALETTE.windowCool, { w: 0.18, h: 0.16 });
+      for (const gx of pier.gates) {
+        // The airliner: nose to the pier, on its stand line.
+        const plane = airliner(hash(this.seed, 'gate', gx, pier.z));
+        plane.group.position.set(gx, y + 0.02, pier.z + pier.side * (0.28 + 1.33));
+        plane.group.rotation.y = pier.side > 0 ? -Math.PI / 2 : Math.PI / 2;
+        plane.group.userData.tip = { title: 'At the gate', detail: 'Boarding for the other founders’ cities. Flights are coming soon.' };
+        this.fix(plane.group);
+        paint(0.03, 2.4, gx, pier.z + pier.side * 1.5, yellow, 0.017);
+        // Jet bridge: a rotunda on the pier, a telescoping tunnel to the forward door.
+        const fz = pier.z + pier.side * 0.28;
+        const doorZ = pier.z + pier.side * (0.28 + 0.62);
+        const rxx = gx - 0.55;
+        b.cylinder(0.1, 0.1, 0.3, rxx, y, fz + pier.side * 0.12, 0xd8dde2, 10);
+        const bl = Math.hypot(gx - 0.16 - rxx, doorZ - (fz + pier.side * 0.12));
+        const ang = Math.atan2(gx - 0.16 - rxx, doorZ - (fz + pier.side * 0.12));
+        b.box(0.1, 0.1, bl, (rxx + gx - 0.16) / 2, y + 0.17, (fz + pier.side * 0.12 + doorZ) / 2, 0xc8ced6, false, ang);
+        b.box(0.04, 0.17, 0.04, (rxx + gx - 0.16) / 2, y, (fz + pier.side * 0.12 + doorZ) / 2, 0x6a7078);
+      }
+    }
+    // Control tower: a slender shaft, a flared cab with tinted glass, a beacon.
+    const cx = 17.1;
+    const cz = -35.4;
+    b.cylinder(0.32, 0.38, 0.3, cx, y, cz, 0xd8dde2, 12);
+    b.cylinder(0.16, 0.22, 2.9, cx, y, cz, 0xe8ecef, 12);
+    b.cylinder(0.42, 0.24, 0.22, cx, y + 2.9, cz, 0xd8dde2, 12);
+    b.cylinder(0.44, 0.4, 0.3, cx, y + 3.12, cz, 0x5a8ab0, 12, 'glass');
+    b.cylinder(0.48, 0.48, 0.05, cx, y + 3.42, cz, 0xd8dde2, 12);
+    b.cylinder(0.02, 0.02, 0.3, cx, y + 3.47, cz, 0x8a9098, 4);
+    b.blob(0.06, cx, y + 3.8, cz, RED, true);
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * Math.PI * 2;
+      b.quad(0.2, 0.18, cx + Math.cos(a) * 0.43, y + 3.27, cz + Math.sin(a) * 0.43, Math.abs(Math.cos(a)) > Math.abs(Math.sin(a)) ? (Math.cos(a) > 0 ? 'x+' : 'x-') : Math.sin(a) > 0 ? 'z+' : 'z-', [0.9, 1.5, 1.4], true, 0.5);
+    }
+    // Hangars across the runway: barrel roofs, big doors to the airfield, a fire station between.
+    for (const hz of [-47.2, -44.0]) {
+      const hx = 28.0;
+      b.box(2.0, 0.7, 2.7, hx, y, hz, 0xdfe3e8);
+      // A barrel roof spanning the door, its axis running back from the airfield.
+      const vault = new THREE.CylinderGeometry(1.35, 1.35, 2.0, 18, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).scale(1, 0.4, 1);
+      b.transformed(vault, new THREE.Matrix4().makeTranslation(hx, y + 0.7, hz), 0xaab4be, 'smooth');
+      for (const end of [-1, 1]) {
+        const cap = new THREE.CircleGeometry(1.35, 18, 0, Math.PI).rotateY(end > 0 ? Math.PI / 2 : -Math.PI / 2).scale(1, 0.4, 1);
+        b.transformed(cap, new THREE.Matrix4().makeTranslation(hx + end * 1.0, y + 0.7, hz), 0xd0d6dc);
+      }
+      b.quad(2.3, 0.62, hx - 1.005, y + 0.32, hz, 'x-', 0x59616c, false);
+      for (let k = 0; k < 6; k++) b.quad(0.02, 0.6, hx - 1.008, y + 0.32, hz - 1.1 + k * 0.44, 'x-', 0x8a929c, false);
+      b.box(0.9, 0.012, 2.6, hx - 1.45, y, hz, concrete);
+    }
+    b.box(1.0, 0.36, 1.2, 28.1, y, -40.8, 0xc8402e);
+    b.box(1.04, 0.04, 1.24, 28.1, y + 0.36, -40.8, 0xe8e2d6);
+    for (let k = 0; k < 3; k++) b.quad(0.26, 0.24, 27.59, y + 0.14, -41.2 + k * 0.4, 'x-', 0xe8e2d6, false);
+    // Landside: the road in from the city, the kerb, a parking garage full of cars.
+    const land: Pt[] = [AIRPORT_ROAD.at(-1)!, [15.2, -37.0], [14.6, -38.4], [14.6, -47.8], [15.2, -48.8], [16.0, -49.0]];
+    ribbon(b, land, 0.6, PALETTE.road, 0.02, 0, true);
+    b.box(0.4, 0.06, tl - 0.4, tcx - tw / 2 - 0.25, y, tcz, 0xe8e2d6);
+    for (let k = 0; k < 8; k++) b.box(0.012, 0.42, 0.012, tcx - tw / 2 - 0.4, y, tcz - tl / 2 + 0.8 + k * 1.3, 0x8a929c);
+    b.box(0.5, 0.03, tl - 0.4, tcx - tw / 2 - 0.4, y + 0.42, tcz, 0xd4dbe2);
+    const gx0 = 12.5;
+    const gz0 = -46.4;
+    for (let lvl = 0; lvl < 3; lvl++) {
+      b.box(1.6, 0.04, 5.6, gx0 + 0.8, y + lvl * 0.22, gz0 + 2.8, 0xb8b2a6);
+      for (let k = 0; k < 9; k++) if (r() < 0.8) b.box(0.18, 0.08, 0.32, gx0 + (k % 2 ? 0.45 : 1.15), y + lvl * 0.22 + 0.04, gz0 + 0.5 + Math.floor(k / 2) * 1.1 + (k % 2) * 0.5, pick(r, [0xc8402e, 0xf2efe8, 0x2a2f38, 0x3a6ab0, 0x9aa4ae] as const));
+    }
+    for (const [dx, dz] of [[0, 0], [1.6, 0], [0, 5.6], [1.6, 5.6]] as const) b.box(0.08, 0.66, 0.08, gx0 + dx, y, gz0 + dz, 0xa8a296);
+    b.box(1.64, 0.03, 5.64, gx0 + 0.8, y + 0.66, gz0 + 2.8, 0xd8d2c4);
+    // Floodlight masts on the aprons
+    for (const [mx, mz] of [[18.0, -38.4], [18.0, -48.4], [22.4, -43.2], [20.0, -50.6]] as const) {
+      b.cylinder(0.02, 0.03, 1.1, mx, y, mz, 0x8a929c, 5);
+      b.box(0.16, 0.05, 0.08, mx, y + 1.1, mz, 0x3a3f4a);
+      b.blob(0.04, mx, y + 1.08, mz, [2.6, 2.4, 1.9], true);
+    }
+    // The helipad: a concrete square, a yellow touchdown circle, the H, edge lights and a windsock.
+    const hp = HELIPAD;
+    b.box(1.5, 0.03, 1.5, hp.x, y, hp.z, 0xbdb8ac);
+    b.transformed(new THREE.RingGeometry(0.52, 0.58, 28).rotateX(-Math.PI / 2), new THREE.Matrix4().makeTranslation(hp.x, y + 0.033, hp.z), yellow);
+    helipadH(b, hp.x, y + 0.034, hp.z, 0.5, white);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      b.blob(0.026, hp.x + Math.cos(a) * 0.68, y + 0.06, hp.z + Math.sin(a) * 0.68, [1.2, 2.6, 1.0], true);
+    }
+    windsock(b, hp.x + 0.95, y, hp.z - 0.6);
+    // Palms along the road in, and the verge
+    for (let k = 0; k < 12; k++) palm(b, r, 13.9 + (k % 2) * 0.1, -36.6 - k * 1.0, 1.0, terrainHeight(13.9, -36.6 - k));
+    const { group } = b.build();
+    group.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.receiveShadow = true;
+        o.castShadow = true;
+      }
+    });
+    group.userData.tip = { title: 'Airport', detail: 'Free infrastructure for every city. Planes are what you buy.' };
+    this.pickables.push(group);
+    return group;
   }
 
+  /**
+   * Your island: a low green plateau for the estate, a sandy cove on the west
+   * with a jetty for the superyacht, a rocky north-west point with the
+   * lighthouse, palms along the beaches and pines on the rocks; the launch
+   * site waits under cloud at the far end.
+   */
   private island(): THREE.Group {
     const r = rng(hash(this.seed, 'island'));
-    const b = new GeoBuilder();
+    const b = new Kit();
     const isl = ISLANDS.founder;
-    // Lighthouse on the far point
-    const lx = isl.x - isl.r + 0.7;
-    const lz = isl.z + 0.9;
+    const stone = 0xe2d9c6;
+    // Lighthouse on the rocky north-west point: a white tower, a gallery, the lantern, a keeper's cottage.
+    const lx = 9.0;
+    const lz = 41.9;
     const ly = terrainHeight(lx, lz);
-    b.cylinder(0.16, 0.22, 1.3, lx, ly, lz, PALETTE.trim, 10);
-    b.cylinder(0.19, 0.19, 0.1, lx, ly + 1.3, lz, 0x2a2a2a, 10);
-    b.cylinder(0.14, 0.14, 0.2, lx, ly + 1.4, lz, 0xbfe0ff, 10, 'glass');
-    b.blob(0.12, lx, ly + 1.5, lz, [3, 2.6, 1.6], true);
-    b.cylinder(0.02, 0.2, 0.18, lx, ly + 1.6, lz, 0xc84a3a, 10);
-    this.beamCentre.set(lx, ly + 1.5, lz);
-    for (let i = 0; i < 9; i++) {
+    b.cylinder(0.3, 0.34, 0.08, lx, ly - 0.04, lz, 0xbdb4a2, 12);
+    b.cylinder(0.15, 0.21, 1.3, lx, ly, lz, PALETTE.trim, 12);
+    for (const band of [0.42, 0.86]) b.cylinder(0.2 - band * 0.05, 0.2 - band * 0.05, 0.1, lx, ly + band, lz, 0xc84a3a, 12);
+    b.cylinder(0.21, 0.21, 0.05, lx, ly + 1.3, lz, 0x2a2f38, 12);
+    b.cylinder(0.12, 0.12, 0.22, lx, ly + 1.35, lz, 0xbfe0ff, 12, 'glass');
+    b.blob(0.11, lx, ly + 1.46, lz, [3, 2.6, 1.6], true);
+    b.cylinder(0.02, 0.15, 0.16, lx, ly + 1.57, lz, 0xc84a3a, 12);
+    this.beamCentre.set(lx, ly + 1.46, lz);
+    const kx = 9.7;
+    const kz = 41.3;
+    const ky = terrainHeight(kx, kz);
+    b.box(0.5, 0.22, 0.36, kx, ky - 0.03, kz, 0xf6f2ea, false, -0.6);
+    b.gable(0.5, 0.11, 0.36, kx, ky + 0.19, kz, 0xc84a3a, 0.03, -0.6);
+    // The jetty: a boardwalk out across the cove's beach to a quay alongside the superyacht.
+    const qx = SUPERYACHT.x + 0.48;
+    const deck = SEA + 0.32;
+    b.box(0.22, 0.05, 2.5, qx, deck, SUPERYACHT.z, PALETTE.wood);
+    for (let k = 0; k < 6; k++) for (const sx of [-0.09, 0.09]) b.cylinder(0.025, 0.025, 0.42, qx + sx, SEA - 0.12, SUPERYACHT.z - 1.15 + k * 0.46, 0x6b5340, 5);
+    for (const bz of [SUPERYACHT.z - 0.9, SUPERYACHT.z + 0.9]) b.cylinder(0.025, 0.03, 0.05, qx - 0.08, deck + 0.05, bz, 0x2a2f38, 6);
+    const walkTo = 9.1;
+    b.box(walkTo - qx, 0.05, 0.2, (qx + walkTo) / 2, deck, ISLAND_COVE.z, PALETTE.wood);
+    for (let x = qx + 0.4; x < walkTo; x += 0.45) for (const sz of [-0.08, 0.08]) b.cylinder(0.022, 0.022, 0.4, x, SEA - 0.1, ISLAND_COVE.z + sz, 0x6b5340, 5);
+    for (let x = qx + 0.3; x < walkTo; x += 0.6) {
+      b.cylinder(0.006, 0.008, 0.2, x, deck + 0.05, ISLAND_COVE.z + 0.11, 0x2a2f38, 4);
+      b.blob(0.016, x, deck + 0.26, ISLAND_COVE.z + 0.11, [2.4, 1.8, 1.0], true);
+    }
+    // The beach in the cove: a cabana, loungers and umbrellas, a kayak.
+    const by = Math.max(SEA + 0.25, terrainHeight(9.2, 37.0));
+    b.box(0.36, 0.2, 0.3, 9.25, by, 36.8, 0xf6f2ea);
+    b.box(0.44, 0.03, 0.38, 9.25, by + 0.2, 36.8, 0xc9a77a);
+    for (let k = 0; k < 3; k++) {
+      const ux = 8.7 + k * 0.32;
+      const uz = 38.8 + k * 0.12;
+      const uy = Math.max(SEA + 0.22, terrainHeight(ux, uz));
+      b.cylinder(0.004, 0.004, 0.16, ux, uy, uz, 0xdddddd, 4);
+      b.cylinder(0, 0.1, 0.035, ux, uy + 0.15, uz, pick(r, [0xf2efe8, 0x2a6db8, 0xe8c25a] as const), 8);
+      b.box(0.05, 0.014, 0.12, ux + 0.08, uy, uz - 0.08, 0xf6f2ea);
+    }
+    b.rbox(0.32, 0.04, 0.07, 8.9, SEA + 0.24, 37.25, 0xe85a2a, 0.02, 'smooth', 0.4);
+    // Paths from the estate: down to the jetty and up to the lighthouse.
+    for (const path of [[[10.2, 38.6], [9.6, 38.2], [walkTo, ISLAND_COVE.z]], [[10.8, 40.5], [10.2, 41.2], [kx, kz - 0.25]]] as Pt[][]) {
+      ribbon(b, path, 0.16, stone, 0.03);
+    }
+    // Planting: palms on the beaches, pines and cypress on the rocks, a hedge of oleander round the estate.
+    const clearOf = (x: number, z: number) =>
+      Math.hypot(x - isl.x, z - isl.z) > 2.15 && Math.hypot(x - lx, z - lz) > 0.45 && Math.hypot(x - kx, z - kz) > 0.45 && Math.hypot(x - ISLANDS.launch.x, z - ISLANDS.launch.z) > ISLANDS.launch.r + 0.3;
+    for (let i = 0; i < 260; i++) {
       const a = r() * Math.PI * 2;
-      const d = isl.r - 0.7 - r() * 0.6;
+      const d = 1.8 + r() * 3.4;
       const x = isl.x + Math.cos(a) * d;
       const z = isl.z + Math.sin(a) * d;
-      tree(b, r, x, z, 0.85, terrainHeight(x, z) - 0.03, r() < 0.5 ? 'cypress' : 'palm');
+      if (coastDistance(x, z) > -0.15 || !clearOf(x, z)) continue;
+      if (Math.abs(z - ISLAND_COVE.z) < 0.3 && x < walkTo + 0.5) continue;
+      const y = terrainHeight(x, z);
+      const beach = isBeach(x, z);
+      const north = z > isl.z + 1.4 || x < isl.x - 2.6;
+      if (beach) {
+        if (r() < 0.3) palm(b, r, x, z, 0.95, y - 0.02);
+      } else if (north && r() < 0.35) {
+        if (r() < 0.6) pine(b, r, x, y, z, 0.95);
+        else rock(b, r, x, y, z, 1.4);
+      } else if (r() < 0.16) {
+        if (r() < 0.5) palm(b, r, x, z, 1.0, y - 0.02);
+        else oak(b, r, x, y, z, 0.8);
+      } else if (r() < 0.08) scrub(b, r, x, y, z, 1);
     }
-    // Launch site (revealed at $1M MRR)
+    // Launch site (revealed at $1M MRR): the pad and flame trench, the service tower, tanks, the bunker.
     const L = ISLANDS.launch;
-    const pad = new GeoBuilder();
+    const pad = new Kit();
     const py = terrainHeight(L.x, L.z);
-    pad.cylinder(1.4, 1.5, 0.12, L.x, py - 0.05, L.z, 0xcfcac0, 20);
-    pad.cylinder(0.55, 0.55, 0.02, L.x, py + 0.07, L.z, 0x2a2a30, 16);
-    pad.box(0.32, 3.4, 0.32, L.x + 0.95, py + 0.07, L.z - 0.5, 0xd23a2c);
-    for (let k = 0; k < 7; k++) pad.box(0.34, 0.03, 0.34, L.x + 0.95, py + 0.4 + k * 0.45, L.z - 0.5, PALETTE.trim);
-    pad.box(0.62, 0.05, 0.06, L.x + 0.62, py + 2.8, L.z - 0.36, 0xd23a2c);
-    pad.blob(0.06, L.x + 0.95, py + 3.6, L.z - 0.5, [3, 0.3, 0.2], true);
-    for (const a of [0.6, 2.4, 4.2]) pad.box(0.35, 0.3, 0.35, L.x + Math.cos(a) * 1.15, py + 0.07, L.z + Math.sin(a) * 1.15, 0xe8e2d6);
-    this.launchPad.add(this.add(pad, { title: 'Launch site', detail: 'Buy a rocket to fly to your house on the moon.' }));
-    return this.add(b, { title: 'Your island', detail: 'Clears at $100k MRR: an estate and a superyacht.' });
+    pad.cylinder(1.45, 1.55, 0.12, L.x, py - 0.05, L.z, 0xcfcac0, 28);
+    pad.cylinder(0.55, 0.55, 0.02, L.x, py + 0.07, L.z, 0x2a2a30, 20);
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2;
+      pad.box(0.08, 0.004, 0.3, L.x + Math.cos(a) * 1.05, py + 0.072, L.z + Math.sin(a) * 1.05, 0xf2c84b, false, -a + Math.PI / 2);
+    }
+    pad.box(0.5, 0.06, 1.6, L.x - 0.2, py + 0.02, L.z + 1.5, 0x8a857a);
+    // The tower: a steel lattice (four legs, a ring every level, cross-bracing), the swing arm, a beacon.
+    const twx = L.x + 0.95;
+    const twz = L.z - 0.5;
+    const steel = 0x4a4f58;
+    for (const [dx, dz] of [[-0.15, -0.15], [0.15, -0.15], [-0.15, 0.15], [0.15, 0.15]] as const) pad.box(0.035, 3.45, 0.035, twx + dx, py + 0.07, twz + dz, steel);
+    for (let k = 0; k < 8; k++) {
+      const ky = py + 0.07 + k * 0.45;
+      for (const [w, d, dx, dz] of [[0.32, 0.02, 0, -0.15], [0.32, 0.02, 0, 0.15], [0.02, 0.32, -0.15, 0], [0.02, 0.32, 0.15, 0]] as const) pad.box(w, 0.025, d, twx + dx, ky, twz + dz, steel);
+      if (k < 7) {
+        for (const [dx, dz, rot] of [[0, -0.15, 0], [0, 0.15, 0], [-0.15, 0, Math.PI / 2], [0.15, 0, Math.PI / 2]] as const) {
+          const g = new THREE.BoxGeometry(0.42, 0.016, 0.016).rotateZ(k % 2 ? 0.95 : -0.95).rotateY(rot);
+          pad.transformed(g, new THREE.Matrix4().makeTranslation(twx + dx, ky + 0.225, twz + dz), steel);
+        }
+      }
+    }
+    pad.box(0.36, 0.08, 0.36, twx, py + 3.52, twz, 0x2a2f38);
+    pad.box(0.64, 0.06, 0.08, L.x + 0.62, py + 2.8, L.z - 0.36, 0xd8d2c4, false, -0.45);
+    pad.box(0.5, 0.04, 0.08, L.x + 0.66, py + 1.9, L.z - 0.38, 0xd8d2c4, false, -0.45);
+    pad.blob(0.06, twx, py + 3.66, twz, [3, 0.3, 0.2], true);
+    // Lightning masts, propellant spheres, a water tower for the deluge, the blockhouse
+    for (const [mx, mz] of [[L.x - 1.3, L.z - 0.9], [L.x + 1.3, L.z + 0.9], [L.x - 1.1, L.z + 1.2]] as const) {
+      pad.cylinder(0.02, 0.035, 2.6, mx, terrainHeight(mx, mz), mz, 0xe8e2d6, 5);
+      pad.blob(0.04, mx, terrainHeight(mx, mz) + 2.62, mz, [3, 0.3, 0.2], true);
+    }
+    for (const [tx, tz] of [[L.x + 1.9, L.z - 1.3], [L.x + 2.2, L.z - 0.6]] as const) {
+      const ty = terrainHeight(tx, tz);
+      pad.blob(0.26, tx, ty + 0.34, tz, 0xf2efe8, 'smooth', 1);
+      for (const [dx, dz] of [[-0.16, -0.16], [0.16, -0.16], [-0.16, 0.16], [0.16, 0.16]] as const) pad.box(0.03, 0.2, 0.03, tx + dx, ty, tz + dz, 0x8a929c);
+    }
+    const wx = L.x - 1.8;
+    const wz = L.z - 0.4;
+    const wy = terrainHeight(wx, wz);
+    pad.cylinder(0.2, 0.2, 0.3, wx, wy + 0.7, wz, 0xe8e2d6, 12);
+    for (const [dx, dz] of [[-0.12, -0.12], [0.12, -0.12], [-0.12, 0.12], [0.12, 0.12]] as const) pad.box(0.025, 0.7, 0.025, wx + dx, wy, wz + dz, 0x8a929c);
+    pad.box(0.6, 0.18, 0.4, L.x - 0.6, terrainHeight(L.x - 0.6, L.z - 1.9) - 0.02, L.z - 1.9, 0xb8b2a6);
+    pad.box(0.62, 0.04, 0.42, L.x - 0.6, terrainHeight(L.x - 0.6, L.z - 1.9) + 0.16, L.z - 1.9, 0x8a857a);
+    for (let k = 0; k < 3; k++) wall(winOf(pad), 'glow', L.x - 0.75 + k * 0.15, terrainHeight(L.x - 0.6, L.z - 1.9) + 0.1, L.z - 1.69, 0, 1, 0.08, 0.04, PALETTE.windowCool, 0.5);
+    const { group: launch } = pad.build();
+    launch.userData.tip = { title: 'Launch site', detail: 'Buy a rocket to fly to your house on the moon.' };
+    this.launchKey = this.fix(launch);
+    this.batch.setVisible(this.launchKey, false);
+    const { group } = b.build();
+    group.userData.tip = { title: 'Your island', detail: 'Clears at $100k MRR: an estate and a superyacht.' };
+    return group;
   }
 
   // ─── Suburbs, Sausalito, Oakland, Treasure Island ───────────────────────
@@ -678,70 +945,8 @@ export class Scenery {
   private suburbs(): THREE.Group {
     const b = new GeoBuilder();
     const r = rng(hash(this.seed, 'suburbs'));
-    const walls = [0xf6ecd8, 0xf3c6a2, 0xc6dcf2, 0xbfe4d0, 0xf6df8c, 0xeab6cf, 0xf8f5ee] as const;
-    // "Little boxes on the hillside": pastel stucco with a garage at street level and a lit window above.
-    // Low roofs in warm greys, not white trim: from afar a row should read as roofs, not dots.
-    const roofs = [0xd6cfc2, 0xcbc3b4, 0xded7ca, 0xc2b8a8] as const;
-    const house = (x: number, z: number, rot: number, s = 1, width = 0.55) => {
-      const y = terrainHeight(x, z);
-      const w = width * s;
-      const d = 0.5 * s;
-      const h = 0.34 * s;
-      const c = Math.cos(rot);
-      const sn = Math.sin(rot);
-      const at = (fx: number, fz: number): [number, number] => [x + fx * c + fz * sn, z - fx * sn + fz * c];
-      b.box(w, h, d, x, y - 0.05, z, pick(r, walls), false, rot);
-      b.box(w + 0.02, 0.035, d + 0.03, x, y - 0.05 + h, z, pick(r, roofs), false, rot);
-      // A few pitched roofs in sun-faded tile and slate; the suburbs are backdrop, not the show.
-      if (r() < 0.18) b.hip(w, 0.1 * s, d, x, y - 0.05 + h + 0.03, z, pick(r, [0xc49a80, 0xb7a99a, 0xa59a92, 0xc8ab8e] as const), 0.03);
-      const [gx, gz] = at(-0.1 * s, d / 2 + 0.003);
-      b.panel(0.2 * s, 0.13 * s, gx, y + 0.02 * s, gz, rot, 0xe8e2d6, false);
-      const [wx, wz] = at(0.12 * s, d / 2 + 0.004);
-      b.panel(0.14 * s, 0.09 * s, wx, y + 0.17 * s, wz, rot, PALETTE.windowWarm, true, 0.1 + r() * 0.9);
-    };
-    // Ticky-tacky terraces, wall to wall, each row on its own street over the hills.
-    const terraces = (x0: number, x1: number, z0: number, z1: number, coast: number, allowed: (x: number, z: number) => boolean) => {
-      for (let z = z1; z > z0; z -= 1.15) {
-        let run: number[] = [];
-        const street = () => {
-          if (run.length >= 3) ribbon(b, [[run[0]! - 0.36, z + 0.5], [run.at(-1)! + 0.36, z + 0.5]], 0.26, PALETTE.road, 0.03);
-          run = [];
-        };
-        for (let x = x0; x < x1; x += 0.68) {
-          const h = terrainHeight(x, z);
-          const slope = Math.abs(terrainHeight(x + 0.5, z) - terrainHeight(x - 0.5, z)) + Math.abs(terrainHeight(x, z + 0.5) - terrainHeight(x, z - 0.5));
-          if (h < 0.15 || h > 7.5 || coastDistance(x, z) > coast || slope > 1.1 || !allowed(x, z)) {
-            street();
-            continue;
-          }
-          run.push(x);
-          // Now and then an empty lot with a tree, so the row breathes.
-          if (r() < 0.06) {
-            tree(b, r, x, z, 0.8, h - 0.05, 'round');
-            continue;
-          }
-          house(x, z, 0, 0.9, 0.74);
-          // Backyard trees between the rows
-          if (r() < 0.16) {
-            const tx = x + (r() - 0.5) * 0.4;
-            tree(b, r, tx, z - 0.52, 0.7, terrainHeight(tx, z - 0.52) - 0.05, r() < 0.6 ? 'round' : 'cypress');
-          }
-        }
-        street();
-      }
-    };
-    // Daly City and the south
-    terraces(-46, 12, -62, -37, -1.5, (x, z) =>
-      Math.hypot(x - LANDMARKS.sutroTower.x, z - LANDMARKS.sutroTower.z) >= 3 && !inSign(x, z) && !inHood(x, z) && !(x > AIRPORT.x0 - 2 && z > AIRPORT.z0 - 2));
-    // Sausalito on the Marin slope, and boats in Richardson Bay
-    for (let i = 0; i < 70; i++) {
-      const x = -30 + r() * 7;
-      const z = 22.5 + r() * 9;
-      if (coastDistance(x, z) > -0.6) continue;
-      const h = terrainHeight(x, z);
-      if (h > 6) continue;
-      house(x, z, Math.PI / 4, 0.9);
-    }
+    const chunks = new Chunks();
+    this.towns(chunks, r);
     // Downtown Oakland across the bay: real towers (the same families as ours), each on the ground.
     const spots: [number, number, number][] = [[59, -9, 6], [61.2, -8.6, 4], [59.4, -6.6, 4], [61.6, -6.2, 6], [63.6, -7.8, 4], [60, -4, 4], [62.4, -3.6, 4]];
     for (const [x, z, tier] of spots) {
@@ -752,239 +957,346 @@ export class Scenery {
       group.userData.tip = { title: 'Downtown Oakland', detail: 'Across the bay. Someday, a district of your own over there.' };
       this.fix(group);
     }
-    // The Oakland and Berkeley flats and hills, behind the downtown towers
-    terraces(57, 75, -60, 40, -0.8, (x, z) => !(x < 65 && z > -10 && z < -1));
+    this.wildBackdrop(chunks, r);
+    for (const g of chunks.all()) this.fix(this.add(g));
     // Treasure Island and Yerba Buena
     this.treasureIsland(b, r);
-    const yb = ISLANDS.yerba;
-    for (let i = 0; i < 26; i++) {
-      const a = r() * Math.PI * 2;
-      const d = r() * (yb.r - 0.6);
-      const x = yb.x + Math.cos(a) * d;
-      const z = yb.z + Math.sin(a) * d;
-      tree(b, r, x, z, 0.9, terrainHeight(x, z) - 0.05, 'cypress');
-    }
-    // Chaparral: low clumps of scrub on the open hills, thicker in the folds.
-    const scrub = [0x5f7f3a, 0x6f8a42, 0x4f6e36, 0x7d8a4a] as const;
-    for (let i = 0; i < 1400; i++) {
-      const x = -95 + r() * 215;
-      const z = -110 + r() * 190;
-      const h = terrainHeight(x, z);
-      if (h < 0.8 || coastDistance(x, z) > -1.5) continue;
-      if (x > -40 && x < 14 && z > -30 && z < 12) continue; // the city
-      if (inSign(x, z) || inHood(x, z)) continue;
-      const fold = 0.5 + 0.5 * Math.sin(x * 0.45 + Math.cos(z * 0.33) * 2);
-      if (r() > 0.35 + fold * 0.5) continue;
-      const k = 0.12 + r() * 0.16;
-      const g = new THREE.IcosahedronGeometry(k, 0).scale(1.3, 0.6, 1.1);
-      b.transformed(g, new THREE.Matrix4().makeTranslation(x, h + k * 0.25, z), pick(r, scrub), 'smooth');
-    }
-    // Angel Island and the Marin hills: sparse trees
-    for (let i = 0; i < 220; i++) {
-      const x = -70 + r() * 55;
-      const z = 18 + r() * 40;
-      const h = terrainHeight(x, z);
-      if (h < 0.5 || r() < 0.55) continue;
-      tree(b, r, x, z, 1.1, h - 0.05, r() < 0.6 ? 'cypress' : 'round');
-    }
+    this.yerbaBuena(b, r);
     return this.add(b);
+  }
+
+  /**
+   * The towns around the bay (planned in `backdropTowns`): streets graded into
+   * the hills, a house on every lot facing its street, at the city's scale,
+   * and street trees on the verges.
+   */
+  private towns(chunks: Chunks, r: () => number) {
+    const palettes = {
+      stucco: { walls: [0xf3e6cf, 0xf1d4b8, 0xd8e4ec, 0xd4e6d6, 0xf2e2a8, 0xecd0d8, 0xf6f2ea, 0xe8d8c4], roofs: [0xc4704a, 0xb85e44, 0x9a5a48, 0x7a7068, 0x8a8478, 0xa86a50] },
+      shingle: { walls: [0xf6f2ea, 0xe8dcc8, 0xd8e2e6, 0xe9d4c0, 0xc8d4c0, 0xb9a48a], roofs: [0x5a6068, 0x7a5a48, 0x8a7a6a, 0x4a5058] },
+    } as const;
+    for (const town of backdropTowns()) {
+      const { walls, roofs } = palettes[town.style];
+      for (const line of town.streets) strip(chunks.at(line[0]![0], line[0]![1]), line, TOWN_STREET, PALETTE.road, 0.03);
+      for (const l of town.lots) {
+        const g = chunks.at(l.x, l.z);
+        if (l.empty) oak(g, r, l.x, l.y, l.z, 0.85);
+        else townHouse(g, r, l.x, l.y, l.z, l.rot, walls, roofs);
+      }
+      for (const [x, z, y] of town.trees) {
+        const g = chunks.at(x, z);
+        if (town.style === 'shingle' && r() < 0.4) pine(g, r, x, y, z, 0.6);
+        else oak(g, r, x, y, z, 0.55);
+      }
+    }
+  }
+
+  /**
+   * The open country around the towns: golden grass and coyote brush on the
+   * Marin Headlands and San Bruno Mountain, oak in the ravines, eucalyptus and
+   * pine forest over the Oakland hills and Angel Island, rock on the crests.
+   */
+  private wildBackdrop(chunks: Chunks, r: () => number) {
+    const step = 1.0;
+    for (let gx = -80; gx < 86; gx += step) {
+      for (let gz = -92; gz < 66; gz += step) {
+        // The city, Twin Peaks (done in detail) and the islands are left to their own builders.
+        if (gx > -36 && gx < 12 && gz > -50 && gz < 14) continue;
+        if (gx > 4 && gx < 42 && gz > -14 && gz < 48) continue;
+        if (gx > 12 && gx < 31 && gz > -56 && gz < -31) continue;
+        const x = gx + (r() - 0.5) * step;
+        const z = gz + (r() - 0.5) * step;
+        const y = terrainHeight(x, z);
+        if (y < 0.4 || coastDistance(x, z) > -0.8 || gradeWeight(x, z) > 0) continue;
+        const e = 0.4;
+        const ex = terrainHeight(x + e, z) + terrainHeight(x - e, z);
+        const ez = terrainHeight(x, z + e) + terrainHeight(x, z - e);
+        const slope = Math.hypot(terrainHeight(x + e, z) - terrainHeight(x - e, z), terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e);
+        // Positive in the folds of the hills, negative on the crests.
+        const curve = ex + ez - 4 * y;
+        const grove = 0.5 + 0.5 * fbm(x * 0.09 + 13, z * 0.09 + 5, 3);
+        const patch = 0.5 + 0.5 * fbm(x * 0.25 - 31, z * 0.25 + 9, 2);
+        const g = chunks.at(x, z);
+        const eastHills = x > 60;
+        const angel = Math.hypot(x - ISLANDS.angel.x, z - ISLANDS.angel.z) < ISLANDS.angel.r + 1;
+        // Woods: oak down the ravines, groves of pine, eucalyptus over the Oakland hills and Angel Island.
+        const wood = eastHills ? smoothstep(4.5, 7.5, y) * 0.8 + (grove - 0.55) * 1.5 : angel ? 0.55 + (grove - 0.5) * 1.5 : (grove - 0.62) * 3 + Math.max(0, curve - 0.05) * 2.5;
+        if (wood > 0 && r() < Math.min(0.7, wood * 0.8)) {
+          if (eastHills) (r() < 0.6 ? gum : pine)(g, r, x, y, z, 1.25);
+          else if (angel) (r() < 0.55 ? oak : pine)(g, r, x, y, z, 1.15);
+          else (curve > 0.04 || r() < 0.5 ? oak : pine)(g, r, x, y, z, 1.2);
+          continue;
+        }
+        // Rock outcrops on the steepest crests only, in little groups.
+        if (slope > 1.25 && curve < -0.05 && r() < 0.18) {
+          const k = 1.5 + r();
+          rock(g, r, x, y, z, k);
+          if (r() < 0.6) rock(g, r, x + (r() - 0.5) * 0.35, y, z + (r() - 0.5) * 0.35, k * 0.6);
+          continue;
+        }
+        // Coyote brush in patches, open grass between.
+        if (patch > 0.66 && r() < 0.2) scrub(g, r, x, y, z, 1.8);
+        else if (r() < 0.006) oak(g, r, x, y, z, 1.1);
+      }
+    }
   }
 
   // ─── TinyTown Hills ─────────────────────────────────────────────────────
 
   /**
-   * TinyTown Hills: Twin Peaks Boulevard winding up through chaparral, with
-   * houses on terraces cut into the slope, each facing downhill to the view.
+   * TinyTown Hills: Twin Peaks Boulevard up from the end of Market, avenues
+   * along the contours, hairpins and turning circles, and a house on a
+   * terrace on every lot (see `hillsPlan`). Everything here clears with the
+   * cloud at $1k MRR; the wild slopes around it are always there.
    */
   private buildHood() {
     const r = rng(hash(this.seed, 'hood'));
+    const plan = hillsPlan();
     const b = new GeoBuilder();
-    const curve = this.hillRoad;
-    const length = curve.getLength();
-    const road: Pt[] = [];
-    for (let i = 0; i <= 220; i++) {
-      const p = curve.getPointAt(i / 220);
-      road.push([p.x, p.z]);
-    }
-    const roadDistance = (x: number, z: number) => Math.min(...road.map(([rx, rz]) => Math.hypot(rx - x, rz - z)));
-
-    // The boulevard: asphalt with concrete curbs and a dashed centre line, draped on the hill.
-    ribbon(b, road, 0.62, 0xcfc8b8, 0.035);
-    ribbon(b, road, 0.5, PALETTE.road, 0.045, 0, true);
-
-    // A low stone wall on the downhill edge, and lamps on the uphill side.
-    const tmp = new THREE.Vector3();
-    for (let i = 0; i < 200; i++) {
-      const u = i / 200;
-      const p = curve.getPointAt(u);
-      curve.getTangentAt(u, tmp);
-      const nx = -tmp.z;
-      const nz = tmp.x;
-      const left = terrainHeight(p.x + nx * 0.6, p.z + nz * 0.6);
-      const right = terrainHeight(p.x - nx * 0.6, p.z - nz * 0.6);
-      const down = left < right ? 1 : -1;
-      if (Math.abs(left - right) > 0.12 && i % 2 === 0) {
-        const wx = p.x + nx * down * 0.33;
-        const wz = p.z + nz * down * 0.33;
-        b.box(0.05, 0.07, length / 200 * 2.05, wx, terrainHeight(wx, wz) + 0.02, wz, 0xb9ad98, false, Math.atan2(tmp.x, tmp.z));
-      }
-      if (i % 9 === 4) {
-        const lx = p.x - nx * down * 0.34;
-        const lz = p.z - nz * down * 0.34;
-        const ly = terrainHeight(lx, lz);
-        b.cylinder(0.008, 0.012, 0.32, lx, ly, lz, 0x3a4048, 5);
-        b.blob(0.022, lx, ly + 0.33, lz, LAMP, true);
-      }
-      // Hollywood palms along the boulevard
-      if (i % 13 === 6) {
-        const px = p.x + nx * down * 0.42;
-        const pz = p.z + nz * down * 0.42;
-        if (!inSign(px, pz)) palm(b, r, px, pz, 1.05, terrainHeight(px, pz) - 0.03);
-      }
-    }
-
-    // Terraces: level pads cut into the slope on stone plinths, each with a driveway down to the road.
-    this.hillPads = [];
-    for (let d = 1.4; d < length - 0.6; d += 1.2) {
-      const u = d / length;
-      const p = curve.getPointAt(u);
-      curve.getTangentAt(u, tmp);
-      for (const side of [1, -1]) {
-        const nx = -tmp.z * side;
-        const nz = tmp.x * side;
-        const x = p.x + nx * 1.05;
-        const z = p.z + nz * 1.05;
-        if (!inHood(x, z) || Math.hypot(x - HILLS_HOME.x, z - HILLS_HOME.z) < 2.3) continue;
-        if (roadDistance(x, z) < 0.85 || this.hillPads.some((q) => Math.hypot(q.x - x, q.z - z) < 1.3)) continue;
-        const e = 0.4;
-        const gx = terrainHeight(x + e, z) - terrainHeight(x - e, z);
-        const gz = terrainHeight(x, z + e) - terrainHeight(x, z - e);
-        // Face downhill (towards the city and the camera); level with the uphill edge.
-        const rot = Math.hypot(gx, gz) > 0.01 ? Math.atan2(-gx, -gz) : Math.PI / 4;
-        // Cut and fill, as real hillside lots are: the pad sits at the slope's mean height,
-        // dug in at the back, with a stone retaining wall showing only on the downhill side.
-        const corners = [[-0.55, -0.47], [0.55, -0.47], [-0.55, 0.47], [0.55, 0.47]].map(([cx, cz]) => terrainHeight(x + cx!, z + cz!));
-        const top = corners.reduce((a, c) => a + c, 0) / corners.length + 0.03;
-        const low = Math.min(...corners);
-        b.box(1.18, Math.max(0.05, top - low + 0.04), 1.0, x, low - 0.04, z, pick(r, [0xb9ad98, 0xc4b8a2, 0xab9f8a] as const), false, rot);
-        b.box(1.14, 0.012, 0.96, x, top, z, 0xd9d2c2, false, rot);
-        ribbon(b, [[p.x + nx * 0.25, p.z + nz * 0.25], [x - nx * 0.5, z - nz * 0.5]], 0.15, 0xc8c0b0, 0.04);
-        this.hillPads.push({ x, z, y: top + 0.012, rot });
-      }
-    }
-
-    // Chaparral, eucalyptus and cypress on every slope the road and houses leave free.
-    for (let gx = HILLS_HOOD.x0; gx < HILLS_HOOD.x1; gx += 0.42) {
-      for (let gz = HILLS_HOOD.z0; gz < HILLS_HOOD.z1; gz += 0.42) {
-        const x = gx + (r() - 0.5) * 0.36;
-        const z = gz + (r() - 0.5) * 0.36;
-        if (!inHood(x, z) || roadDistance(x, z) < 0.42 || Math.hypot(x - HILLS_HOME.x, z - HILLS_HOME.z) < 2.0) continue;
-        if (this.hillPads.some((q) => Math.hypot(q.x - x, q.z - z) < 0.72)) continue;
-        const y = terrainHeight(x, z);
-        const k = r();
-        if (k < 0.07) eucalyptus(b, r, x, z, y - 0.03, r() < 0.5);
-        else if (k < 0.14) tree(b, r, x, z, 0.9, y - 0.03, r() < 0.6 ? 'cypress' : 'round');
-        else if (k < 0.78) {
-          // A clump of sage, toyon and manzanita
-          for (let c = 0; c < 3 + Math.floor(r() * 3); c++) {
-            const cx = x + (r() - 0.5) * 0.3;
-            const cz = z + (r() - 0.5) * 0.3;
-            const s = 0.06 + r() * 0.07;
-            b.transformed(new THREE.IcosahedronGeometry(s, 0).scale(1.2, 0.75, 1.1), new THREE.Matrix4().makeTranslation(cx, terrainHeight(cx, cz) + s * 0.5, cz), pick(r, [0x7f9a5a, 0x6f8a52, 0x8fa468, 0x5e7a48, 0xa3a46a] as const), 'smooth');
-          }
-        }
-      }
-    }
-    this.hood.add(this.add(b, { title: 'TinyTown Hills', detail: 'Opens at $1k MRR, when you move into your first Hills house.' }));
+    hillsStreets(b, r, plan, naturalHeight);
+    hillsLots(b, r, plan, naturalHeight);
+    const group = this.add(b);
+    group.userData.tip = { title: 'TinyTown Hills', detail: 'Opens at $1k MRR, when you move into your first Hills house.' };
+    this.hillKeys.push(this.fix(group));
     this.placeHillHouses();
-  }
-
-  /**
-   * Treasure Island: Building One (the 1939 Art Deco terminal) facing the city,
-   * three seaplane hangars, a grid of streets and navy-era houses, the Avenue
-   * of the Palms along the west shore, and boats in Clipper Cove.
-   */
-  private treasureIsland(b: GeoBuilder, r: () => number) {
-    const t = ISLANDS.treasure;
-    const y = terrainHeight(t.x, t.z);
-    const cream = 0xeee5d0;
-    const gold = 0xc9a24a;
-    // Streets: the Avenue of the Palms on the west shore, and a little grid inland.
-    const avenue = t.x - 2.2;
-    ribbon(b, [[avenue, t.z - 2.0], [avenue, t.z + 1.8]], 0.2, PALETTE.road, 0.02);
-    for (const sz of [t.z - 1.1, t.z + 0.1, t.z + 1.2]) ribbon(b, [[avenue, sz], [t.x + 2.2, sz]], 0.16, PALETTE.road, 0.02);
-    ribbon(b, [[t.x + 0.25, t.z - 1.6], [t.x + 0.25, t.z + 2.6]], 0.16, PALETTE.road, 0.02);
-    ribbon(b, [[avenue, t.z + 2.3], [t.x + 1.9, t.z + 2.3]], 0.16, PALETTE.road, 0.02);
-    for (let k = 0; k < 9; k++) {
-      const pz = t.z - 1.9 + k * 0.45;
-      palm(b, r, avenue - 0.18, pz, 0.9, terrainHeight(avenue - 0.18, pz) - 0.02);
-      if (k % 2) {
-        b.cylinder(0.006, 0.009, 0.24, avenue + 0.13, y, pz, 0x3a4048, 5);
-        b.blob(0.016, avenue + 0.13, y + 0.25, pz, LAMP, true);
-      }
-    }
-    // Building One: a long cream block, a stepped central tower, gold trim, facing the city (west).
-    const bx = avenue + 0.55;
-    const bz = t.z - 0.5;
-    b.box(0.42, 0.32, 1.2, bx, y, bz, cream);
-    b.box(0.46, 0.03, 1.24, bx, y + 0.32, bz, gold);
-    for (const [w, h, yy] of [[0.36, 0.2, 0.32], [0.28, 0.16, 0.52], [0.18, 0.12, 0.68]] as const) {
-      b.box(w, h, w, bx, y + yy, bz, cream);
-      b.box(w + 0.02, 0.015, w + 0.02, bx, y + yy + h, bz, gold);
-    }
-    b.cylinder(0.008, 0.012, 0.14, bx, y + 0.8, bz, gold, 6);
-    b.windows({ w: 0.42, d: 1.2, x: bx, z: bz, y0: y, rows: 2, rowHeight: 0.14, cols: 8, faces: ['x-', 'x+', 'z+'] }, r, 0.6, [1.6, 1.15, 0.6], { w: 0.06, h: 0.08 });
-    for (const s of [-1, 1]) b.box(0.3, 0.22, 0.32, bx + 0.32, y, bz + s * 0.48, cream);
-    // Three seaplane hangars with barrel roofs, doors to the cove.
-    for (let k = 0; k < 3; k++) {
-      const hx = t.x + 1.25;
-      const hz = t.z - 1.55 + k * 0.62;
-      b.box(1.1, 0.22, 0.5, hx, y, hz, 0xd9d4c8);
-      b.transformed(new THREE.CylinderGeometry(0.25, 0.25, 1.1, 14, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), new THREE.Matrix4().makeTranslation(hx, y + 0.22, hz), 0x9aa5a0, 'smooth');
-      b.box(0.02, 0.18, 0.36, hx + 0.56, y, hz, 0x5a646a);
-      b.quad(0.02, 0.06, hx + 0.571, y + 0.28, hz, 'x+', [1.6, 1.3, 0.8], true, 0.3);
-    }
-    // Navy-era houses in rows on the north side, each with a small gable.
-    for (let row = 0; row < 4; row++) {
-      for (let k = 0; k < 6; k++) {
-        const hx = t.x - 0.9 + k * 0.36;
-        const hz = t.z + 0.55 + row * 0.58 + (row > 1 ? 0.18 : 0);
-        if (coastDistance(hx, hz) > -0.35) continue;
-        const wall = pick(r, [0xf3e9d8, 0xe9dcc4, 0xd8e2e6, 0xf0d9c0] as const);
-        b.box(0.28, 0.16, 0.24, hx, y, hz, wall);
-        b.gable(0.28, 0.08, 0.24, hx, y + 0.16, hz, pick(r, PALETTE.roofs), 0.02);
-        b.quad(0.06, 0.05, hx + 0.05, y + 0.1, hz + 0.121, 'z+', [1.6, 1.1, 0.55], true, 0.15 + r() * 0.8);
-        if (r() < 0.5) tree(b, r, hx + 0.12, hz - 0.2, 0.55, y - 0.02, 'round');
-      }
-    }
-    // A ballfield by the hangars
-    const fx = t.x + 1.35;
-    const fz = t.z + 1.25;
-    b.box(1.0, 0.012, 0.9, fx, y, fz, 0x7fbf55);
-    b.box(0.34, 0.006, 0.34, fx - 0.22, y + 0.012, fz - 0.2, 0xc9a77a, false, Math.PI / 4);
-    for (const s of [-1, 1]) b.box(0.012, 0.16, 0.012, fx + s * 0.48, y, fz + 0.42, 0xe8e8e8);
-    // Clipper Cove: a pier with boats, out in the water off the south shore.
-    const px = t.x + 0.6;
-    let pz = t.z - 1.8;
-    while (coastDistance(px, pz) < 0.25 && pz > t.z - 5) pz -= 0.1;
-    b.box(1.6, 0.03, 0.12, px, SEA + 0.05, pz, PALETTE.wood);
-    for (let k = 0; k < 4; k++) moored(b, r, px - 0.6 + k * 0.42, pz - 0.35);
+    this.wildHills();
   }
 
   /** A house on every terrace: a mix of the four Hills styles, batched, shown once the Hills open. */
   private placeHillHouses() {
     const styles: HillsStyle[] = ['midcentury', 'spanish', 'modern', 'canyon'];
     const names: Record<HillsStyle, string> = { midcentury: 'A mid-century house', spanish: 'A Spanish Revival house', modern: 'A modern house', canyon: 'A canyon house' };
-    this.hillPads.forEach((pad, i) => {
-      const style = styles[hash(this.seed, 'hills-style', i) % styles.length]!;
+    let last: HillsStyle | null = null;
+    hillsPlan().lots.forEach((lot, i) => {
+      // Neighbours differ: never the same style twice in a row along a street.
+      let style = styles[hash(this.seed, 'hills-style', i) % styles.length]!;
+      if (style === last) style = styles[(styles.indexOf(style) + 1 + (i % 3)) % styles.length]!;
+      last = style;
       const { group } = hillsHouse(style, hash(this.seed, 'hills-house', i));
-      group.position.set(pad.x, pad.y, pad.z);
-      group.rotation.y = pad.rot;
+      group.position.set(lot.x, lot.y, lot.z);
+      group.rotation.y = lot.rot;
       group.userData.tip = { title: names[style], detail: 'TinyTown Hills: your neighbours made it too' };
-      const key = this.fix(group);
-      this.hillKeys.push(key);
-      this.batch.setVisible(key, this.state.hills);
+      this.hillKeys.push(this.fix(group));
     });
+    for (const key of this.hillKeys) this.batch.setVisible(key, this.state.hills);
+  }
+
+  /**
+   * Twin Peaks and its foothills: golden grass with sage scrub, pines and oaks
+   * in clusters, eucalyptus on Mount Sutro, grey rock on the crowns and the
+   * steepest faces, and only low scrub and rocks on the sign's slope.
+   */
+  private wildHills() {
+    const r = rng(hash(this.seed, 'wild'));
+    const chunks = new Map<string, GeoBuilder>();
+    const at = (x: number, z: number) => {
+      const key = `${Math.floor(x / 12)},${Math.floor(z / 12)}`;
+      let g = chunks.get(key);
+      if (!g) chunks.set(key, (g = new GeoBuilder()));
+      return g;
+    };
+    const north = TWIN_PEAKS_SUMMITS[0]!;
+    const south = TWIN_PEAKS_SUMMITS[1]!;
+    const step = 0.42;
+    for (let gx = -33; gx < 10; gx += step) {
+      for (let gz = -49; gz < -21; gz += step) {
+        const x = gx + (r() - 0.5) * step * 0.9;
+        const z = gz + (r() - 0.5) * step * 0.9;
+        const y = terrainHeight(x, z);
+        if (y < 0.12 || coastDistance(x, z) > -0.6) continue;
+        if (gradeWeight(x, z) > 0) continue;
+        if (Math.hypot(x - HILLS_HOME.x, z - HILLS_HOME.z) < 2.8) continue;
+        if (Math.hypot(x - LANDMARKS.sutroTower.x, z - LANDMARKS.sutroTower.z) < 1.3) continue;
+        const e = 0.3;
+        const slope = Math.hypot(terrainHeight(x + e, z) - terrainHeight(x - e, z), terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e);
+        const sign = inSignZone(x, z, 0.6);
+        const g = at(x, z);
+        const summit = Math.min(Math.hypot(x - north.x, z - north.z), Math.hypot(x - south.x, z - south.z));
+        // Rock: the crowns of the peaks, the steepest faces, scattered on the sign's slope.
+        const rocky = Math.max(0, 1 - summit / 3) * 0.45 + Math.max(0, slope - 1.2) * 0.3 + (sign ? 0.04 : 0.015);
+        if (r() < rocky) {
+          // Outcrops: a big stone with a smaller one or two leaning on it.
+          const k = 0.7 + r() * 0.6 + (summit < 1.6 ? 0.4 : 0);
+          rock(g, r, x, y, z, k);
+          if (r() < 0.6) rock(g, r, x + (r() - 0.5) * 0.2, y - 0.02, z + (r() - 0.5) * 0.2, k * 0.55);
+          continue;
+        }
+        if (sign) {
+          // Keep the letters clear: only low scrub on their slope, none right in front.
+          const { x: sx, z: sz } = LANDMARKS.sign;
+          const v = (x - sx + (z - sz)) * Math.SQRT1_2;
+          if (v > -0.7 && v < 1.4) continue;
+          if (r() < 0.3) scrub(g, r, x, y, z, 0.9);
+          continue;
+        }
+        // Forest where the noise says so, densest on Mount Sutro; oaks in the ravines.
+        const sutro = Math.max(0, 1 - Math.hypot(x - LANDMARKS.sutroTower.x, z - LANDMARKS.sutroTower.z) / 6.5);
+        const grove = 0.5 + 0.5 * fbm(x * 0.21 + 40, z * 0.21 - 7, 3);
+        const forest = Math.max(sutro * 1.4, (grove - 0.56) * 2.6) * (summit < 2.5 ? 0.2 : 1);
+        if (r() < forest * 0.55) {
+          if (sutro > 0.15 && r() < 0.8) gum(g, r, x, y, z, 1.0);
+          else if (r() < 0.55) pine(g, r, x, y, z, 1.0);
+          else oak(g, r, x, y, z, 1.0);
+          continue;
+        }
+        if (r() < 0.02) {
+          oak(g, r, x, y, z, 0.9);
+          continue;
+        }
+        // Sage in patches, open golden grass between.
+        const patch = 0.5 + 0.5 * fbm(x * 0.5 - 31, z * 0.5 + 9, 2);
+        if (patch > 0.58 && r() < 0.4) scrub(g, r, x, y, z, 1);
+      }
+    }
+    for (const g of chunks.values()) this.fix(this.add(g));
+  }
+
+  /**
+   * Yerba Buena: a steep, wooded ridge with rocky cliffs at both ends of the
+   * Bay Bridge tunnel, a lane up to the old officers' houses on the crest, the
+   * Coast Guard station and its light on the south-east point, and the
+   * causeway across to Treasure Island.
+   */
+  private yerbaBuena(b: GeoBuilder, r: () => number) {
+    const yb = ISLANDS.yerba;
+    const deck = (x: number, z: number) => Math.abs(z - LANDMARKS.bayBridge.z) < 1.15 && terrainHeight(x, z) < 3.7;
+    // The lane: up from the causeway, round the north slope to the crest.
+    const lane: Pt[] = [[34.1, -3.6], [34.3, -4.5], [35.3, -5.1], [35.6, -5.6], [34.6, -5.5], [33.4, -5.2], [32.2, -5.1], [31.4, -5.4]];
+    const lanePts = lane.map(([x, z]) => [x, z, terrainHeight(x, z)] as const);
+    ribbon(b, lane, 0.2, PALETTE.road, 0.03);
+    // The officers' quarters on the crest: white clapboard, grey roofs, a flagpole.
+    for (const [hx, hz, rot] of [[32.4, -5.6, 0.1], [33.5, -5.75, -0.05], [31.6, -5.95, 0.3]] as const) {
+      const y = terrainHeight(hx, hz);
+      b.box(0.5, 0.06, 0.4, hx, y - 0.05, hz, 0xc9bfa8, false, rot);
+      b.box(0.42, 0.24, 0.32, hx, y, hz, 0xf4f1ea, false, rot);
+      b.gable(0.42, 0.11, 0.32, hx, y + 0.24, hz, 0x6a7078, 0.03, rot);
+      b.panel(0.3, 0.06, hx + Math.sin(rot) * 0.165, y + 0.14, hz + Math.cos(rot) * 0.165, rot, PALETTE.windowWarm, true, 0.3);
+    }
+    void lanePts;
+    const fy = terrainHeight(32.9, -5.3);
+    b.cylinder(0.006, 0.008, 0.5, 32.9, fy, -5.3, 0xe8e8e8, 4);
+    b.box(0.1, 0.06, 0.004, 32.95, fy + 0.42, -5.3, 0x2a4a8a);
+    // Coast Guard station: a white light on the point, a boathouse and a pier.
+    const cx = 36.55;
+    const cz = -8.55;
+    const cy = terrainHeight(cx, cz);
+    b.cylinder(0.09, 0.11, 0.5, cx, cy, cz, 0xf6f4ee, 8);
+    b.cylinder(0.11, 0.11, 0.03, cx, cy + 0.5, cz, 0x2a2f38, 8);
+    b.cylinder(0.07, 0.07, 0.1, cx, cy + 0.53, cz, 0xbfe0ff, 8, 'glass');
+    b.blob(0.05, cx, cy + 0.58, cz, [3, 2.6, 1.6], true);
+    b.cylinder(0.0, 0.09, 0.08, cx, cy + 0.63, cz, 0xc8402e, 8);
+    const bx = 35.6;
+    const bz = -9.2;
+    const by = Math.max(SEA + 0.35, terrainHeight(bx, bz));
+    b.box(0.7, 0.26, 0.4, bx, by, bz, 0xf6f4ee);
+    b.gable(0.7, 0.12, 0.4, bx, by + 0.26, bz, 0xc8402e, 0.03);
+    b.box(0.12, 0.03, 1.2, 35.9, SEA + 0.25, -10.0, PALETTE.wood);
+    moored(b, r, 36.15, -10.1);
+    // The causeway to Treasure Island: a road on a rock embankment.
+    b.box(0.9, 0.5, 1.6, 34.1, SEA - 0.2, -3.45, 0x8f877a);
+    ribbon(b, [[34.1, -4.3], [34.1, -2.6]], 0.3, PALETTE.road, 0.32);
+    // Woods: Monterey pine, eucalyptus and oak over the ridge; rock on the cliffs; nothing near the bridge deck.
+    for (let i = 0; i < 1500; i++) {
+      const x = yb.x - 4 + r() * 8.5;
+      const z = yb.z - 3.5 + r() * 7;
+      if (coastDistance(x, z) > -0.25) continue;
+      const y = terrainHeight(x, z);
+      const e = 0.25;
+      const slope = Math.hypot(terrainHeight(x + e, z) - terrainHeight(x - e, z), terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e);
+      if (lane.some(([lx, lz]) => Math.hypot(lx - x, lz - z) < 0.35)) continue;
+      if (Math.hypot(x - 32.5, z + 5.7) < 1.4 || Math.hypot(x - cx, z - cz) < 0.5 || Math.hypot(x - bx, z - bz) < 0.6) continue;
+      if (slope > 2.8 || y < 0.25) {
+        if (r() < 0.35) rock(b, r, x, y, z, 1.2 + r() * 0.8);
+        continue;
+      }
+      if (deck(x, z)) {
+        if (r() < 0.3) scrub(b, r, x, y, z, 1);
+        continue;
+      }
+      const k = r();
+      if (k < 0.32) pine(b, r, x, y, z, 1.05);
+      else if (k < 0.5) gum(b, r, x, y, z, 1.0);
+      else if (k < 0.66) oak(b, r, x, y, z, 1.0);
+      else if (k < 0.8) scrub(b, r, x, y, z, 1.1);
+    }
+  }
+
+  /**
+   * Treasure Island: 1930s landfill behind a seawall. The Avenue of the Palms
+   * along the west shore facing the city, Building One (the Art Deco
+   * terminal of the 1939 fair) with the three seaplane hangars beside it on
+   * Clipper Cove, a street grid of navy-era houses to the north, the ball
+   * field, and boats in the cove.
+   */
+  private treasureIsland(b: GeoBuilder, r: () => number) {
+    const y = 0.28;
+    const road = (pts: Pt[], w = 0.3) => ribbon(b, pts, w, PALETTE.road, 0.03);
+    // Seawall: riprap all round, a concrete coping on top.
+    seawall(b, r, TREASURE_COAST);
+    // Streets: the Avenue of the Palms, a ring road, and a little grid.
+    const ax = 32.95;
+    road([[ax, -2.35], [ax, 2.45]], 0.34);
+    road([[ax, 2.45], [38.95, 2.45], [38.95, -2.35], [ax, -2.35]]);
+    for (const z of [-0.45, 1.0]) road([[ax, z], [38.95, z]]);
+    for (const x of [35.0, 37.0]) road([[x, -0.45], [x, 2.45]]);
+    road([[34.1, -2.8], [34.1, -2.35]], 0.3);
+    for (let k = 0; k < 9; k++) {
+      const pz = -2.1 + k * 0.56;
+      palm(b, r, ax - 0.3, pz, 0.95, y - 0.02);
+      if (k % 2 === 0) {
+        b.cylinder(0.006, 0.009, 0.26, ax + 0.22, y, pz + 0.28, 0x3a4048, 5);
+        b.blob(0.018, ax + 0.22, y + 0.27, pz + 0.28, LAMP, true);
+      }
+    }
+    // Building One: a long cream block facing the city, a stepped central tower, gold trim, wings either side.
+    const cream = 0xeee5d0;
+    const gold = 0xc9a24a;
+    const bx = 33.75;
+    const bz = -1.4;
+    b.box(0.62, 0.36, 1.6, bx, y, bz, cream);
+    b.box(0.66, 0.03, 1.64, bx, y + 0.36, bz, gold);
+    for (const [w, h, yy] of [[0.46, 0.24, 0.36], [0.34, 0.18, 0.6], [0.22, 0.13, 0.78]] as const) {
+      b.box(w, h, w, bx, y + yy, bz, cream);
+      b.box(w + 0.02, 0.016, w + 0.02, bx, y + yy + h, bz, gold);
+    }
+    b.cylinder(0.008, 0.012, 0.16, bx, y + 0.91, bz, gold, 6);
+    b.windows({ w: 0.62, d: 1.6, x: bx, z: bz, y0: y, rows: 2, rowHeight: 0.16, cols: 10, faces: ['x-', 'x+', 'z+', 'z-'] }, r, 0.6, [1.6, 1.15, 0.6], { w: 0.07, h: 0.09 });
+    for (const sgn of [-1, 1]) b.box(0.42, 0.26, 0.42, bx + 0.42, y, bz + sgn * 0.62, cream);
+    b.box(0.5, 0.012, 0.7, bx - 0.55, y, bz, 0xd8d2c4);
+    // Three seaplane hangars on Clipper Cove: barrel roofs, doors to the water.
+    for (let k = 0; k < 3; k++) {
+      const hx = 35.4 + k * 1.2;
+      const hz = -1.45;
+      b.box(0.95, 0.3, 1.2, hx, y, hz, 0xd9d4c8);
+      const vault = new THREE.CylinderGeometry(0.475, 0.475, 1.2, 14, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateY(Math.PI / 2).scale(1, 0.5, 1);
+      b.transformed(vault, new THREE.Matrix4().makeTranslation(hx, y + 0.3, hz), 0x9aa5a0, 'smooth');
+      b.quad(0.7, 0.26, hx, y + 0.13, hz - 0.601, 'z-', 0x5a646a, false);
+      b.quad(0.04, 0.06, hx, y + 0.34, hz - 0.602, 'z-', [1.6, 1.3, 0.8], true, 0.3);
+    }
+    // Houses: navy-era duplexes along the grid, a lot apiece like the city's, street trees between.
+    const walls = [0xf3e9d8, 0xe9dcc4, 0xd8e2e6, 0xf0d9c0, 0xe2e8d8] as const;
+    const roofs = [0x8a8478, 0x9a5a48, 0x6a7078, 0xb06a4a] as const;
+    for (const [x0, x1] of [[35.5, 36.6], [37.5, 38.6]] as const) {
+      for (let x = x0; x <= x1 + 0.01; x += 1.0) {
+        // Both sides of the street at z = 1: fronts to the street.
+        for (const [z, rot] of [[0.42, 0], [1.58, Math.PI]] as const) townHouse(b, r, x, y, z, rot, walls, roofs);
+        if (r() < 0.7) oak(b, r, x + 0.5, y, 1.0 + (r() < 0.5 ? 0.32 : -0.32), 0.55);
+      }
+    }
+    // The ball field and a lawn by Building One, a grove at the north-west corner
+    const fx = 34.1;
+    const fz = 1.0;
+    b.box(1.5, 0.012, 1.7, fx, y, fz, 0x7fbf55);
+    b.box(0.5, 0.006, 0.5, fx - 0.3, y + 0.012, fz - 0.4, 0xc9a77a, false, Math.PI / 4);
+    for (const sgn of [-1, 1]) b.box(0.012, 0.18, 0.012, fx + sgn * 0.7, y, fz + 0.8, 0xe8e8e8);
+    for (let k = 0; k < 7; k++) (k % 2 ? pine : oak)(b, r, 33.4 + (k % 3) * 0.4, y, 2.0 - Math.floor(k / 3) * 0.35, 0.8);
+    // Clipper Cove: a marina on the south shore, between Treasure Island and Yerba Buena.
+    for (let k = 0; k < 3; k++) {
+      const dx = 35.4 + k * 1.2;
+      b.box(0.1, 0.04, 0.9, dx, SEA + 0.1, -3.3, PALETTE.wood);
+      for (let j = 0; j < 2; j++) moored(b, r, dx + 0.32, -3.05 - j * 0.42);
+    }
+    b.box(3.0, 0.04, 0.12, 36.6, SEA + 0.1, -2.95, PALETTE.wood);
   }
 
   private buildClouds() {
@@ -994,22 +1306,30 @@ export class Scenery {
       this.pickables.push(group);
       target.add(group);
     };
-    const hx = (HILLS_HOOD.x0 + HILLS_HOOD.x1) / 2;
-    const hz = (HILLS_HOOD.z0 + HILLS_HOOD.z1) / 2;
-    bank(this.clouds.hills, hx, hz, 11, 9, terrainHeight(hx, hz) + 1.4, 'hills', 'TinyTown Hills clear at $1k MRR');
-    bank(this.clouds.island, ISLANDS.founder.x, ISLANDS.founder.z, 7.5, 7.5, 1.2, 'island', 'Your island clears at $100k MRR');
-    bank(this.clouds.launch, ISLANDS.launch.x, ISLANDS.launch.z, 5, 5, 1, 'launch', 'The launch site clears at $1M MRR');
+    // The Hills: a bank over each cluster of lots (the streets and lots are hidden until they clear).
+    const cells = new Map<string, number>();
+    const plan = hillsPlan();
+    const cell = (x: number, z: number) => `${Math.floor((x + 2) / 6.5)},${Math.floor((z + 1) / 6)}`;
+    for (const l of plan.lots) cells.set(cell(l.x, l.z), (cells.get(cell(l.x, l.z)) ?? 0) + 1);
+    for (const [key, n] of cells) {
+      if (n < 3) continue;
+      const [i, j] = key.split(',').map(Number) as [number, number];
+      const x = i * 6.5 - 2 + 3.25;
+      const z = j * 6 - 1 + 3;
+      bank(this.clouds.hills, x, z, 6.2, 5.2, Math.max(0.6, terrainHeight(x, z)) + 1.1, `hills-${key}`, 'TinyTown Hills clear at $1k MRR');
+    }
+    bank(this.clouds.island, ISLANDS.founder.x - 0.3, ISLANDS.founder.z - 0.2, 10.6, 10.4, 1.5, 'island', 'Your island clears at $100k MRR');
+    bank(this.clouds.launch, ISLANDS.launch.x + 0.2, ISLANDS.launch.z + 0.2, 6.4, 6.4, 1.1, 'launch', 'The launch site clears at $1M MRR');
   }
 
   /** Reflect the game: what's open, what's built, what's falling apart. */
   setState(next: SceneryState) {
     this.state = next;
-    this.hood.visible = next.hills;
     for (const key of this.hillKeys) this.batch.setVisible(key, next.hills);
     this.clouds.hills.visible = !next.hills;
     this.clouds.island.visible = !next.island;
     this.clouds.launch.visible = !next.launch;
-    this.launchPad.visible = next.launch;
+    if (this.launchKey) this.batch.setVisible(this.launchKey, next.launch);
     this.wheelSet.visible = next.ferris;
     this.coaster.visible = next.coaster;
     for (const m of [this.rustSolid, this.rustSmooth]) {
@@ -1145,21 +1465,17 @@ function ribbon(b: GeoBuilder, path: readonly Pt[], width: number, color: ColorL
 }
 
 function eucalyptus(b: GeoBuilder, r: () => number, x: number, z: number, y: number, tall: boolean) {
-  const s = (tall ? 1.3 : 1) * (0.8 + r() * 0.4);
   if (tall) {
-    b.cylinder(0.03 * s, 0.05 * s, 0.9 * s, x, y, z, 0xc9b8a0, 5);
-    for (let k = 0; k < 3; k++) {
-      const g = new THREE.IcosahedronGeometry(0.2 * s, 1).scale(1, 1.5, 1);
-      b.transformed(g, new THREE.Matrix4().makeTranslation(x + (r() - 0.5) * 0.18 * s, y + (0.8 + k * 0.22) * s, z + (r() - 0.5) * 0.18 * s), pick(r, [0x5a8a5a, 0x6a9a68, 0x4f7f55] as const), 'smooth');
-    }
-  } else {
-    // Wind-sculpted Monterey cypress: flat, wide, leaning
-    b.cylinder(0.035 * s, 0.05 * s, 0.35 * s, x, y, z, PALETTE.trunk, 5);
-    const g = new THREE.IcosahedronGeometry(0.32 * s, 1).scale(1.4, 0.55, 1.1);
-    b.transformed(g, new THREE.Matrix4().makeTranslation(x + 0.06 * s, y + 0.45 * s, z), pick(r, [0x2f6a45, 0x3a7a4c, 0x2a5e3e] as const), 'smooth');
-    const g2 = new THREE.IcosahedronGeometry(0.22 * s, 1).scale(1.3, 0.5, 1.1);
-    b.transformed(g2, new THREE.Matrix4().makeTranslation(x - 0.12 * s, y + 0.6 * s, z + 0.05 * s), pick(r, [0x2f6a45, 0x3a7a4c] as const), 'smooth');
+    gum(b, r, x, y, z, 1.25);
+    return;
   }
+  // Wind-sculpted Monterey cypress: flat, wide, leaning (low-poly, ~50 triangles)
+  const s = 0.8 + r() * 0.4;
+  b.cylinder(0.035 * s, 0.05 * s, 0.35 * s, x, y, z, PALETTE.trunk, 5);
+  const g = new THREE.IcosahedronGeometry(0.32 * s, 0).scale(1.4, 0.55, 1.1);
+  b.transformed(g, new THREE.Matrix4().makeTranslation(x + 0.06 * s, y + 0.45 * s, z), pick(r, [0x2f6a45, 0x3a7a4c, 0x2a5e3e] as const), 'smooth');
+  const g2 = new THREE.IcosahedronGeometry(0.22 * s, 0).scale(1.3, 0.5, 1.1);
+  b.transformed(g2, new THREE.Matrix4().makeTranslation(x - 0.12 * s, y + 0.6 * s, z + 0.05 * s), pick(r, [0x2f6a45, 0x3a7a4c] as const), 'smooth');
 }
 
 function moored(b: GeoBuilder, r: () => number, x: number, z: number) {
@@ -1169,16 +1485,7 @@ function moored(b: GeoBuilder, r: () => number, x: number, z: number) {
   b.cylinder(0.008, 0.01, 0.75, x, y + 0.1, z + 0.05, PALETTE.trim, 4);
 }
 
-function inSign(x: number, z: number): boolean {
-  const { x: sx, z: sz } = LANDMARKS.sign;
-  const u = (x - sx - (z - sz)) * Math.SQRT1_2;
-  const v = (x - sx + (z - sz)) * Math.SQRT1_2;
-  return Math.abs(u) < 7.5 && v > -2.2 && v < 1.4;
-}
 
-function inHood(x: number, z: number): boolean {
-  return x > HILLS_HOOD.x0 && x < HILLS_HOOD.x1 && z > HILLS_HOOD.z0 && z < HILLS_HOOD.z1 && !inSign(x, z);
-}
 
 /**
  * A wedge-shaped building on a polygon footprint: stone or glass, with windows
@@ -1234,4 +1541,122 @@ function flatiron(b: GeoBuilder, r: () => number, pts: Pt[], h: number, glass: b
     b.cylinder(0.0, 0.11, 0.06, tx, h + 0.35, tz, 0x5a4a3a, 10);
   }
   b.box(0.16, 0.12, 0.16, cx, h + 0.09, cz, glass ? 0xd8dde4 : trim);
+}
+
+const smoothstep = (e0: number, e1: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+
+/** Static scenery in square chunks, so the batch can cull what's off screen. */
+class Chunks {
+  private map = new Map<string, GeoBuilder>();
+  private size: number;
+  constructor(size = 12) {
+    this.size = size;
+  }
+  at(x: number, z: number): GeoBuilder {
+    const key = `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`;
+    let g = this.map.get(key);
+    if (!g) this.map.set(key, (g = new GeoBuilder()));
+    return g;
+  }
+  all(): GeoBuilder[] {
+    return [...this.map.values()];
+  }
+}
+
+/**
+ * A house in the towns around the bay, at the same scale as the city's: stucco
+ * over a garage, a hip, gable or flat roof, a lit window. It faces `rot` (its
+ * front is local +z) and steps down the slope on a foundation.
+ */
+function townHouse(b: GeoBuilder, r: () => number, x: number, y: number, z: number, rot: number, walls: readonly number[], roofs: readonly number[]) {
+  const w = 0.62 + r() * 0.12;
+  const d = 0.54 + r() * 0.1;
+  const h = 0.26 + (r() < 0.35 ? 0.12 : 0);
+  const c = Math.cos(rot);
+  const s = Math.sin(rot);
+  const at = (lx: number, lz: number): [number, number] => [x + lx * c + lz * s, z - lx * s + lz * c];
+  const wall = pick(r, walls);
+  b.box(w, 0.22, d, x, y - 0.22, z, 0x9a9184, false, rot);
+  b.box(w, h, d, x, y - 0.01, z, wall, false, rot);
+  const roof = pick(r, roofs);
+  const kind = r();
+  if (kind < 0.5) {
+    // Hip roofs turn with the house: build one along the axes and rotate it as a geometry.
+    const g = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4, 1).rotateY(Math.PI / 4).scale(w + 0.06, 0.13, d + 0.06).translate(0, 0.065, 0).rotateY(rot);
+    b.transformed(g, new THREE.Matrix4().makeTranslation(x, y + h - 0.01, z), roof);
+  } else if (kind < 0.8) {
+    b.gable(w + 0.04, 0.12, d + 0.06, x, y + h - 0.01, z, roof, 0.03, rot);
+  } else {
+    b.box(w + 0.02, 0.03, d + 0.02, x, y + h - 0.01, z, shade(wall, 0.85), false, rot);
+  }
+  const [gx, gz] = at(-w * 0.22, d / 2 + 0.003);
+  b.panel(w * 0.4, 0.14, gx, y + 0.06, gz, rot, 0xe8e2d6, false);
+  const [wx, wz] = at(w * 0.24, d / 2 + 0.004);
+  b.panel(0.14, 0.1, wx, y + h * 0.62, wz, rot, PALETTE.windowWarm, true, 0.1 + r() * 0.9);
+  const [bx, bz] = at(w * 0.05, -d / 2 - 0.004);
+  b.panel(0.12, 0.08, bx, y + h * 0.6, bz, rot + Math.PI, PALETTE.windowWarm, true, 0.2 + r() * 0.8);
+}
+
+/** Runway designation numbers painted flat, reading from the approach (dir: +1 reads from the south). */
+function runwayNumber(b: GeoBuilder, text: string, x: number, y: number, z: number, dir: number) {
+  // 3 × 5 segment glyphs, each cell 0.1 square
+  const glyphs: Record<string, string> = { '1': '010110010010111', '3': '111001111001111', '6': '111100111101111', '8': '111101111101111' };
+  const px = 0.1;
+  [...text].forEach((ch, i) => {
+    const g = glyphs[ch]!;
+    const ox = (i - (text.length - 1) / 2) * 0.42;
+    for (let row = 0; row < 5; row++) {
+      for (let col = 0; col < 3; col++) {
+        if (g[row * 3 + col] !== '1') continue;
+        // Reading from the south (dir 1), the top row is farthest north and (in this world's handedness) right is −x.
+        const lx = -(ox + (col - 1) * px) * dir;
+        const lz = (2 - row) * px * dir * 1.6;
+        b.box(px, 0.003, px * 1.6, x + lx, y, z + lz, PALETTE.trim);
+      }
+    }
+  });
+}
+
+/** The H on a helipad, flat. */
+function helipadH(b: GeoBuilder, x: number, y: number, z: number, s: number, color: ColorLike) {
+  for (const k of [-1, 1]) b.box(0.09 * s * 2, 0.003, 0.6 * s, x + k * 0.22 * s, y, z, color);
+  b.box(0.44 * s, 0.003, 0.09 * s * 2, x, y, z, color);
+}
+
+/** A windsock on a pole. */
+function windsock(b: GeoBuilder, x: number, y: number, z: number) {
+  b.cylinder(0.01, 0.014, 0.5, x, y, z, 0xe8e8e8, 4);
+  const g = new THREE.CylinderGeometry(0.035, 0.018, 0.22, 8, 1, true).rotateZ(-Math.PI / 2 + 0.25);
+  b.transformed(g, new THREE.Matrix4().makeTranslation(x + 0.11, y + 0.47, z), 0xf28a3a, 'smooth');
+  b.blob(0.02, x, y + 0.52, z, [2.8, 0.4, 0.3], true);
+}
+
+/** Riprap along a seawall: rocks heaped where the land meets the water, a concrete coping along the top. */
+function seawall(b: GeoBuilder, r: () => number, poly: readonly Pt[], top = 0) {
+  for (let i = 0; i < poly.length; i++) {
+    const [ax, az] = poly[i]!;
+    const [bx, bz] = poly[(i + 1) % poly.length]!;
+    const len = Math.hypot(bx - ax, bz - az);
+    // Outward normal: the side of the edge away from the polygon's middle.
+    let nx = (bz - az) / len;
+    let nz = -(bx - ax) / len;
+    const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
+    const cz = poly.reduce((s, p) => s + p[1], 0) / poly.length;
+    if (nx * ((ax + bx) / 2 - cx) + nz * ((az + bz) / 2 - cz) < 0) {
+      nx = -nx;
+      nz = -nz;
+    }
+    const along = Math.atan2(bx - ax, bz - az);
+    for (let d = 0.2; d < len - 0.1; d += 0.36) {
+      const x = ax + ((bx - ax) * d) / len;
+      const z = az + ((bz - az) * d) / len;
+      if (terrainHeight(x + nx * 0.5, z + nz * 0.5) > SEA - 0.05) continue;
+      rock(b, r, x + nx * 0.06, SEA + 0.1, z + nz * 0.06, 1.7 + r() * 0.6);
+      if (r() < 0.6) rock(b, r, x + nx * 0.24, SEA - 0.02, z + nz * 0.24, 1.4 + r() * 0.5);
+      b.box(0.14, 0.06, 0.38, x - nx * 0.06, top - 0.02, z - nz * 0.06, 0xd8d2c4, false, along);
+    }
+  }
 }

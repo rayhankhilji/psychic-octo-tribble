@@ -1,23 +1,52 @@
 import * as THREE from 'three';
-import { HILLS_HOOD, SEA, coastDistance, isBeach, terrainHeight } from '../world/map.ts';
+import { AIRPORT_FILL, SEA, TOWN_GROUND, TREASURE_COAST, coastDistance, fbm, gradeWeight, hillsPlan, isBeach, naturalHeight, polygonDistance, terrainHeight } from '../world/map.ts';
 import type { Atmosphere } from '../world/daylight.ts';
 
 /** Area the terrain mesh covers; beyond it, open water. */
-const AREA = { x0: -110, x1: 120, z0: -120, z1: 95 } as const;
+const AREA = { x0: -110.4, x1: 120, z0: -120, z1: 96 } as const;
 /** Area the water shader knows the shoreline for. */
 const DEPTH = { x0: -110, z0: -120, w: 230, d: 215 } as const;
+/** Terrain tiles: square, each with its own grid resolution. */
+const TILE = 4.8;
 
-const GRASS = new THREE.Color(0x7fbf55);
+const GRASS = new THREE.Color(0x86bd58);
 const PARK = new THREE.Color(0x6aae47);
-/** TinyTown Hills ground: dry golden grass and sage chaparral. */
-const HILLS_GOLD = new THREE.Color(0xc4b06e);
-const HILLS_SAGE = new THREE.Color(0x9ea56a);
-const GOLD = new THREE.Color(0xcdb46a);
+/** California hills in summer: golden dry grass, sage and coyote brush, oak in the folds, grey rock. */
+const GOLD = new THREE.Color(0xd2b56e);
+const STRAW = new THREE.Color(0xc8a862);
+const SAGE = new THREE.Color(0x98a568);
+const OAK = new THREE.Color(0x5f8a45);
 const DRY = new THREE.Color(0xb39457);
-const ROCK = new THREE.Color(0x9b8e7c);
+const ROCK = new THREE.Color(0x9a9184);
+const ROCK_DARK = new THREE.Color(0x7d766c);
+/** Cut banks and road shoulders: decomposed granite. */
+const EARTH = new THREE.Color(0xc2a682);
 const SAND = new THREE.Color(0xf0dcab);
 const WET = new THREE.Color(0xc7b48a);
 const SEABED = new THREE.Color(0x7aa7a0);
+const VERGE = new THREE.Color(0x8fbf62);
+const GARDEN = new THREE.Color(0x7ab650);
+const FOREST = new THREE.Color(0x6a8a4a);
+
+/** How finely each part of the world is meshed: cells per tile side (a power of two). */
+function tileCells(x0: number, z0: number): number {
+  const x1 = x0 + TILE;
+  const z1 = z0 + TILE;
+  const overlaps = (ax0: number, ax1: number, az0: number, az1: number) => x1 > ax0 && x0 < ax1 && z1 > az0 && z0 < az1;
+  // Twin Peaks and TinyTown Hills: the closest look anyone takes at bare ground.
+  if (overlaps(-30, 10, -48, -21.5)) return 16;
+  // Islands, the Presidio and Lands End, the airport, Sausalito and the Golden Gate headlands.
+  if (overlaps(4, 42, -12, 48) || overlaps(-50, -18, -6, 34) || overlaps(12, 31, -56, -31) || overlaps(-24, -8, 30, 46)) return 8;
+  // The towns, whose streets are graded into the ground.
+  if (TOWN_GROUND.some(([ax0, ax1, az0, az1]) => overlaps(ax0, ax1, az0, az1))) return 8;
+  // Wherever the coast runs inside the playable world: beaches need a fine edge.
+  const cx = x0 + TILE / 2;
+  const cz = z0 + TILE / 2;
+  const near = cx > -64 && cx < 72 && cz > -72 && cz < 62;
+  if (near && Math.abs(coastDistance(cx, cz)) < TILE) return 8;
+  if (near) return 4;
+  return 2;
+}
 
 /**
  * The ground and the bay. One sculpted mesh for every coast, hill and
@@ -37,52 +66,95 @@ export class Terrain {
     this.object.add(sea);
   }
 
+  /**
+   * Tiles of different resolution. Where a fine tile meets a coarser one, its
+   * edge vertices are moved onto the coarse edge, so there are no cracks.
+   * Normals come from the height field itself, so tiles shade seamlessly.
+   */
   private ground(): THREE.Mesh {
-    const step = 0.9;
-    const nx = Math.round((AREA.x1 - AREA.x0) / step);
-    const nz = Math.round((AREA.z1 - AREA.z0) / step);
-    const geo = new THREE.PlaneGeometry(AREA.x1 - AREA.x0, AREA.z1 - AREA.z0, nx, nz).rotateX(-Math.PI / 2);
-    geo.translate((AREA.x0 + AREA.x1) / 2, 0, (AREA.z0 + AREA.z1) / 2);
-    const pos = geo.attributes.position as THREE.BufferAttribute;
-    const colors = new Float32Array(pos.count * 3);
+    const tx = Math.round((AREA.x1 - AREA.x0) / TILE);
+    const tz = Math.round((AREA.z1 - AREA.z0) / TILE);
+    const cells: number[] = [];
+    for (let j = 0; j < tz; j++) for (let i = 0; i < tx; i++) cells.push(tileCells(AREA.x0 + i * TILE, AREA.z0 + j * TILE));
+    const cellsAt = (i: number, j: number) => (i < 0 || j < 0 || i >= tx || j >= tz ? 2 : cells[j * tx + i]!);
+    const pos: number[] = [];
+    const nor: number[] = [];
+    const col: number[] = [];
+    const idx: number[] = [];
     const c = new THREE.Color();
-    const heights = new Float32Array(pos.count);
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const h = terrainHeight(x, z);
-      heights[i] = h;
-      pos.setY(i, h);
+    // Gardens: watered green round each Hills house, against the dry hillside.
+    const lotCells = new Map<string, [number, number][]>();
+    for (const l of hillsPlan().lots) {
+      const key = `${Math.floor(l.x / 2)},${Math.floor(l.z / 2)}`;
+      (lotCells.get(key) ?? lotCells.set(key, []).get(key)!).push([l.x, l.z]);
     }
-    // Slope from neighbours, for rock on cliffs.
-    const at = (ix: number, iz: number) => heights[Math.max(0, Math.min(nz, iz)) * (nx + 1) + Math.max(0, Math.min(nx, ix))]!;
-    for (let i = 0; i < pos.count; i++) {
-      const ix = i % (nx + 1);
-      const iz = Math.floor(i / (nx + 1));
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const h = heights[i]!;
-      const slope = Math.hypot(at(ix + 1, iz) - at(ix - 1, iz), at(ix, iz + 1) - at(ix, iz - 1)) / (2 * step);
-      const noise = 0.5 + 0.5 * Math.sin(x * 0.53 + Math.sin(z * 0.31) * 3) * Math.cos(z * 0.47 - x * 0.12);
-      if (h < SEA + 0.05) {
-        c.copy(SEABED).lerp(WET, Math.max(0, 1 + (h - SEA) * 2));
-      } else if (isBeach(x, z) || h < SEA + 0.25) {
-        c.copy(SAND).lerp(WET, Math.max(0, 1 - (h - SEA) * 3));
-      } else {
-        // Green near the city and on north faces, gold on the high dry hills.
-        c.copy(Math.abs(h) < 0.05 ? PARK : GRASS);
-        c.lerp(GOLD, Math.min(1, Math.max(0, (h - 1.2) / 6 + (noise - 0.5) * 0.7)));
-        if (h > 6) c.lerp(DRY, 0.35);
-        // TinyTown Hills: golden dry grass and sage, like the hills above LA, softening at the edges.
-        const hood = Math.min(x - HILLS_HOOD.x0, HILLS_HOOD.x1 - x, z - HILLS_HOOD.z0, HILLS_HOOD.z1 - z);
-        if (hood > -1.5) c.lerp(noise > 0.5 ? HILLS_GOLD : HILLS_SAGE, 0.65 * Math.min(1, (hood + 1.5) / 2.5));
-        c.lerp(ROCK, Math.min(1, Math.max(0, (slope - 0.75) * 1.4)));
-        c.offsetHSL(0, 0, (noise - 0.5) * 0.05);
+    garden = (x: number, z: number) => {
+      let d = Infinity;
+      const cx = Math.floor(x / 2);
+      const cz = Math.floor(z / 2);
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const [lx, lz] of lotCells.get(`${cx + i},${cz + j}`) ?? []) d = Math.min(d, Math.hypot(x - lx, z - lz));
+      return 1 - Math.min(1, Math.max(0, (d - 0.7) / 0.8));
+    };
+    for (let j = 0; j < tz; j++) {
+      for (let i = 0; i < tx; i++) {
+        const n = cellsAt(i, j);
+        const step = TILE / n;
+        const x0 = AREA.x0 + i * TILE;
+        const z0 = AREA.z0 + j * TILE;
+        // Heights with a one-cell border, for normals and curvature.
+        const H = new Float32Array((n + 3) * (n + 3));
+        for (let b = 0; b < n + 3; b++) for (let a = 0; a < n + 3; a++) H[b * (n + 3) + a] = terrainHeight(x0 + (a - 1) * step, z0 + (b - 1) * step);
+        const h = (a: number, b: number) => H[(b + 1) * (n + 3) + (a + 1)]!;
+        const base = pos.length / 3;
+        for (let b = 0; b <= n; b++) {
+          for (let a = 0; a <= n; a++) {
+            const x = x0 + a * step;
+            const z = z0 + b * step;
+            let y = h(a, b);
+            // Stitch to a coarser neighbour: put this edge vertex on the neighbour's straight edge.
+            const edge = (m: number, k: number, at: (q: number) => number) => {
+              if (m >= n) return null;
+              const ratio = n / m;
+              const q = k / ratio;
+              const q0 = Math.floor(q);
+              if (q === q0) return null;
+              const t = q - q0;
+              return at(q0 * ratio) * (1 - t) + at((q0 + 1) * ratio) * t;
+            };
+            const fix =
+              (a === 0 ? edge(cellsAt(i - 1, j), b, (k) => h(0, k)) : null) ??
+              (a === n ? edge(cellsAt(i + 1, j), b, (k) => h(n, k)) : null) ??
+              (b === 0 ? edge(cellsAt(i, j - 1), a, (k) => h(k, 0)) : null) ??
+              (b === n ? edge(cellsAt(i, j + 1), a, (k) => h(k, n)) : null);
+            if (fix !== null) y = fix;
+            const gx = (h(a + 1, b) - h(a - 1, b)) / (2 * step);
+            const gz = (h(a, b + 1) - h(a, b - 1)) / (2 * step);
+            const nl = Math.hypot(gx, 1, gz);
+            pos.push(x, y, z);
+            nor.push(-gx / nl, 1 / nl, -gz / nl);
+            const slope = Math.hypot(gx, gz);
+            // Curvature: positive in hollows (ravines), negative on crests.
+            const curve = (h(a + 1, b) + h(a - 1, b) + h(a, b + 1) + h(a, b - 1) - 4 * y) / (step * step);
+            groundColour(c, x, y, z, slope, curve);
+            col.push(c.r, c.g, c.b);
+          }
+        }
+        for (let b = 0; b < n; b++) {
+          for (let a = 0; a < n; a++) {
+            const p = base + b * (n + 1) + a;
+            // Alternate the diagonal so long slopes don't show a grain.
+            if ((a + b) % 2) idx.push(p, p + n + 1, p + 1, p + 1, p + n + 1, p + n + 2);
+            else idx.push(p, p + n + 1, p + n + 2, p, p + n + 2, p + 1);
+          }
+        }
       }
-      colors.set([c.r, c.g, c.b], i * 3);
     }
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geo.computeVertexNormals();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setIndex(idx);
+    geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, envMapIntensity: 0 }));
     mesh.receiveShadow = true;
     mesh.castShadow = true;
@@ -99,6 +171,62 @@ export class Terrain {
     u.uLight!.value = 0.14 + 0.86 * Math.min(1, a.hemiIntensity / 1.5) * (1 - a.night * 0.72);
     u.uNight!.value = a.night;
   }
+}
+
+/** How much of a watered garden there is at (x, z): set while the ground is built. */
+let garden: (x: number, z: number) => number = () => 0;
+
+/** The colour of the ground at a point: sea floor, sand, lawn, dry grass, scrub, oak, rock or a cut bank. */
+function groundColour(c: THREE.Color, x: number, h: number, z: number, slope: number, curve: number) {
+  const noise = 0.5 + 0.5 * fbm(x * 0.35, z * 0.35, 3);
+  const fine = 0.5 + 0.5 * fbm(x * 1.7 + 11, z * 1.7 - 4, 2);
+  if (h < SEA + 0.05) {
+    c.copy(SEABED).lerp(WET, Math.max(0, 1 + (h - SEA) * 2));
+    return;
+  }
+  // Seawalls: grey riprap at the edge of the fill, never sand.
+  const fill = Math.min(polygonDistance(AIRPORT_FILL, x, z), polygonDistance(TREASURE_COAST, x, z));
+  if (fill < 0.45 && fill > -0.45) {
+    c.copy(ROCK).offsetHSL(0, 0, (fine - 0.5) * 0.08);
+    return;
+  }
+  if (isBeach(x, z) || h < SEA + 0.25) {
+    c.copy(SAND).lerp(WET, Math.max(0, 1 - (h - SEA) * 3));
+    return;
+  }
+  if (polygonDistance(AIRPORT_FILL, x, z) < 0 && h > -0.05) {
+    // Mown verges between the runways and taxiways.
+    c.copy(VERGE).offsetHSL(0, 0, (fine - 0.5) * 0.04);
+    return;
+  }
+  if (Math.abs(h) < 0.05) {
+    c.copy(PARK);
+    return;
+  }
+  // Green near the city and low down; golden dry grass higher up, with sage scrub in patches.
+  c.copy(GRASS);
+  // Your island is watered: lawns and gardens, not dry grass.
+  const lush = Math.hypot(x - 12.6, z - 39.6) < 6.2 ? 0.25 : 1;
+  const dry = Math.min(1, Math.max(0, (h - 0.25) / 1.5 + (noise - 0.5) * 0.9)) * lush;
+  c.lerp(fine > 0.55 ? GOLD : STRAW, dry);
+  c.lerp(SAGE, Math.max(0, Math.min(0.6, (noise - 0.55) * 2.4)) * dry);
+  if (h > 6) c.lerp(DRY, 0.3);
+  c.lerp(GARDEN, garden(x, z) * 0.85);
+  // Oak and bay laurel down the ravines; bare, rockier crests.
+  c.lerp(OAK, Math.max(0, Math.min(0.75, curve * 0.9)) * Math.min(1, h / 1.2));
+  // Graded ground (cut banks, road shoulders, terraces) shows bare earth.
+  const graded = gradeWeight(x, z);
+  if (graded > 0.02) {
+    const cut = Math.abs(h - naturalHeight(x, z));
+    c.lerp(EARTH, Math.min(0.85, graded * 0.5 + cut * 1.5));
+  }
+  // Wooded islands (Yerba Buena, Angel Island): a forest floor under the trees, rock only on the cliffs.
+  const wooded = Math.hypot(x - 33.2, z + 6.8) < 4.6 || Math.hypot(x + 16, z - 38) < 7.4;
+  if (wooded) c.lerp(FOREST, 0.75);
+  // Rock on the steepest faces and the crests of the peaks.
+  const rock = Math.min(1, Math.max(0, (slope - (wooded ? 2.6 : lush < 1 ? 1.8 : 0.85)) * 1.5) + Math.max(0, -curve - 1.2) * 0.25 * Math.min(1, (h - 4) / 2));
+  c.lerp(fine > 0.5 ? ROCK : ROCK_DARK, rock);
+  c.offsetHSL(0, 0, (noise - 0.5) * 0.06);
 }
 
 /** Distance to shore, 0 at the coast and 1 in deep water, as a texture the water samples. */

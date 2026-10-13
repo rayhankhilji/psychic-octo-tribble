@@ -135,6 +135,17 @@ class App {
         const ok = this.city.launchRocket(() => this.hud.feed('game.moon', 'Back from your moon house. Worth every penny.', this.today));
         if (ok) this.hud.feed('game.moon', 'Lift-off! Flying to your house on the moon', this.today);
       },
+      onFlyHelicopter: () => {
+        const ok = this.city.flyHelicopter((at) => {
+          this.gameUI.setHelicopter(at);
+          this.hud.feed('game.heli', at === 'island' ? 'Touched down on your island' : 'Back on the pad at the airport', this.today);
+          // Hold the shot on the pad for a moment while the rotor winds down.
+          setTimeout(() => this.stage.stopFollowing(), 1500);
+        });
+        if (!ok) return;
+        this.stage.follow(this.city.helicopterAt, 1.8);
+        this.hud.feed('game.heli', this.city.helicopterPad === 'airport' ? 'Wheels up from the airport, off to your island' : 'Leaving the island for the airport', this.today);
+      },
       onZoom: (f) => this.stage.zoomBy(f),
       onCancelPlacement: () => this.setPlacing(null),
       // Each place framed whole: the airport and downtown are big, the wharf is close.

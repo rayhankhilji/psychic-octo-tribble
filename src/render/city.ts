@@ -3,7 +3,7 @@ import { disposeGroup, GeoBuilder, GLOW, glassMaterial, glowMaterial, setEnviron
 import { PALETTE } from './palette.ts';
 import { home, neighbourhoodGrounds, tree, type Built } from './buildings.ts';
 import { headquarters, type HQ } from './towers.ts';
-import { cloudBank, encampment, setCloudLight, founderHome, itemModel, plane, plotMarker, rocket, yacht } from './models.ts';
+import { cloudBank, encampment, setCloudLight, ESTATE_HELIPAD, founderHome, helicopter, HELI_ROTOR, itemModel, plane, plotMarker, rocket, yacht } from './models.ts';
 import { Fireworks, Rain, Train } from './effects.ts';
 import { Moon } from './moon.ts';
 import { Traffic } from './traffic.ts';
@@ -17,7 +17,7 @@ import { decayOf, type GameEvent, type GameState } from '../game/economy.ts';
 import { atmosphereAt, localHour, type Atmosphere } from '../world/daylight.ts';
 import { hash, rng } from '../world/rng.ts';
 import { BLOCK, HQ_BLOCK, PITCH, blockCentre, type BlockCoord, type WorldPlan } from '../world/layout.ts';
-import { BLOCKS, EMBARCADERO, LANDMARKS, MARKET_END, MARKET_START, WORLD, type Pt } from '../world/map.ts';
+import { BLOCKS, EMBARCADERO, HELIPAD, LANDMARKS, MARKET_END, MARKET_START, WORLD, type Pt } from '../world/map.ts';
 import type { WorldEvent } from '../world/events.ts';
 
 export interface Tip {
@@ -106,6 +106,8 @@ export class City {
   private highlights = new THREE.Group();
   private rocketObj: THREE.Group | null = null;
   private launch: { t: number; done: () => void } | null = null;
+  /** The founder's helicopter, once the island is theirs: parked on a pad, or in the air between the airport and the island. */
+  private heli: Heli | null = null;
   private flame: THREE.Mesh;
   private trainStopped = false;
   private lampsFailing = false;
@@ -194,6 +196,7 @@ export class City {
     this.syncBuilds(game, animate);
     this.syncFounder(game, animate);
     this.syncVehicles(game, animate);
+    this.syncHelicopter(game.home.tier >= 5, animate);
     this.syncTents(game.unhoused);
     this.syncMood(game, animate);
 
@@ -235,7 +238,7 @@ export class City {
 
   /** Anything animating right now (pop-ins, building sites, fireworks, a launch): the stage keeps full frame rate. */
   get lively(): boolean {
-    return this.anims.length > 0 || this.sites.size > 0 || this.busy || this.volleys.length > 0 || this.launch !== null;
+    return this.anims.length > 0 || this.sites.size > 0 || this.busy || this.volleys.length > 0 || this.launch !== null || !!this.heli?.flight || (this.heli?.spin ?? 0) > 0;
   }
 
   /** Builds everything still queued, now (for screenshots and tests). */
@@ -296,6 +299,27 @@ export class City {
     this.launch = { t: 0, done };
     this.rocketObj.add(this.flame);
     this.flame.visible = true;
+    return true;
+  }
+
+  /** Where the helicopter is parked, or null without one. */
+  get helicopterPad(): 'airport' | 'island' | null {
+    return this.heli?.pad ?? null;
+  }
+
+  /** Where the helicopter is right now, for the camera to follow (the same vector each call). */
+  readonly helicopterAt = (): THREE.Vector3 => (this.heli ? this.heliAt.copy(this.heli.group.position) : this.heliAt.set(HELIPAD.x, 0, HELIPAD.z));
+  private heliAt = new THREE.Vector3();
+
+  /** Fly the helicopter to the other pad: the airport to the island, or home again. False if it can't go. */
+  flyHelicopter(done: (to: 'airport' | 'island') => void): boolean {
+    const h = this.heli;
+    if (!h || h.flight) return false;
+    const to = h.pad === 'airport' ? 'island' : 'airport';
+    const from = h.group.position.clone();
+    const end = padTop(to);
+    const dist = Math.hypot(end.x - from.x, end.z - from.z);
+    h.flight = { t: 0, from, to: end, cruise: dist / HELI_SPEED, dest: to, done, yaw0: h.group.rotation.y, yaw1: Math.atan2(-(end.z - from.z), end.x - from.x) };
     return true;
   }
 
@@ -792,7 +816,7 @@ export class City {
     }
     if (tier >= 5) {
       const o = name(5);
-      wanted.set(`island|${o.id}`, { option: o.id, x: ISLAND.x, y: hillHeight(ISLAND.x, ISLAND.z) - 0.02, z: ISLAND.z, rot: Math.PI / 4, title: tier === 5 ? `Your home: ${o.name}` : 'Your island estate', detail: tier === 6 ? 'You live on the moon now. Buy a rocket to visit.' : o.blurb });
+      wanted.set(`island|${o.id}`, { option: o.id, x: ISLAND.x, y: hillHeight(ISLAND.x, ISLAND.z) - 0.02, z: ISLAND.z, rot: ESTATE_TURN, title: tier === 5 ? `Your home: ${o.name}` : 'Your island estate', detail: tier === 6 ? 'You live on the moon now. Buy a rocket to visit.' : o.blurb });
     }
     for (const [key, g] of this.homesOfFounder) {
       if (wanted.has(key)) continue;
@@ -1046,6 +1070,7 @@ export class City {
 
     this.updateSky(dt, time);
     this.updateLaunch(dt);
+    this.updateHelicopter(dt);
     for (const h of this.highlights.children) (h as THREE.Mesh).scale.y = 1 + 0.12 * Math.sin(time * 4);
     this.rain.update(dt);
     this.moon.home = (this.game?.home.tier ?? 0) >= 6;
@@ -1060,6 +1085,76 @@ export class City {
     this.traffic.update(dt);
     this.scenery.update(dt, time, this.atmosphere, this.sunDir);
     this.life.update(dt, time, this.atmosphere);
+  }
+
+  private syncHelicopter(owned: boolean, animate: boolean) {
+    if (!owned) {
+      if (this.heli) {
+        if (this.heli.fade) this.fades.delete(this.heli.fade);
+        this.remove(this.heli.group, animate);
+        this.heli = null;
+      }
+      return;
+    }
+    if (this.heli) return;
+    // Its own object, not a batch entry: it flies, and the rotor turns.
+    const { body, rotor } = helicopter(hash(this.seed, 31));
+    const group = new THREE.Group();
+    group.add(body.group, rotor.group);
+    rotor.group.position.set(HELI_ROTOR.x, HELI_ROTOR.y, HELI_ROTOR.z);
+    group.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.castShadow = true;
+    });
+    group.position.copy(padTop('airport'));
+    // Nose to the north-east, towards the camera, ready to go.
+    group.rotation.y = -Math.PI / 4;
+    group.userData.tip = { title: 'Your helicopter', detail: 'Open Your home to fly to your island.' } satisfies Tip;
+    this.pickables.push(group);
+    this.add(group, animate, 'xyz', 0.8);
+    this.heli = { group, rotor: rotor.group, fade: this.track(body, animate ? 0 : 1, 1), pad: 'airport', spin: 0, flight: null };
+  }
+
+  private updateHelicopter(dt: number) {
+    const h = this.heli;
+    if (!h) return;
+    const f = h.flight;
+    const g = h.group;
+    // Rotor: spools up on the pad before lift-off, winds down after touchdown.
+    const flying = !!f && f.t < f.cruise + HELI_UP + HELI_DOWN;
+    h.spin = flying ? Math.min(1, h.spin + dt / 1.5) : Math.max(0, h.spin - dt / 3);
+    if (h.spin > 0) h.rotor.rotation.y += dt * 34 * h.spin;
+    if (!f) return;
+    f.t += dt;
+    // Wait for the rotor, then lift, cruise and settle.
+    const t = f.t - 1.2;
+    const up = HELI_UP;
+    const hop = 1.1;
+    if (t <= 0) return;
+    if (t < up) {
+      const u = easeInOut(t / up);
+      g.position.set(f.from.x, f.from.y + hop * u, f.from.z);
+      g.rotation.y = lerpAngle(f.yaw0, f.yaw1, u);
+      g.rotation.z = 0;
+    } else if (t < up + f.cruise) {
+      const u = (t - up) / f.cruise;
+      const s = easeInOut(u);
+      // Up to cruising height and back down in one long arc: nose down at speed, a flare to slow before the pad.
+      const y = THREE.MathUtils.lerp(f.from.y, f.to.y, s) + hop + HELI_CRUISE * Math.sin(Math.PI * Math.min(1, u * 1.15));
+      g.position.set(THREE.MathUtils.lerp(f.from.x, f.to.x, s), Math.max(y, f.to.y + hop * 0.6), THREE.MathUtils.lerp(f.from.z, f.to.z, s));
+      g.rotation.y = f.yaw1;
+      g.rotation.z = -0.15 * Math.sin(Math.PI * u) - 0.1 * Math.sin(2 * Math.PI * u);
+    } else if (t < up + f.cruise + HELI_DOWN) {
+      const u = easeInOut((t - up - f.cruise) / HELI_DOWN);
+      g.position.set(f.to.x, f.to.y + hop * (1 - u), f.to.z);
+      g.rotation.z = 0;
+    } else {
+      g.position.copy(f.to);
+      g.rotation.z = 0;
+      h.pad = f.dest;
+      h.flight = null;
+      g.userData.tip = { title: 'Your helicopter', detail: f.dest === 'island' ? 'Parked on your island. Open Your home to fly back.' : 'Open Your home to fly to your island.' } satisfies Tip;
+      f.done(f.dest);
+    }
   }
 
   /** Top of the launch pad, where the rocket stands. */
@@ -1231,4 +1326,41 @@ export function roadNetwork(blocks: BlockCoord[]): { cells: RoadCell[] } {
     }
   }
   return { cells: [...seen.values()] };
+}
+
+interface Heli {
+  group: THREE.Group;
+  rotor: THREE.Object3D;
+  fade?: Fade;
+  pad: 'airport' | 'island';
+  /** Rotor speed, 0 (still) to 1 (flying). */
+  spin: number;
+  flight: { t: number; from: THREE.Vector3; to: THREE.Vector3; cruise: number; dest: 'airport' | 'island'; yaw0: number; yaw1: number; done: (to: 'airport' | 'island') => void } | null;
+}
+
+/** Map units a second at cruise, and the seconds spent lifting off and settling. */
+const HELI_SPEED = 7;
+const HELI_UP = 2.2;
+const HELI_DOWN = 2.6;
+/** Extra height at the top of the arc, over the hop off the pad. */
+const HELI_CRUISE = 4;
+
+/** Where the skids rest: the airport's pad, or the one every island estate has by the house (turned with the estate). */
+function padTop(pad: 'airport' | 'island'): THREE.Vector3 {
+  if (pad === 'airport') return new THREE.Vector3(HELIPAD.x, 0.03, HELIPAD.z);
+  const p = new THREE.Vector3(ESTATE_HELIPAD.x, 0, ESTATE_HELIPAD.z).applyAxisAngle(UP, ESTATE_TURN);
+  return p.add(new THREE.Vector3(ISLAND.x, hillHeight(ISLAND.x, ISLAND.z) - 0.02 + ESTATE_HELIPAD.y, ISLAND.z));
+}
+
+const UP = new THREE.Vector3(0, 1, 0);
+/** The island estate faces the camera: turned an eighth of a turn. */
+const ESTATE_TURN = Math.PI / 4;
+
+function easeInOut(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+}
+
+function lerpAngle(a: number, b: number, t: number): number {
+  const d = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+  return a + d * t;
 }

@@ -551,3 +551,250 @@ function profileShed(b: GeoBuilder, x: number, z: number, w: number, d: number, 
   // Shape x is depth (towards +z), so turn it a quarter: shape x → world z, extrusion → world x
   put(b, g, x, y0, z, color, 'solid', -Math.PI / 2);
 }
+
+// ─── The neighbourhood: streets, terraces, gardens ────────────────────────
+
+type P3 = readonly [number, number, number];
+
+/** A flat strip along a polyline at its own heights (x, z, y), `lift` above them, shifted sideways by `offset`. */
+export function strip(b: GeoBuilder, pts: readonly P3[], width: number, color: ColorLike, lift: number, offset = 0) {
+  if (pts.length < 2) return;
+  const pos: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]!;
+    const q = pts[Math.min(pts.length - 1, i + 1)]!;
+    const o = pts[Math.max(0, i - 1)]!;
+    const tl = Math.hypot(q[0] - o[0], q[1] - o[1]) || 1;
+    const nx = -(q[1] - o[1]) / tl;
+    const nz = (q[0] - o[0]) / tl;
+    for (const s of [1, -1]) pos.push(p[0] + nx * (offset + (s * width) / 2), p[2] + lift, p[1] + nz * (offset + (s * width) / 2));
+    if (i < pts.length - 1) idx.push(i * 2, i * 2 + 2, i * 2 + 1, i * 2 + 1, i * 2 + 2, i * 2 + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  b.transformed(g, new THREE.Matrix4(), color);
+}
+
+/** A flat disc (a turning circle), at height y. */
+export function disc(b: GeoBuilder, x: number, y: number, z: number, r: number, color: ColorLike, inner = 0) {
+  const g = inner > 0 ? new THREE.RingGeometry(inner, r, 20) : new THREE.CircleGeometry(r, 20);
+  g.rotateX(-Math.PI / 2);
+  b.transformed(g, new THREE.Matrix4().makeTranslation(x, y, z), color);
+}
+
+const ASPHALT = 0x5a5e68;
+const CURB = 0xd8d2c4;
+const STONE = [0x9c8f7a, 0x8f8270, 0xa39580, 0x948772] as const;
+const STONE_CAP = 0xc9bfac;
+const CONCRETE = 0xd6cfc0;
+const HEDGE = [0x3f6e36, 0x4a7a3c, 0x365f30] as const;
+
+/** Street lamp with a warm head: the Hills' old acorn lamps. */
+function lamp(b: GeoBuilder, x: number, y: number, z: number) {
+  b.cylinder(0.008, 0.012, 0.3, x, y, z, 0x2f343c, 5);
+  b.blob(0.03, x, y + 0.31, z, [3.0, 2.2, 1.2], true);
+}
+
+export interface HillsGround {
+  streets: { pts: P3[]; w: number; kind: string; cul: boolean }[];
+  lots: { x: number; z: number; y: number; rot: number; w: number; d: number; drive: P3 }[];
+  homeDrive: P3[];
+}
+
+/**
+ * The Hills streets: asphalt, curbs, a yellow centre line on the boulevard,
+ * turning circles, lamps, stone walls where the road is cut into the hill
+ * and white rails where it runs along a drop. `ground(x, z)` is the natural
+ * slope beside the road.
+ */
+export function hillsStreets(b: GeoBuilder, r: () => number, plan: HillsGround, ground: (x: number, z: number) => number) {
+  for (const s of plan.streets) {
+    const track = s.kind === 'track';
+    strip(b, s.pts, s.w, track ? 0xc9b48e : ASPHALT, track ? 0.025 : 0.03);
+    if (track) continue;
+    for (const side of [1, -1]) strip(b, s.pts, 0.05, CURB, 0.036, side * (s.w / 2 + 0.02));
+    if (s.kind === 'boulevard') {
+      for (const off of [-0.018, 0.018]) strip(b, s.pts, 0.012, PALETTE.roadYellow, 0.034, off);
+    }
+    if (s.cul) {
+      const [ex, ez, ey] = s.pts.at(-1)!;
+      disc(b, ex, ey + 0.03, ez, 0.5, ASPHALT);
+      disc(b, ex, ey + 0.036, ez, 0.55, CURB, 0.5);
+      disc(b, ex, ey + 0.034, ez, 0.16, 0x8fae6a);
+      bush(b, r, ex, ey + 0.08, ez, 0.07, pick(r, HEDGE));
+    }
+    // Lamps every few lots, alternating sides; walls and rails where the slope demands.
+    let along = 0;
+    let next = 0.8 + r() * 0.6;
+    let flip = 1;
+    for (let i = 1; i < s.pts.length - 1; i++) {
+      const p = s.pts[i]!;
+      const q = s.pts[i + 1]!;
+      const o = s.pts[i - 1]!;
+      const step = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      along += step;
+      const tl = Math.hypot(q[0] - o[0], q[1] - o[1]) || 1;
+      const tx = (q[0] - o[0]) / tl;
+      const tz = (q[1] - o[1]) / tl;
+      const rot = Math.atan2(tx, tz);
+      if (along > next) {
+        next = along + 2.3;
+        flip = -flip;
+        lamp(b, p[0] - tz * flip * (s.w / 2 + 0.1), p[2] + 0.02, p[1] + tx * flip * (s.w / 2 + 0.1));
+      }
+      if (i % 2) continue;
+      for (const side of [1, -1]) {
+        const ox = -tz * side;
+        const oz = tx * side;
+        const g = ground(p[0] + ox * (s.w / 2 + 0.55), p[1] + oz * (s.w / 2 + 0.55));
+        const wx = p[0] + ox * (s.w / 2 + 0.17);
+        const wz = p[1] + oz * (s.w / 2 + 0.17);
+        if (g - p[2] > 0.3) {
+          // Cut into the hill: a low dry-stone retaining wall with a cap; the bank rises behind it.
+          const h = Math.min(0.24, (g - p[2]) * 0.5);
+          b.box(0.05, h, step * 2 + 0.02, wx, p[2], wz, pick(r, STONE), false, rot);
+          b.box(0.065, 0.014, step * 2 + 0.02, wx, p[2] + h, wz, STONE_CAP, false, rot);
+        } else if (p[2] - g > 0.28) {
+          // Along a drop: white posts and a rail
+          b.box(0.012, 0.06, 0.012, p[0] + ox * (s.w / 2 + 0.1), p[2] + 0.02, p[1] + oz * (s.w / 2 + 0.1), 0xf2efe8);
+          b.box(0.01, 0.012, step * 2, p[0] + ox * (s.w / 2 + 0.1), p[2] + 0.07, p[1] + oz * (s.w / 2 + 0.1), 0xf2efe8, false, rot);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Each lot's terrace: stone retaining walls where the pad meets the slope, a
+ * concrete driveway down (or up) to the street, a hedge on the street side,
+ * and a slim tree or two between neighbours.
+ */
+export function hillsLots(b: GeoBuilder, r: () => number, plan: HillsGround, ground: (x: number, z: number) => number) {
+  for (const l of plan.lots) {
+    const c = Math.cos(l.rot);
+    const s = Math.sin(l.rot);
+    // Local (lx, lz) → world, with the house's +z the view side.
+    const at = (lx: number, lz: number): [number, number] => [l.x + lx * c + lz * s, l.z - lx * s + lz * c];
+    const stone = pick(r, STONE);
+    // Walls round the pad, in thirds so they follow the ground.
+    const edges: [number, number, number, number, number][] = [
+      // centre of edge (local), outward normal (local), length
+      [0, l.d / 2, 0, 1, l.w],
+      [0, -l.d / 2, 0, -1, l.w],
+      [l.w / 2, 0, 1, 0, l.d],
+      [-l.w / 2, 0, -1, 0, l.d],
+    ];
+    for (const [ex, ez, nx, nz, len] of edges) {
+      for (let k = 0; k < 3; k++) {
+        const t = (k - 1) / 3;
+        const lx = ex + (nz !== 0 ? t * len : 0);
+        const lz = ez + (nx !== 0 ? t * len : 0);
+        const [gx, gz] = at(lx + nx * 0.3, lz + nz * 0.3);
+        const g = ground(gx, gz);
+        const [wx, wz] = at(lx + nx * 0.03, lz + nz * 0.03);
+        const seg = len / 3 + 0.01;
+        const along = nz !== 0 ? l.rot : l.rot + Math.PI / 2;
+        if (g < l.y - 0.07) {
+          // Fill: the terrace stands on a stone wall, with a coping and a darker course halfway.
+          const h = l.y - g + 0.04;
+          b.box(seg, h, 0.05, wx, g - 0.06, wz, stone, false, along);
+          if (h > 0.22) b.box(seg + 0.004, 0.012, 0.054, wx, g - 0.06 + h * 0.5, wz, shade(stone, 0.82), false, along);
+          b.box(seg + 0.01, 0.012, 0.062, wx, l.y - 0.01, wz, STONE_CAP, false, along);
+        } else if (g > l.y + 0.07) {
+          // Cut: a wall holds the hill back behind the terrace.
+          const h = Math.min(0.75, g - l.y + 0.02);
+          b.box(seg, h, 0.05, wx, l.y - 0.02, wz, stone, false, along);
+          b.box(seg + 0.01, 0.012, 0.062, wx, l.y - 0.02 + h, wz, STONE_CAP, false, along);
+        }
+      }
+    }
+    // Driveway: from the street's edge to the middle of the pad's street side.
+    const [dx, dz, dy] = l.drive;
+    const fx = l.x - dx;
+    const fz = l.z - dz;
+    const fl = Math.hypot(fx, fz) || 1;
+    const end: P3 = [l.x - (fx / fl) * (l.d / 2 - 0.02), l.z - (fz / fl) * (l.d / 2 - 0.02), l.y];
+    strip(b, [[dx, dz, dy], [(dx + end[0]) / 2, (dz + end[1]) / 2, (dy + end[2]) / 2], end], 0.2, CONCRETE, 0.03);
+    // A hedge along the street side, either side of the driveway
+    const street = fx * s + fz * c > 0 ? -1 : 1; // which local z side faces the street
+    for (const side of [-1, 1]) {
+      const [hx, hz] = at(side * (l.w / 4 + 0.07), street * (l.d / 2 + 0.04));
+      b.box(l.w / 2 - 0.2, 0.07, 0.06, hx, ground(hx, hz) - 0.01, hz, pick(r, HEDGE), false, l.rot);
+    }
+    // Slim trees between neighbours: Italian cypress, a palm now and then
+    for (const side of [-1, 1]) {
+      if (r() < 0.3) continue;
+      const [tx, tz] = at(side * (l.w / 2 + 0.12), (r() - 0.5) * 0.5);
+      const ty = ground(tx, tz);
+      if (Math.abs(ty - l.y) > 0.5) continue;
+      if (r() < 0.7) cypress(b, r, tx, tz, 1.15 + r() * 0.5, ty - 0.02);
+      else palm(b, r, tx, tz, 0.8, ty - 0.02);
+    }
+    // Garden trees off the side of the terrace away from the street (uphill behind it, or down the slope
+    // below it), kept to the corners so they frame the house rather than hide it: oaks, a pine, bushes.
+    for (let k = 0; k < 3; k++) {
+      const side = k === 0 ? -1 : k === 1 ? 1 : r() < 0.5 ? -1 : 1;
+      const [tx, tz] = at(side * (0.32 + r() * 0.3), -street * (l.d / 2 + 0.25 + r() * 0.18));
+      const ty = ground(tx, tz);
+      if (Math.abs(ty - l.y) > 0.9) continue;
+      const pickTree = r();
+      if (pickTree < 0.45) oak(b, r, tx, ty, tz, 0.8);
+      else if (pickTree < 0.65) pine(b, r, tx, ty, tz, 0.75);
+      else bush(b, r, tx, ty + 0.04, tz, 0.07, pick(r, HEDGE));
+    }
+  }
+  // Your lot's driveway
+  if (plan.homeDrive.length === 2) {
+    const [a, z] = plan.homeDrive as [P3, P3];
+    strip(b, [z, [(a[0] + z[0]) / 2, (a[1] + z[1]) / 2, (a[2] + z[2]) / 2], a], 0.26, CONCRETE, 0.035);
+  }
+}
+
+// ─── Flora and rock for open ground ───────────────────────────────────────
+
+/** Monterey pine: a dark, slightly lopsided cone on a bare trunk. ~40 triangles. */
+export function pine(b: GeoBuilder, r: () => number, x: number, y: number, z: number, s = 1) {
+  const k = s * (0.8 + r() * 0.45);
+  b.cylinder(0.025 * k, 0.035 * k, 0.22 * k, x, y - 0.02, z, 0x6a5040, 5);
+  const c = pick(r, [0x2f5f3c, 0x356a40, 0x2a5236, 0x3d6e44] as const);
+  put(b, new THREE.ConeGeometry(0.2 * k, 0.42 * k, 7), x, y + 0.36 * k, z, c, 'solid', r() * 6);
+  put(b, new THREE.ConeGeometry(0.14 * k, 0.32 * k, 6), x + (r() - 0.5) * 0.03, y + 0.58 * k, z, shade(c, 1.08), 'solid', r() * 6);
+}
+
+/** Coast live oak: a broad, low, rounded crown. ~50 triangles. */
+export function oak(b: GeoBuilder, r: () => number, x: number, y: number, z: number, s = 1) {
+  const k = s * (0.8 + r() * 0.4);
+  b.cylinder(0.025 * k, 0.04 * k, 0.16 * k, x, y - 0.02, z, 0x5e4a3a, 5);
+  const c = pick(r, [0x5a7a3a, 0x4f6f36, 0x667f40] as const);
+  put(b, new THREE.IcosahedronGeometry(0.2 * k, 0), x, y + 0.24 * k, z, c, 'smooth', r() * 6, 0, 0, 1.3, 0.75, 1.15);
+  put(b, new THREE.IcosahedronGeometry(0.13 * k, 0), x + 0.1 * k, y + 0.3 * k, z - 0.05 * k, shade(c, 1.1), 'smooth', r() * 6, 0, 0, 1.2, 0.8, 1.1);
+}
+
+/** Blue gum eucalyptus: tall pale trunk, loose drooping crowns. ~60 triangles. */
+export function gum(b: GeoBuilder, r: () => number, x: number, y: number, z: number, s = 1) {
+  const k = s * (0.85 + r() * 0.5);
+  b.cylinder(0.018 * k, 0.034 * k, 0.75 * k, x, y - 0.02, z, 0xcdbfa8, 5);
+  const c = pick(r, [0x6f8f6a, 0x5f8260, 0x7a9a72] as const);
+  put(b, new THREE.IcosahedronGeometry(0.15 * k, 0), x, y + 0.72 * k, z, c, 'smooth', r() * 6, 0, 0, 1, 1.5, 1);
+  put(b, new THREE.IcosahedronGeometry(0.11 * k, 0), x + 0.08 * k, y + 0.55 * k, z + 0.04 * k, shade(c, 0.92), 'smooth', r() * 6, 0, 0, 1, 1.4, 1);
+}
+
+/** A clump of sage scrub or coyote brush. ~20–40 triangles. */
+export function scrub(b: GeoBuilder, r: () => number, x: number, y: number, z: number, s = 1) {
+  const n = 1 + Math.floor(r() * 2);
+  for (let i = 0; i < n; i++) {
+    const k = s * (0.06 + r() * 0.06);
+    const c = pick(r, [0x7f9a5a, 0x6f8a52, 0x8fa468, 0x5e7a48, 0xa3a46a, 0x8a8f5a] as const);
+    put(b, new THREE.IcosahedronGeometry(k, 0), x + (r() - 0.5) * 0.18 * s, y + k * 0.35, z + (r() - 0.5) * 0.18 * s, c, 'smooth', r() * 6, 0, 0, 1.25, 0.7, 1.1);
+  }
+}
+
+/** A weathered rock, half buried. ~20 triangles. */
+export function rock(b: GeoBuilder, r: () => number, x: number, y: number, z: number, s = 1) {
+  const k = s * (0.05 + r() * 0.07);
+  const c = pick(r, [0x9a9488, 0x8a847a, 0xa8a094, 0x7f796f] as const);
+  put(b, new THREE.DodecahedronGeometry(k, 0), x, y + k * 0.2, z, c, 'solid', r() * 6, r() * 0.5, r() * 0.5, 1.2 + r() * 0.5, 0.6 + r() * 0.4, 1 + r() * 0.4);
+}

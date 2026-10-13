@@ -20,6 +20,8 @@ export interface GameHandlers {
   onBuild(item: Item, plot?: string): void;
   onPickHome(tier: number, choice: string): void;
   onFlyToMoon(): void;
+  /** Fly the helicopter between the airport and the island. */
+  onFlyHelicopter(): void;
   onZoom(factor: number): void;
   onCancelPlacement(): void;
   onFocus(what: Place): void;
@@ -73,6 +75,8 @@ export class GameUI {
   private tab: Tab = 'all';
   private plot: string | undefined;
   private ownsRocket = false;
+  /** Where the founder's helicopter is parked (it comes with the island). */
+  private heliAt: 'airport' | 'island' = 'airport';
 
   private card: HTMLElement;
   private treasury: HTMLElement;
@@ -264,6 +268,10 @@ export class GameUI {
         this.homeDialog.close();
         h.onFlyToMoon();
       }
+      if (btn.dataset.act === 'heli') {
+        this.homeDialog.close();
+        h.onFlyHelicopter();
+      }
       if (btn.dataset.act === 'rocket') {
         this.homeDialog.close();
         this.openBuild('vehicles');
@@ -308,6 +316,12 @@ export class GameUI {
   private placesMenu!: HTMLElement;
 
   /** Opens or closes the places menu, listing what's open in this city right now. */
+  /** The helicopter landed somewhere: the home dialog offers the flight back. */
+  setHelicopter(at: 'airport' | 'island') {
+    this.heliAt = at;
+    if (this.homeDialog.open) this.renderHome();
+  }
+
   togglePlaces(open = this.placesMenu.hidden) {
     if (open) {
       const g = this.state;
@@ -680,7 +694,10 @@ export class GameUI {
       }
       if (t.yacht && reached) extra = `<span class="perk">${ICON.ship}Came with a superyacht</span>`;
       if (t.where === 'hills' && reached && i === 3) extra = `<button class="btn ghost sm" type="button" data-focus="hills" data-key="focus:hills">${ICON.pin}<span class="label">Show the Hills</span></button>`;
-      if (t.where === 'island' && reached) extra += `<button class="btn ghost sm" type="button" data-focus="island" data-key="focus:island">${ICON.pin}<span class="label">Show my island</span></button>`;
+      if (t.where === 'island' && reached) {
+        extra += `<button class="btn ghost sm" type="button" data-focus="island" data-key="focus:island">${ICON.pin}<span class="label">Show my island</span></button>`;
+        extra += `<button class="btn ghost sm" type="button" data-act="heli" data-key="heli">${ICON.heli}<span class="label">${this.heliAt === 'airport' ? 'Fly there from the airport' : 'Fly back to the airport'}</span></button>`;
+      }
       const node = current ? ICON.home : reached ? ICON.check : ICON.lock;
       const region = t.where === 'hills' ? REGIONS.hills : t.where === 'island' ? REGIONS.island : t.where === 'moon' ? REGIONS.launchpad : null;
       return `<li class="rung ${current ? 'current' : reached ? 'past' : 'future'}">

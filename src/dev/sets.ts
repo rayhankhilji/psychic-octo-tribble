@@ -349,3 +349,18 @@ Object.assign(SETS, {
     }),
 } satisfies Record<string, () => ShowItem[]>);
 
+
+// ─── Landscape: the flora and rock of the open hills: `?set=ls-flora&zoom=6` ──
+import { gum as lsGum, oak as lsOak, pine as lsPine, rock as lsRock, scrub as lsScrub } from '../render/hills.ts';
+Object.assign(SETS, {
+  'ls-flora': (): ShowItem[] => {
+    const kinds = { pine: lsPine, oak: lsOak, gum: lsGum, scrub: lsScrub, rock: lsRock } as const;
+    return Object.entries(kinds).map(([label, f]) => {
+      const b = new GeoBuilder();
+      const r = rng(label.length * 97);
+      b.box(1.1, 0.02, 1.1, 0, -0.02, 0, 0xc8a862);
+      for (let i = 0; i < 6; i++) f(b, r, -0.35 + (i % 3) * 0.35, 0, -0.25 + Math.floor(i / 3) * 0.5, label === 'rock' ? 1.6 : 1);
+      return { label, object: b.build().group, size: 1.4 };
+    });
+  },
+} satisfies Record<string, () => ShowItem[]>);

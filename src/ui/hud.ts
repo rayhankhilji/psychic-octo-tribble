@@ -35,6 +35,7 @@ const FEED: Record<string, { icon: IconName; tone: Tone; kicker: string; linger?
   'game.build': { icon: 'build', tone: 'brand', kicker: 'Built' },
   'game.error': { icon: 'alert', tone: 'bad', kicker: 'Not quite' },
   'game.moon': { icon: 'rocket', tone: 'brand', kicker: 'Moon trip', linger: 7000 },
+  'game.heli': { icon: 'heli', tone: 'brand', kicker: 'Helicopter', linger: 6000 },
   'game.land.opened': { icon: 'map', tone: 'good', kicker: 'New land', linger: 7000 },
   'game.region.opened': { icon: 'cloudSun', tone: 'good', kicker: 'Clouds cleared', linger: 7000 },
   'game.home.moved': { icon: 'home', tone: 'brand', kicker: 'You moved', linger: 7000 },
