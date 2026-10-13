@@ -25,7 +25,9 @@ import { setThumbnailContext } from './ui/thumbnails.ts';
 import { Api, ApiRequestError } from './api/client.ts';
 import type { AuthProvider } from './api/auth.ts';
 import { cleanSearch, decideBoot, decideOpening, readReturn, type BootScreen } from './api/boot.ts';
-import { BACK_PAY_DAYS, isPaid, simOptionsFor, type MeResponse, type WorldInfo } from './api/contract.ts';
+import { BACK_PAY_DAYS, isPaid, simOptionsFor, type ConfigResponse, type MeResponse, type WorldInfo } from './api/contract.ts';
+import { formatPrice, priceSheet } from './api/pricing.ts';
+import { FrontDoor, frontDoorInset, frontDoorSeen, holdHud, releaseHud, wantsFrontDoor } from './ui/frontdoor.ts';
 
 const SPEEDS = [
   { label: '1×', daysPerSecond: 12 },
@@ -86,6 +88,8 @@ interface AppOptions {
   hosted?: HostedWorld;
   /** Hosted accounts are on: the city name and "Connect" open the account flow instead of the `.env` help. */
   accounts?: boolean;
+  /** The front door is up: open on the grown city (the last day), the camera drifting, until `enter()`. */
+  intro?: boolean;
 }
 
 class App {
@@ -225,7 +229,10 @@ class App {
     if (notice) this.hud.notice(notice);
     // Demo opens with the story from day one; a live world opens on today.
     // `?away=N` previews the welcome-back card as if you last looked N days ago.
-    if ((timeline.source === 'demo' && !params.has('away')) || params.has('replay')) this.replay();
+    if (opts.intro) {
+      this.show(this.last, false);
+      this.stage.attract(true, frontDoorInset);
+    } else if ((timeline.source === 'demo' && !params.has('away')) || params.has('replay')) this.replay();
     else this.show(this.last, false);
     this.stage.start();
     this.refreshClock();
@@ -236,6 +243,23 @@ class App {
     });
 
     if (timeline.source === 'live') window.setInterval(() => this.poll(), POLL_MS);
+  }
+
+  /**
+   * The visitor stepped through the front door: the camera settles back to
+   * its angle and, to watch, the demo replays from day one. Otherwise (a
+   * dialog is opening) the grown city stays as the backdrop.
+   */
+  enter(watch: boolean) {
+    this.stage.attract(false, undefined, { settle: true });
+    if (watch) this.replay();
+  }
+
+  /** The real numbers behind the city on screen, for the front door's caption. */
+  get caption() {
+    const s = this.moments[this.last]!.snapshot;
+    const users = s.users !== undefined;
+    return { name: this.timeline.name, day: this.last + 1, mrr: formatMoney(s.mrr, this.timeline.currency), people: users ? s.users! : s.customers, of: users ? 'users' : 'customers' };
   }
 
   /** "While you were away": what happened since this browser last showed the city. */
@@ -506,6 +530,22 @@ async function loadMock(): Promise<{ auth: AuthProvider | null; signedOutUrl: st
 /** Who to write to when something breaks (from the server's config, when it has one). */
 let supportEmail: string | null = null;
 
+/** Opens the front door over the city once the boot screen lifts. */
+function openFrontDoor(app: App, config: ConfigResponse | null, shell?: { primary(): void; openSignIn(): void }) {
+  const sheet = priceSheet(config?.plans ?? []);
+  const price = sheet.month ? `${formatPrice(sheet.month.amount, sheet.month.currency)}/mo` : sheet.year ? `${formatPrice(sheet.year.amount, sheet.year.currency)}/yr` : null;
+  const yearly = sheet.month && sheet.year ? `${formatPrice(sheet.year.amount, sheet.year.currency)} a year` : null;
+  void new FrontDoor({
+    caption: app.caption,
+    price,
+    yearly,
+    accounts: !!shell,
+    onEnter: (watch) => app.enter(watch),
+    onMakeItYours: () => shell?.primary(),
+    onSignIn: () => shell?.openSignIn(),
+  }).open();
+}
+
 const NO_WEBGL = {
   title: 'Your browser has 3D turned off',
   message: 'TinyTown draws your city with WebGL 2, and this browser has it switched off or blocked.',
@@ -526,7 +566,10 @@ async function boot() {
   const demoSeed = Number(params.get('seed')) || 0;
   if (!config?.hosted || !config.supabase) {
     const { timeline, notice } = await loadTimeline();
-    new App({ timeline, notice, seed: demoSeed });
+    const intro = wantsFrontDoor({ search: params, seen: frontDoorSeen(), demo: timeline.source === 'demo', signedIn: false });
+    if (intro) holdHud();
+    const app = new App({ timeline, notice, seed: demoSeed, intro });
+    if (intro) openFrontDoor(app, null);
     return;
   }
 
@@ -579,7 +622,10 @@ async function boot() {
     }
     if (!app) screen = { kind: 'demo', cta: 'onboard' };
   }
-  app ??= new App({ timeline: demoTimeline({ boost: Number(params.get('boost')) || 1 }), notice, seed: demoSeed, accounts: true });
+  // A first visit to the demo opens on the front door (unless a dialog opens by itself: see below).
+  const intro = !app && wantsFrontDoor({ search: params, seen: frontDoorSeen(), demo: true, signedIn: !!session });
+  if (intro) holdHud();
+  app ??= new App({ timeline: demoTimeline({ boost: Number(params.get('boost')) || 1 }), notice, seed: demoSeed, accounts: true, intro });
 
   const { HostedShell, takePlanIntent } = await shellModule;
   const shell = new HostedShell({ api, auth, config, me, screen, hud: app.hud, signedOutUrl: mock?.signedOutUrl ?? '/', email: session?.email ?? null });
@@ -596,6 +642,14 @@ async function boot() {
     : waiting
       ? ({ dialog: 'none' } as const)
       : decideOpening(screen, ret, me, { signInError: auth.redirectError, wantsPlan });
+  if (intro) {
+    if (wantsFrontDoor({ search: params, seen: frontDoorSeen(), demo: true, signedIn: !!session, dialog: opening.dialog })) openFrontDoor(app, config, shell);
+    else {
+      // Something opens by itself (a sign-in link that failed, say): no front door, the demo as usual.
+      releaseHud();
+      app.enter(true);
+    }
+  }
   await whenBooted();
   measurePerf(performance.now());
   if (ret.checkout === 'success' && me && !isPaid(me.plan.status)) return void shell.confirmCheckout();

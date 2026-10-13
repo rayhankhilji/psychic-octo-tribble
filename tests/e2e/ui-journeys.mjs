@@ -29,6 +29,14 @@ const NOISE = [/GPU stall due to ReadPixels/i, /useProgram/i, /WebGL: too many e
 export async function uiContext(stack) {
   const browser = await launch();
   const context = await browser.newContext({ viewport: { width: 1200, height: 760 }, acceptDownloads: true });
+  // A first visit opens on the front door; these journeys are about what's behind it (it has its own journey).
+  await context.addInitScript(() => {
+    try {
+      localStorage.setItem('tinytown:frontdoor-seen', '1');
+    } catch {
+      // Storage off: the front door treats that as seen too.
+    }
+  });
   // The GitHub install link is github.com's own; send the browser to the fake instead.
   await context.route(/^https:\/\/github\.com\//, (route) => route.fulfill({ status: 302, headers: { location: rewriteUrl(route.request().url(), stack.fakes.url) } }));
   // Anything else outside (fonts, analytics, the bot check) must not leave the machine either.
@@ -410,6 +418,40 @@ export const UI_JOURNEYS = [
         assert(!leftovers.length, `rows left in ${leftovers.map(([n]) => n).join(', ')}`);
       }
       if (missing.length) throw new Skip(`not in the account menu yet: ${missing.join(', ')}`);
+    },
+  },
+  {
+    name: 'ui: a first visit opens on the front door, and "Watch a startup grow" steps in',
+    async run(t) {
+      const { browser, stack } = t;
+      // Park the shared page: a second city rendering in software WebGL would starve this one.
+      await t.page.goto('about:blank').catch(() => {});
+      // A browser that has never been here (the shared context marks the front door as seen).
+      const context = await browser.newContext({ viewport: { width: 1200, height: 760 } });
+      await context.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, (route) => route.fulfill({ status: 204, body: '' }));
+      const page = await context.newPage();
+      page.setDefaultTimeout(60_000);
+      page.on('pageerror', (e) => t.pageErrors.push(`${e.message} @ ${page.url()}`));
+      try {
+        await page.goto(`${stack.appUrl}/?intro`, { waitUntil: 'commit', timeout: LOAD_MS });
+        const door = page.getByRole('region', { name: /Your startup/ });
+        assert(await shows(door, LOAD_MS), 'no front door on a first visit with ?intro');
+        assert(await shows(page.getByRole('button', { name: /Make it yours/ })), 'the front door has no "Make it yours"');
+        await tap(page.getByRole('button', { name: 'Watch a startup grow' }), 'Watch a startup grow');
+        // Read the day straight away: the replay runs at twelve days a second.
+        const day = await page.evaluate(() => Number(document.querySelector('input[type=range]')?.value));
+        assert(day < 60, `the replay didn't start from the beginning (day ${day})`);
+        // Timer polling: animation frames are scarce while software WebGL draws the replay.
+        await page.waitForFunction(() => !document.querySelector('.frontdoor') && document.documentElement.classList.contains('hud-in'), null, { timeout: 60_000, polling: 500 });
+        assert(await page.evaluate(() => localStorage.getItem('tinytown:frontdoor-seen') === '1'), 'the front door was not remembered');
+      } catch (err) {
+        // The harness screenshots the shared page; this journey's page is its own.
+        const state = await page.evaluate(() => `${location.href} html.${document.documentElement.className}`).catch(() => '');
+        await page.screenshot({ path: join(OUT, 'front-door-journey.png'), timeout: 120_000 }).catch(() => {});
+        throw new Error(`${err instanceof Error ? err.message : err} (${state})`);
+      } finally {
+        await context.close();
+      }
     },
   },
   {

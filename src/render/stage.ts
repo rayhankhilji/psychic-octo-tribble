@@ -56,6 +56,13 @@ export class Stage {
   private wasCalm = false;
   private following: { target: () => THREE.Vector3; zoom: number } | null = null;
   private tmpStep = new THREE.Vector3();
+  /**
+   * Attract mode (the front door): the camera sways slowly around the city
+   * until the visitor touches anything. `inset` is the share of the screen
+   * the title card covers, so the framing keeps the city in what's left.
+   */
+  private drift: { home: number; t: number; on: boolean } | null = null;
+  private attractInset: ((w: number, h: number) => { left: number; bottom: number }) | null = null;
 
   constructor(host: HTMLElement, city: City) {
     this.host = host;
@@ -87,6 +94,7 @@ export class Stage {
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
     this.controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
     this.controls.addEventListener('start', () => {
+      this.stopDrift();
       this.userZoomed = true;
       this.glide = null;
       this.dragging = true;
@@ -116,10 +124,18 @@ export class Stage {
     });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     el.addEventListener('pointerdown', (e) => {
+      this.stopDrift();
       this.down = { x: e.clientX, y: e.clientY };
       this.wake();
     });
-    el.addEventListener('wheel', () => this.wake(), { passive: true });
+    el.addEventListener(
+      'wheel',
+      () => {
+        this.stopDrift();
+        this.wake();
+      },
+      { passive: true },
+    );
     el.addEventListener('pointerup', (e) => {
       const d = this.down;
       this.down = null;
@@ -131,6 +147,8 @@ export class Stage {
     });
     window.addEventListener('keydown', (e) => {
       this.wake();
+      // Moving focus around the title card isn't touching the city.
+      if (e.key !== 'Tab' && e.key !== 'Shift') this.stopDrift();
       if (e.target instanceof HTMLInputElement) return;
       if (e.key === 'q' || e.key === 'Q') this.rotate(-1);
       if (e.key === 'e' || e.key === 'E') this.rotate(1);
@@ -151,8 +169,45 @@ export class Stage {
     this.resize();
   }
 
+  /**
+   * Attract mode for the front door: a slow sway of a couple of degrees a
+   * second either side of the current view, framed around the title card
+   * (`inset`, fractions of the screen it covers). It stops dead on any
+   * pointer, wheel or key input, and gives way to `focus()`, `follow()` and
+   * `rotate()`. Off, the framing goes back to the HUD's and, with `settle`,
+   * the camera eases back to the isometric angle it started from. Reduced
+   * motion keeps the framing and skips the sway.
+   */
+  attract(on: boolean, inset?: (w: number, h: number) => { left: number; bottom: number }, opts: { settle?: boolean } = {}) {
+    if (on) {
+      this.attractInset = inset ?? null;
+      const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      this.drift = { home: this.snapAzimuth(this.controls.getAzimuthalAngle()), t: 0, on: !still };
+      return;
+    }
+    const d = this.drift;
+    this.attractInset = null;
+    this.drift = null;
+    if (d && opts.settle && !this.spin && !this.glide && !this.following) {
+      const from = this.controls.getAzimuthalAngle();
+      if (Math.abs(from - d.home) > 1e-3) this.spin = { from, to: d.home, t: 0 };
+    }
+  }
+
+  /** The visitor touched something: the sway stops where it is. */
+  private stopDrift() {
+    if (this.drift) this.drift.on = false;
+  }
+
+  /** The nearest of the four isometric angles (45° + quarter turns). */
+  private snapAzimuth(az: number) {
+    const quarter = Math.PI / 2;
+    return Math.round((az - Math.PI / 4) / quarter) * quarter + Math.PI / 4;
+  }
+
   /** Quarter turn around the current focus. */
   rotate(dir: 1 | -1) {
+    this.stopDrift();
     const from = this.controls.getAzimuthalAngle();
     const quarter = Math.PI / 2;
     const to = Math.round((from + dir * quarter - Math.PI / 4) / quarter) * quarter + Math.PI / 4;
@@ -168,6 +223,7 @@ export class Stage {
 
   /** Smoothly fly the camera to look at a point. */
   focus(target: THREE.Vector3, zoom = 2.4) {
+    this.stopDrift();
     this.userZoomed = true;
     this.following = null;
     this.glide = { target: target.clone(), zoom, t: 0, fromT: this.controls.target.clone(), fromZ: this.camera.zoom };
@@ -179,6 +235,7 @@ export class Stage {
    * or the user grabs the controls.
    */
   follow(target: () => THREE.Vector3, zoom: number) {
+    this.stopDrift();
     this.userZoomed = true;
     this.glide = null;
     this.following = { target, zoom };
@@ -254,18 +311,23 @@ export class Stage {
       }
     }
     const w = this.host.clientWidth;
-    const aspect = w / Math.max(1, this.host.clientHeight);
-    // On wide screens the stats panels cover the left edge: frame the city in what's left.
-    const inset = w > 900 ? Math.min(320, w * 0.24) : 0;
+    const h = Math.max(1, this.host.clientHeight);
+    const aspect = w / h;
+    // The front door's title card says how much of the screen it covers; otherwise
+    // the stats panels cover the left edge on wide screens. Frame the city in what's left.
+    const card = this.attractInset?.(w, h) ?? null;
+    const inset = card ? card.left * w : w > 900 ? Math.min(320, w * 0.24) : 0;
+    const below = card ? card.bottom : 0;
     const usable = (w - inset) / w;
     // The HUD covers roughly the top 12% and the dock the bottom 14%: centre a little high.
-    const zoom = THREE.MathUtils.clamp(Math.min((VIEW * aspect * usable) / ((r1 - r0) * 1.04), VIEW / ((u1 - u0) * 1.3)), this.controls.minZoom, 3.2);
+    // The title card has no dock, so the city can fill more of the height it leaves.
+    const zoom = THREE.MathUtils.clamp(Math.min((VIEW * aspect * usable) / ((r1 - r0) * 1.04), (VIEW * (1 - below)) / ((u1 - u0) * (card ? 1.14 : 1.3))), this.controls.minZoom, 3.2);
     const visibleH = VIEW / zoom;
     const visibleW = (VIEW * aspect) / zoom;
     const target = c
       .clone()
       .addScaledVector(right, (r0 + r1) / 2 - (visibleW * inset) / w / 2)
-      .addScaledVector(up, (u0 + u1) / 2 - visibleH * 0.03);
+      .addScaledVector(up, (u0 + u1) / 2 - (card ? (visibleH * below) / 2 : visibleH * 0.03));
     // Slide along the view ray back to the ground plane.
     target.addScaledVector(fwd, -target.y / fwd.y);
     return { target, zoom };
@@ -296,7 +358,7 @@ export class Stage {
   private frame(now: number) {
     // A calm city (no input, no replay, nothing moving the camera, nothing popping in) draws at
     // 30 fps: the miniature still breathes, at half the CPU and GPU. Skipped frames fold into dt.
-    const calm = !this.active && !this.spin && !this.glide && !this.following && !this.easing && !this.city.lively && now - this.lastInput > 4000;
+    const calm = !this.active && !this.drift?.on && !this.spin && !this.glide && !this.following && !this.easing && !this.city.lively && now - this.lastInput > 4000;
     if (this.lastFrame && now - this.lastFrame < (calm ? 1000 / 30 : 1000 / 60) - 2) return;
     this.lastFrame = now;
     const paced = calm || this.wasCalm;
@@ -307,6 +369,20 @@ export class Stage {
     const time = this.timer.getElapsed();
     // Calm frames are slow on purpose: only full-rate frames say anything about the machine.
     if (!paced) this.adapt(raw);
+
+    if (this.drift?.on && !this.spin && !this.glide && !this.following) {
+      // A slow sway either side of the start angle: 22° each way over 76 s
+      // (under 2° a second at its fastest), easing in over the first 4 s.
+      const d = this.drift;
+      d.t += dt;
+      const ramp = Math.min(1, d.t / 4);
+      const az = d.home + THREE.MathUtils.degToRad(22) * Math.sin((d.t * Math.PI * 2) / 76) * ramp * ramp * (3 - 2 * ramp);
+      const offset = this.camera.position.clone().sub(this.controls.target);
+      const r = Math.hypot(offset.x, offset.z);
+      offset.x = Math.sin(az) * r;
+      offset.z = Math.cos(az) * r;
+      this.camera.position.copy(this.controls.target).add(offset);
+    }
 
     if (this.spin) {
       this.spin.t = Math.min(1, this.spin.t + dt / 0.6);
