@@ -38,11 +38,16 @@ export function hideBoot(minVisibleMs = 900) {
   done = true;
   window.clearInterval(timer);
   const b = boot();
-  if (!b) return lifted();
+  if (!b) {
+    if (!document.documentElement.classList.contains('intro')) revealHud();
+    return lifted();
+  }
   const wait = Math.max(0, minVisibleMs - performance.now());
   window.setTimeout(() => {
     b.classList.add('done');
     document.documentElement.classList.add('booted');
+    // The front door (first visit) holds the HUD back and reveals it itself.
+    if (!document.documentElement.classList.contains('intro')) revealHud();
     lifted();
     const remove = () => b.remove();
     // Only the overlay's own fade counts (children's transforms bubble up too).
@@ -50,6 +55,14 @@ export function hideBoot(minVisibleMs = 900) {
     // Belt and braces: never leave the boot screen up if transitions don't run.
     window.setTimeout(remove, 1200);
   }, wait);
+}
+
+/**
+ * Brings the HUD in (html.hud-in; styles.css choreographs the entrance). Called
+ * when the boot screen lifts, or by the front door when the visitor steps in.
+ */
+export function revealHud() {
+  document.documentElement.classList.add('hud-in');
 }
 
 /** Calls `ready` after the renderer has produced `frames` frames. */
