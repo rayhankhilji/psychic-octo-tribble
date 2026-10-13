@@ -14,7 +14,8 @@ How it fits together is in `docs/INFRA.md`. You don't need to read it to follow 
 - **Stripe.** No monthly fee; Stripe takes its usual cut of each payment (and Stripe Billing's fee on subscriptions). You need an activated Stripe account to take live payments.
 - **Google sign-in** needs a Google Cloud project with an OAuth consent screen. It's free, but Google may ask to verify the app before showing your logo.
 - **The Stripe App** is reviewed by Stripe before founders outside your test accounts can install it. Plan a few days for review.
-- **Still open from the design:** a 14-day money-back guarantee (recommended). It needs no code: it's a refund you issue from the Stripe Dashboard and a line on the pricing card.
+- **Refunds:** none (your decision, 2026-10-13). Checkout, the plan picker and `/legal/refunds.html` all say so before anyone pays. See `docs/RUNBOOK.md` for the exceptions you'll still want to honour (duplicate charges, billing errors).
+- **Launch plan:** `docs/LAUNCH.md` has what to buy, the limits to raise, and the invite waves. Start its long-lead items (the Stripe App review, email warm-up) at least 14 days out.
 
 ## 0. Make your two secrets
 
@@ -39,7 +40,7 @@ openssl rand -base64 32
    - **Site URL:** `https://YOUR-DOMAIN`
    - **Redirect URLs:** add `https://YOUR-DOMAIN/**` and, for development, `http://localhost:5173/**`
 5. **Sign-in methods.** **Authentication** → **Sign In / Providers**:
-   - **Email:** on by default. Magic links work out of the box with Supabase's built-in mailer, which is rate-limited (a few emails an hour). Before launch, set up custom SMTP under **Authentication** → **Emails** (Resend, Postmark or similar) so sign-in emails always arrive.
+   - **Email:** on by default. Magic links work out of the box with Supabase's built-in mailer, which sends only 2 emails an hour, and only to your team. Before launch, set up custom SMTP under **Authentication** → **Emails** (Resend, Postmark or similar) so sign-in emails always arrive. Custom SMTP starts at 30 emails an hour: raise it under **Authentication** → **Rate Limits** (about 500 an hour for launch week).
    - **Google:** in [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create an **OAuth client ID** (type: Web application). Authorised redirect URI: `https://YOUR-PROJECT-REF.supabase.co/auth/v1/callback` (Supabase shows this exact URL on the Google provider page). Paste the client ID and secret into Supabase's Google provider and enable it.
    - **GitHub (sign-in):** on GitHub, **Settings** → **Developer settings** → **OAuth Apps** → **New OAuth App**. Homepage: `https://YOUR-DOMAIN`. Authorization callback URL: `https://YOUR-PROJECT-REF.supabase.co/auth/v1/callback`. Paste its client ID and a client secret into Supabase's GitHub provider. (This is only for signing in. Reading a founder's releases uses the separate GitHub App in section 4.)
 
@@ -76,7 +77,7 @@ Founders never paste keys. They install the TinyTown Stripe App, which asks for 
    stripe login
    stripe plugin install apps
    ```
-2. **Fill in the manifest.** In `stripe-app/stripe-app.json`, replace `YOUR-TINYTOWN-DOMAIN` (twice) with your domain. The redirect URI must be exactly `https://YOUR-DOMAIN/api/connect/stripe/callback`. For local testing you can add `http://localhost:5173/api/connect/stripe/callback` as a second entry (test mode only; live mode requires HTTPS).
+2. **Fill in the manifest.** In `stripe-app/stripe-app.json`, replace `YOUR-TINYTOWN-DOMAIN` (twice) with your domain. The redirect URI must be exactly `https://YOUR-DOMAIN/api/connect/stripe/callback`. For local testing you can add `http://localhost:5173/api/connect/stripe/callback` as a second entry (test mode only; live mode requires HTTPS), but **remove it before uploading the version you submit for review**: Stripe rejects localhost redirect URIs. Review takes about 4 business days a round, and until the app is published only 25 accounts (external testers) can install it.
 3. **Upload it.** From the `stripe-app/` folder run `stripe apps upload`. If the CLI says the folder isn't an app project, run `stripe apps create tinytown` somewhere else, copy our `stripe-app.json` and `icon.png` over the generated ones, and upload from there. The `id` (`com.tinytown.city`) must be unique on Stripe: change it if Stripe says it's taken.
 4. **Client ID.** Open the app in the Dashboard (the CLI prints a link; otherwise **Developers** → **Apps** → your app). Copy its **client ID** (`ca_…`) from the **Settings** tab.
 5. **Test it.** On the app's **External test** tab → **Get started**, then copy the authorize link from **Test OAuth**. While testing, set `STRIPE_APP_INSTALL_URL` to that link's address *without* its query string (everything before `?`), use your **test** secret key as `STRIPE_APP_SECRET_KEY`, and set `ALLOW_TEST_MODE=1` so test data can drive a city. Then sign in to TinyTown, pay with a [test card](https://docs.stripe.com/testing) (`4242 4242 4242 4242`) and press **Connect Stripe**.
