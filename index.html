@@ -8,13 +8,24 @@
     <meta name="color-scheme" content="light dark" />
     <title>TinyTown · A Tamagotchi for your startup</title>
     <meta name="description" content="TinyTown turns your real Stripe and GitHub metrics into a living isometric city by the bay. Every customer is a resident; every dollar of MRR builds something." />
+    <link rel="canonical" href="https://YOUR-DOMAIN/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="TinyTown" />
+    <meta property="og:url" content="https://YOUR-DOMAIN/" />
     <meta property="og:title" content="TinyTown · A Tamagotchi for your startup" />
     <meta property="og:description" content="Your real revenue grows a little city by the bay. Every customer is a resident; every $1 of MRR is $10,000 to build with." />
-    <meta property="og:image" content="/og.png" />
-    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://YOUR-DOMAIN/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A toy-sized San Francisco by the bay, with the TinyTown wordmark." />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="TinyTown · A Tamagotchi for your startup" />
+    <meta name="twitter:description" content="Your real revenue grows a little city by the bay. Every customer is a resident; every $1 of MRR is $10,000 to build with." />
+    <meta name="twitter:image" content="https://YOUR-DOMAIN/og.png" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,500..800&family=Geist+Mono:wght@400..600&family=Geist:wght@400..700&display=swap" rel="stylesheet" />
@@ -45,6 +56,16 @@
       .boot-status { min-height: 18px; margin: 12px 0 0; font-size: 12.5px; color: #62667a; font-variant-numeric: tabular-nums; }
       .boot.failed .boot-bar { display: none; }
       .boot.failed .boot-status { color: #b83c1c; max-width: 360px; font-size: 14px; }
+      .boot.failed:has(.boot-fail) .boot-status, .boot.failed:has(.boot-fail) .boot-skyline { display: none; }
+      .boot-fail { max-width: 420px; margin-top: 26px; animation: boot-fade 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      .boot-fail h1 { margin: 0; font: 750 22px/1.2 'Bricolage Grotesque', Geist, system-ui, sans-serif; letter-spacing: -0.02em; }
+      .boot-fail p { margin: 8px 0 0; font-size: 14.5px; line-height: 1.5; color: #4b5168; }
+      .boot-fail ul { margin: 14px 0 0; padding: 12px 16px 12px 32px; border-radius: 12px; background: rgba(27, 34, 54, 0.05); text-align: left; font-size: 13.5px; line-height: 1.55; color: #4b5168; }
+      .boot-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px 18px; margin-top: 18px; }
+      .boot-btn { height: 40px; padding: 0 18px; border: 0; border-radius: 10px; background: #cc4420; color: #fff; font: 600 14px Geist, system-ui, sans-serif; cursor: pointer; box-shadow: 0 4px 12px -4px rgba(229, 81, 43, 0.55); }
+      .boot-btn:hover { background: #b93d1c; }
+      .boot-btn:focus-visible, .boot-link:focus-visible { outline: 2px solid #2c6fb7; outline-offset: 2px; }
+      .boot-link { color: #235e9c; font-size: 14px; font-weight: 600; }
       @keyframes boot-rise { from { opacity: 0; transform: translateY(10px) scaleY(0.2); } }
       @keyframes boot-sun { from { opacity: 0; transform: translate(-6px, 8px) scale(0.4); } }
       @keyframes boot-fade { from { opacity: 0; transform: translateY(6px); } }

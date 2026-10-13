@@ -1,4 +1,4 @@
-import { ROUTES, isPaid } from '../src/api/contract.ts';
+import { ROUTES, isPaid, type DeleteAccountResponse } from '../src/api/contract.ts';
 import { track } from './analytics.ts';
 import { hosted, rateLimit, requireUser, type Hosted } from './context.ts';
 import { githubAppJwt } from './crypto.ts';
@@ -206,12 +206,6 @@ function exportResponse(ctx: Hosted, data: AccountExport): Response {
 
 // ─── Delete ───────────────────────────────────────────────────────────────
 
-/** `DELETE /api/account` → this. The contract's `{ ok: true }`, plus what only the founder can finish. */
-export interface DeleteAccountResponse {
-  ok: true;
-  /** Our apps still installed on the founder's accounts, and the page where they can remove each. */
-  stillInstalled: { provider: 'stripe' | 'github'; url: string }[];
-}
 
 /** Typed instead of an email when the account has none (rare: every sign-in method we offer gives one). */
 export const CONFIRM_WITHOUT_EMAIL = 'DELETE';

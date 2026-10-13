@@ -9,6 +9,13 @@ const LINES = ['Pouring the foundations', 'Planting palms', 'Rolling in the fog'
 const boot = () => document.getElementById('boot');
 let timer = 0;
 let done = false;
+let lifted: () => void = () => {};
+const liftedPromise = new Promise<void>((r) => (lifted = r));
+
+/** Resolves once the boot screen has gone, so dialogs open over the city rather than the loader. */
+export function whenBooted(): Promise<void> {
+  return liftedPromise;
+}
 
 export function bootStatus(text: string) {
   const s = boot()?.querySelector('.boot-status');
@@ -31,11 +38,12 @@ export function hideBoot(minVisibleMs = 900) {
   done = true;
   window.clearInterval(timer);
   const b = boot();
-  if (!b) return;
+  if (!b) return lifted();
   const wait = Math.max(0, minVisibleMs - performance.now());
   window.setTimeout(() => {
     b.classList.add('done');
     document.documentElement.classList.add('booted');
+    lifted();
     const remove = () => b.remove();
     // Only the overlay's own fade counts (children's transforms bubble up too).
     b.addEventListener('transitionend', (e) => e.target === b && e.propertyName === 'opacity' && remove());
@@ -59,4 +67,44 @@ export function bootError(message: string) {
   if (!b) return;
   b.classList.add('failed');
   bootStatus(message);
+}
+
+/** True when this browser can give us a WebGL 2 context (checked once, then released). */
+export function hasWebGL2(): boolean {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    return !!gl;
+  } catch {
+    return false;
+  }
+}
+
+const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/**
+ * The city can't start at all (no WebGL, or a crash before the first frame):
+ * a calm screen that says why, what to try, and who to write to.
+ */
+export function bootFailure(opts: { title: string; message: string; tips?: string[]; support?: string | null }) {
+  done = true;
+  window.clearInterval(timer);
+  const b = boot();
+  if (!b) return;
+  b.classList.add('failed');
+  b.querySelector('.boot-fail')?.remove();
+  const box = document.createElement('div');
+  box.className = 'boot-fail';
+  box.setAttribute('role', 'alert');
+  box.innerHTML = `
+    <h1>${esc(opts.title)}</h1>
+    <p>${esc(opts.message)}</p>
+    ${opts.tips?.length ? `<ul>${opts.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+    <div class="boot-actions">
+      <button type="button" class="boot-btn" data-reload>Reload</button>
+      ${opts.support ? `<a class="boot-link" href="mailto:${esc(opts.support)}">Email ${esc(opts.support)}</a>` : ''}
+    </div>`;
+  box.querySelector('[data-reload]')!.addEventListener('click', () => location.reload());
+  b.querySelector('.boot-inner')?.append(box);
+  box.querySelector<HTMLElement>('[data-reload]')?.focus();
 }

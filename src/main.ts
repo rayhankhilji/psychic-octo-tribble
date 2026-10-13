@@ -12,15 +12,20 @@ import { Stage } from './render/stage.ts';
 import { Hud } from './ui/hud.ts';
 import { GameUI } from './ui/game-ui.ts';
 import { DAY } from './data/types.ts';
-import type { Item } from './game/catalog.ts';
+import { ITEMS, type Item } from './game/catalog.ts';
 import { demoActions } from './game/demo-script.ts';
 import { describeGame, diffGame, freePlots, money, simulate, type Action, type GameState, type SimOptions } from './game/economy.ts';
 import { clearActions, joinedAt, lastSeen, loadActions, markSeen, saveActions } from './game/save.ts';
 import { awaySummary, snapshotIndexAt } from './game/away.ts';
 import { HOME_TIERS } from './game/catalog.ts';
 import { composePostcard } from './ui/postcard.ts';
-import { afterFrames, bootError, hideBoot, narrateBoot } from './ui/loader.ts';
+import { afterFrames, bootFailure, hasWebGL2, hideBoot, narrateBoot, whenBooted } from './ui/loader.ts';
+import { measurePerf, reportWebGL, setTelemetry, startTelemetry } from './telemetry.ts';
 import { setThumbnailContext } from './ui/thumbnails.ts';
+import { Api, ApiRequestError } from './api/client.ts';
+import type { AuthProvider } from './api/auth.ts';
+import { cleanSearch, decideBoot, decideOpening, readReturn, type BootScreen } from './api/boot.ts';
+import { BACK_PAY_DAYS, isPaid, simOptionsFor, type MeResponse, type WorldInfo } from './api/contract.ts';
 
 const SPEEDS = [
   { label: '1×', daysPerSecond: 12 },
@@ -65,7 +70,23 @@ async function loadTimeline(): Promise<{ timeline: Timeline; notice?: string }> 
   return { timeline: demoTimeline() };
 }
 
-const BACK_PAY_DAYS = 90;
+/** The founder's own city, saved on the server. */
+interface HostedWorld {
+  api: Api;
+  world: WorldInfo;
+  actions: Action[];
+}
+
+interface AppOptions {
+  timeline: Timeline;
+  notice?: string;
+  /** The map layout (see src/world/seed.ts). */
+  seed: number;
+  /** Signed in and paid: saves go to the server, which re-checks every action. */
+  hosted?: HostedWorld;
+  /** Hosted accounts are on: the city name and "Connect" open the account flow instead of the `.env` help. */
+  accounts?: boolean;
+}
 
 class App {
   private timeline!: Timeline;
@@ -76,7 +97,6 @@ class App {
   private carry = 0;
   private city: City;
   private stage: Stage;
-  private hud: Hud;
   private seed: number;
   private preview: { label: string; hour: number } | null = null;
   private clockTimer = 0;
@@ -86,12 +106,21 @@ class App {
   private saveKey = '';
   private sim: SimOptions = {};
   private placing: Item | null = null;
+  private hosted: HostedWorld | null;
+  /** Saves still on their way to the server, in order. */
+  private saving: Promise<void> = Promise.resolve();
+  private unsaved = 0;
+  /** Set by the hosted shell: where the city name and "Connect" lead. */
+  onConnect: (() => void) | null = null;
+  readonly hud: Hud;
 
-  constructor(timeline: Timeline, notice?: string) {
-    const name = storedName() || timeline.name;
+  constructor(opts: AppOptions) {
+    const { timeline, notice } = opts;
+    this.hosted = opts.hosted ?? null;
+    const name = (this.hosted?.world.name || null) ?? (storedName() || timeline.name);
     this.seed = hash(name);
-    // The map's layout: the classic map (seed 0) until the founder's own world says otherwise; `?seed=N` to preview one.
-    setWorldSeed(Number(params.get('seed')) || 0);
+    // The map's layout, set before anything reads the map: the founder's own seed, or the classic map (0) for the demo (`?seed=N` previews another).
+    setWorldSeed(opts.seed);
     setThumbnailContext(name, this.seed);
     this.city = new City(name, this.seed);
     const fixed = parseHour(params.get('time'));
@@ -101,6 +130,7 @@ class App {
     }
     this.stage = new Stage(document.getElementById('world')!, this.city);
     this.hud = new Hud(document.getElementById('ui')!, {
+      ...(opts.accounts ? { onConnect: () => this.onConnect?.() } : {}),
       onTogglePlay: () => this.setPlaying(!this.playing),
       onSeek: (i) => {
         this.setPlaying(false);
@@ -121,6 +151,10 @@ class App {
         this.refreshClock();
       },
       onRename: (n) => {
+        if (this.hosted) {
+          void this.hosted.api.patchWorld({ name: n }).then(() => location.reload(), (err: Error) => this.hud.feed('game.error', err.message, this.today));
+          return;
+        }
         try {
           if (n) localStorage.setItem(NAME_KEY, n);
           else localStorage.removeItem(NAME_KEY);
@@ -173,12 +207,16 @@ class App {
 
     this.load({ ...timeline, name });
     this.saveKey = timeline.source === 'demo' ? 'demo' : String(this.seed);
-    this.actions = loadActions(this.saveKey) ?? (timeline.source === 'demo' ? demoActions(timeline.snapshots) : []);
-    if (timeline.source === 'live') {
-      const joined = joinedAt(this.saveKey, timeline.snapshots.at(-1)?.t ?? Date.now());
-      this.sim = { incomeFrom: joined - BACK_PAY_DAYS * DAY };
+    const today = timeline.snapshots.at(-1)?.t ?? Date.now();
+    if (this.hosted) {
+      // The server's copy is the truth, and both sides simulate with exactly the same options.
+      this.actions = this.hosted.actions;
+      this.sim = simOptionsFor(this.hosted.world.joinedAt);
+    } else {
+      this.actions = loadActions(this.saveKey) ?? (timeline.source === 'demo' ? demoActions(timeline.snapshots) : []);
+      if (timeline.source === 'live') this.sim = { incomeFrom: joinedAt(this.saveKey, today) - BACK_PAY_DAYS * DAY };
     }
-    if (params.has('fresh')) {
+    if (params.has('fresh') && !this.hosted) {
       clearActions(this.saveKey);
       this.actions = timeline.source === 'demo' ? demoActions(timeline.snapshots) : [];
     }
@@ -205,8 +243,11 @@ class App {
     const forced = Number(params.get('away'));
     const preview = params.has('away') && forced > 0;
     if (now < 1 || (this.timeline.source === 'demo' && !preview)) return;
-    const seen = preview ? snaps[Math.max(0, now - forced)]!.t : lastSeen(this.saveKey);
-    if (!preview) markSeen(this.saveKey, snaps[now]!.t);
+    const seen = preview ? snaps[Math.max(0, now - forced)]!.t : this.hosted ? this.hosted.world.lastSeen : lastSeen(this.saveKey);
+    if (!preview) {
+      if (this.hosted) void this.hosted.api.patchWorld({ lastSeen: snaps[now]!.t }).catch(() => {});
+      else markSeen(this.saveKey, snaps[now]!.t);
+    }
     if (seen === null) return;
     const from = snapshotIndexAt(snaps, seen);
     if (from < 0 || from >= now) return;
@@ -263,6 +304,11 @@ class App {
 
   /** Record a choice at today's date and show its effect straight away. */
   private act(action: Action) {
+    // The server only takes choices made today (or yesterday, around midnight): no building in the past.
+    if (this.hosted && this.index < this.last) {
+      this.hud.feed('game.error', 'You can only build on today. Jump to the end of the timeline, then try again.', this.today);
+      return;
+    }
     const next = [...this.actions, action];
     const result = simulate(this.timeline.snapshots, next, this.index, this.sim);
     const failed = result.rejected.find((r) => r.action === action);
@@ -271,11 +317,53 @@ class App {
       return;
     }
     this.actions = next;
-    saveActions(this.saveKey, this.actions);
+    if (this.hosted) this.persist(action);
+    else saveActions(this.saveKey, this.actions);
     if (action.kind === 'build') {
       this.hud.feed('game.build', `Bought for ${money(this.game.treasury - result.treasury)}`, this.today);
     }
     this.show(this.index, true, true);
+  }
+
+  /**
+   * Sends a choice to the server, after any still on their way. The city
+   * already shows it; if the server says no, it's undone and we say why.
+   */
+  private persist(action: Action) {
+    const api = this.hosted!.api;
+    this.unsaved++;
+    this.saving = this.saving.then(async () => {
+      try {
+        const saved = await api.addAction(action);
+        // Nothing else in flight: adopt the server's list, which is the truth.
+        if (this.unsaved === 1 && JSON.stringify(saved) !== JSON.stringify(this.actions)) {
+          this.actions = saved;
+          this.show(this.index, false);
+        }
+      } catch (err) {
+        this.rollback(action, err);
+      } finally {
+        this.unsaved--;
+      }
+    });
+  }
+
+  private rollback(action: Action, err: unknown) {
+    this.actions = this.actions.filter((a) => a !== action);
+    this.show(this.index, false);
+    const what = action.kind === 'build' ? `the ${ITEMS.get(action.item)?.name ?? 'building'}` : 'your move';
+    const e = err instanceof ApiRequestError ? err : null;
+    const reason = e?.message.replace(/\.$/, '');
+    const text =
+      e?.code === 'rejected'
+        ? `Couldn't save ${what}. ${reason}. It's been undone, and nothing was spent.`
+        : e?.code === 'unauthenticated'
+          ? `Couldn't save ${what}: you're signed out. It's been undone; sign in and try again.`
+          : e?.code === 'payment_required'
+            ? `Couldn't save ${what}: your plan isn't active. It's been undone.`
+            : `Couldn't reach TinyTown to save ${what}, so it's been undone. Nothing was spent.`;
+    if (action.kind === 'build') this.hud.retract('game.build');
+    this.hud.feed('game.error', text, this.today);
   }
 
   /** Jump to a day. `animate` = arrive as if time passed (pop-ins, celebrations). */
@@ -334,9 +422,14 @@ class App {
 
   private async poll() {
     try {
-      const res = await fetch('/api/timeline');
-      if (!res.ok) return;
-      const t = (await res.json()) as Timeline;
+      let t: Timeline;
+      if (this.hosted) t = await this.hosted.api.timeline();
+      else {
+        const res = await fetch('/api/timeline');
+        if (!res.ok) return;
+        t = (await res.json()) as Timeline;
+      }
+      if (!t.snapshots?.length) return;
       const following = this.index >= this.last && !this.playing;
       this.load({ ...t, name: this.timeline.name });
       // If we were watching "today", walk forward through anything new.
@@ -383,17 +476,136 @@ class App {
   }
 }
 
-narrateBoot();
-loadTimeline()
-  .then(({ timeline, notice }) => new App(timeline, notice))
-  .catch((err: unknown) => {
-    console.error(err);
-    const gl = (() => {
-      try {
-        return !!document.createElement('canvas').getContext('webgl2');
-      } catch {
-        return false;
+/** Dev and `--mode mockapi` builds only: `?mockapi=<state>` stubs the API (see src/api/mock.ts). */
+async function loadMock(): Promise<{ auth: AuthProvider | null; signedOutUrl: string } | null> {
+  // A compile-time constant: production builds drop this branch and the mock with it.
+  if (!(import.meta.env.DEV || import.meta.env.MODE === 'mockapi')) return null;
+  const state = params.get('mockapi');
+  if (!state) return null;
+  const mock = await import('./api/mock.ts');
+  return { auth: mock.installMockApi(state as Parameters<typeof mock.installMockApi>[0]), signedOutUrl: mock.signedOutHref() };
+}
+
+/**
+ * Not hosted: exactly as before (the demo, or a local `.env` timeline).
+ * Hosted: restore the session, ask the server who this is, then either open
+ * the founder's own city or show the demo with the right next step.
+ */
+/** Who to write to when something breaks (from the server's config, when it has one). */
+let supportEmail: string | null = null;
+
+const NO_WEBGL = {
+  title: 'Your browser has 3D turned off',
+  message: 'TinyTown draws your city with WebGL 2, and this browser has it switched off or blocked.',
+  tips: ['Use a recent Chrome, Edge, Firefox or Safari.', 'Turn on hardware acceleration (graphics acceleration) in your browser settings, then reload.', 'On a work computer, the graphics driver may be blocked: try another device.'],
+};
+
+async function boot() {
+  const mock = await loadMock();
+  const api = new Api({ token: async () => null });
+  const config = await api.config();
+  supportEmail = config?.supportEmail ?? null;
+  // Reports go only to a hosted server that takes them (never from local, demo-only or mock builds).
+  setTelemetry(!!config?.hosted && !mock);
+  if (!hasWebGL2()) {
+    reportWebGL('WebGL 2 unavailable at boot');
+    return bootFailure({ ...NO_WEBGL, support: supportEmail });
+  }
+  const demoSeed = Number(params.get('seed')) || 0;
+  if (!config?.hosted || !config.supabase) {
+    const { timeline, notice } = await loadTimeline();
+    new App({ timeline, notice, seed: demoSeed });
+    return;
+  }
+
+  // The account UI is its own chunk: local and demo-only visitors never download it.
+  const shellModule = import('./ui/hosted.ts');
+  const auth = mock?.auth ?? new (await import('./api/auth.ts')).SupabaseAuth(config.supabase);
+  api.setHooks({ token: () => auth.token() });
+  const session = await auth.restore();
+  let me: MeResponse | null = null;
+  let notice: string | undefined;
+  /** Signed in, but the waitlist hasn't reached this email yet. */
+  let waitlisted = false;
+  if (session) {
+    try {
+      me = await api.me();
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.code === 'not_invited') waitlisted = true;
+      else if (err instanceof ApiRequestError && err.code === 'unauthenticated') {
+        await auth.signOut();
+        notice = 'Your session ended. Sign in again to open your city.';
+      } else {
+        notice = "Couldn't reach your account just now, so this is the demo. Reload to try again.";
       }
-    })();
-    bootError(gl ? "Your city couldn't load. Try reloading the page." : 'TinyTown needs WebGL 2, which this browser has turned off.');
+    }
+  }
+
+  // Read the redirect's news, then tidy it out of the address bar.
+  const ret = readReturn(location.search);
+  const clean = location.pathname + cleanSearch(location.search) + location.hash;
+  if (clean !== location.pathname + location.search + location.hash) history.replaceState(history.state, '', clean);
+
+  let screen: BootScreen = decideBoot(config, me, { forceDemo: params.has('demo'), waitlisted });
+  let app: App | null = null;
+  /** The city couldn't load because a connection needs redoing: open setup at that step. */
+  let reconnect: string | null = null;
+  /** Connected, but no history yet: the notice says so, and nothing else pops up. */
+  let waiting = false;
+  if (screen.kind === 'world' && me) {
+    try {
+      const [actions, timeline] = await Promise.all([api.actions(), api.timeline()]);
+      if (timeline.snapshots?.length) app = new App({ timeline, seed: me.world.seed, hosted: { api, world: me.world, actions }, accounts: true });
+      else {
+        waiting = true;
+        notice = "Stripe is connected, and your first numbers are still on their way. Here's the demo until they land.";
+      }
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.code === 'not_connected') {
+        reconnect = "Your city couldn't reach your Stripe data: the connection has stopped working. Reconnect Stripe and your city comes straight back.";
+      } else notice = `Couldn't load your city (${err instanceof Error ? err.message.replace(/\.$/, '') : 'unknown error'}). Here's the demo for now; reload to try again.`;
+    }
+    if (!app) screen = { kind: 'demo', cta: 'onboard' };
+  }
+  app ??= new App({ timeline: demoTimeline({ boost: Number(params.get('boost')) || 1 }), notice, seed: demoSeed, accounts: true });
+
+  const { HostedShell, takePlanIntent } = await shellModule;
+  const shell = new HostedShell({ api, auth, config, me, screen, hud: app.hud, signedOutUrl: mock?.signedOutUrl ?? '/', email: session?.email ?? null });
+  app.onConnect = () => shell.primary();
+
+  let wantsPlan = false;
+  try {
+    wantsPlan = !!localStorage.getItem('tinytown:plan-intent');
+  } catch {
+    // No storage: no remembered plan.
+  }
+  const opening = reconnect
+    ? ({ dialog: 'onboard', welcome: false, step: 1, error: reconnect, stripeBroken: true } as const)
+    : waiting
+      ? ({ dialog: 'none' } as const)
+      : decideOpening(screen, ret, me, { signInError: auth.redirectError, wantsPlan });
+  await whenBooted();
+  measurePerf(performance.now());
+  if (ret.checkout === 'success' && me && !isPaid(me.plan.status)) return void shell.confirmCheckout();
+  if (ret.checkout === 'success' && opening.dialog === 'none') app.hud.feed('account.welcome', "You're in. Your plan is active, and your city is live.", Date.now());
+  // A remembered plan only matters while there's a plan to pick.
+  if (opening.dialog !== 'plan' && me && isPaid(me.plan.status)) takePlanIntent();
+  shell.handleOpening(opening);
+}
+
+startTelemetry();
+narrateBoot();
+boot().catch((err: unknown) => {
+  console.error(err);
+  if (!hasWebGL2()) {
+    reportWebGL('WebGL 2 failed while starting the city');
+    return bootFailure({ ...NO_WEBGL, support: supportEmail });
+  }
+  // The global handlers don't see this one: it was caught here.
+  if (err instanceof Error) window.dispatchEvent(new ErrorEvent('error', { message: err.message, error: err }));
+  bootFailure({
+    title: "Your city couldn't load",
+    message: 'Something went wrong while building it. Reloading usually fixes it; your city and its saves are safe.',
+    support: supportEmail,
   });
+});

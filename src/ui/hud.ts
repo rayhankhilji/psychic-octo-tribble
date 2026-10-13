@@ -20,6 +20,8 @@ export interface HudHandlers {
   onShare(): void;
   onRename(name: string): void;
   onCycleTime(): void;
+  /** Hosted: accounts replace the local `.env` connect dialog (no plug button; the city name opens this). */
+  onConnect?(): void;
 }
 
 type Tone = 'good' | 'info' | 'warn' | 'bad' | 'brand' | 'muted';
@@ -44,6 +46,7 @@ const FEED: Record<string, { icon: IconName; tone: Tone; kicker: string; linger?
   'game.decay': { icon: 'wrench', tone: 'warn', kicker: 'Upkeep' },
   'game.homeless.appeared': { icon: 'tent', tone: 'bad', kicker: 'Housing' },
   'game.homeless.cleared': { icon: 'home', tone: 'good', kicker: 'Housing' },
+  'account.welcome': { icon: 'sparkle', tone: 'brand', kicker: 'Welcome', linger: 8000 },
 };
 
 const LEGEND: { icon: IconName; tone: Tone; title: string; text: string }[] = [
@@ -100,6 +103,9 @@ export class Hud {
   readonly sideEl: HTMLElement;
   readonly toolsEl: HTMLElement;
   readonly mapEl: HTMLElement;
+  /** The top bar and its city button, for the hosted shell's call to action and account button. */
+  readonly topEl: HTMLElement;
+  readonly brandButton: HTMLButtonElement;
   private root: HTMLElement;
   private h: HudHandlers;
   private timeline: Timeline | null = null;
@@ -163,7 +169,8 @@ export class Hud {
     );
     this.brandCity = brand.querySelector('.brand-city-name')!;
     this.brandSource = brand.querySelector('.brand-source')!;
-    brand.querySelector('.brand-city')!.addEventListener('click', () => this.openConnect(true));
+    this.brandButton = brand.querySelector<HTMLButtonElement>('.brand-city')!;
+    this.brandButton.addEventListener('click', () => (h.onConnect ? h.onConnect() : this.openConnect(true)));
 
     this.clockBtn = el('button', { class: 'clock card', type: 'button', 'aria-label': 'Time of day' });
     this.clockBtn.innerHTML = `
@@ -183,11 +190,10 @@ export class Hud {
 
     const tools = el('nav', { class: 'toolbar card', 'aria-label': 'Actions' });
     this.toolsEl = tools;
-    tools.append(
-      this.button('plug', 'Connect', () => this.openConnect(false), 'ghost icon-only', 'Connect your startup: Stripe, GitHub, your city name'),
-      this.button('share', 'Share', () => h.onShare(), 'ghost', 'Share a snapshot of your city'),
-    );
+    if (!h.onConnect) tools.append(this.button('plug', 'Connect', () => this.openConnect(false), 'ghost icon-only', 'Connect your startup: Stripe, GitHub, your city name'));
+    tools.append(this.button('share', 'Share', () => h.onShare(), 'ghost', 'Share a snapshot of your city'));
     top.append(brand, this.clockBtn, el('div', { class: 'grow' }), tools);
+    this.topEl = top;
 
     // ── Left rail: real metrics (the game UI adds the city card) ──────────
     const side = el('section', { class: 'rail', 'aria-label': 'Your numbers' });
@@ -515,6 +521,12 @@ export class Hud {
     const live = [...this.feedEl.children].filter((c) => !c.classList.contains('out'));
     for (const old of live.slice(4)) this.dismiss(old as HTMLElement);
     this.expire(toast, spec.linger);
+  }
+
+  /** Takes back the newest toast of a kind (a purchase the server then refused). */
+  retract(kind: string) {
+    const t = [...this.feedEl.children].find((c) => (c as HTMLElement).dataset.kind === kind && !c.classList.contains('out'));
+    if (t) this.dismiss(t as HTMLElement);
   }
 
   /** A message that stays until dismissed. */

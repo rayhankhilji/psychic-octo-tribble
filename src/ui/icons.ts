@@ -60,6 +60,18 @@ export const ICON = {
   card: s('<rect x="2.5" y="4.5" width="15" height="11" rx="2"/><path d="M2.5 8.2h15M5.5 12.5h3"/>'),
   chart: s('<path d="M3 16.5h14"/><path d="M4.5 13 8 9l3 2.5 5-6"/><path d="M13 5.5h3v3"/>'),
   keyboard: s('<rect x="2.5" y="5" width="15" height="10" rx="2"/><path d="M5.5 8h.01M8.5 8h.01M11.5 8h.01M14.5 8h.01M6.5 12h7"/>'),
+  mail: s('<rect x="2.5" y="4.5" width="15" height="11" rx="2"/><path d="m3.2 5.6 5.9 4.7c.5.4 1.3.4 1.8 0l5.9-4.7"/>'),
+  mailOpen: s('<path d="M2.5 8.2v7.3c0 .6.4 1 1 1h13c.6 0 1-.4 1-1V8.2"/><path d="m2.8 7.7 6.4-4.3c.5-.3 1.1-.3 1.6 0l6.4 4.3"/><path d="m3 8.2 6.1 4.4c.5.4 1.3.4 1.8 0L17 8.2"/>'),
+  signOut: s('<path d="M8 16.5H5c-.8 0-1.5-.7-1.5-1.5V5c0-.8.7-1.5 1.5-1.5h3"/><path d="M12.5 13.5 16 10l-3.5-3.5M16 10H8"/>'),
+  external: s('<path d="M11.5 3.5h5v5"/><path d="m16.5 3.5-7 7"/><path d="M14.5 11.5v3.3c0 .9-.7 1.7-1.7 1.7H5.2c-.9 0-1.7-.8-1.7-1.7V7.2c0-1 .8-1.7 1.7-1.7h3.3"/>'),
+  search: s('<circle cx="8.8" cy="8.8" r="5.3"/><path d="m12.8 12.8 3.9 3.9"/>'),
+  shield: s('<path d="M10 2.8 4.2 5v4.6c0 3.6 2.4 6.3 5.8 7.6 3.4-1.3 5.8-4 5.8-7.6V5Z"/><path d="m7.4 10 1.9 1.9 3.4-3.6"/>'),
+  eye: s('<path d="M2.5 10s2.7-5.2 7.5-5.2 7.5 5.2 7.5 5.2-2.7 5.2-7.5 5.2S2.5 10 2.5 10Z"/><circle cx="10" cy="10" r="2.3"/>'),
+  repo: s('<path d="M5.5 16.5h-.3a1.7 1.7 0 0 1 0-3.4H16V3.5H6.2c-1 0-1.7.8-1.7 1.7v9.6"/><path d="M8 13.1v4.4l1.5-1.1 1.5 1.1v-4.4"/>'),
+  calendar: s('<rect x="3" y="4.5" width="14" height="12" rx="2"/><path d="M3 8.5h14M7 2.8v3.2M13 2.8v3.2"/>'),
+  refresh: s('<path d="M15.8 8.4A6 6 0 0 0 4.6 7"/><path d="M4.2 3.6V7h3.4"/><path d="M4.2 11.6A6 6 0 0 0 15.4 13"/><path d="M15.8 16.4V13h-3.4"/>'),
+  unlink: s('<path d="M8.4 6.2 9.6 5a3.5 3.5 0 0 1 5 5l-1.2 1.2M11.6 13.8 10.4 15a3.5 3.5 0 0 1-5-5l1.2-1.2"/><path d="M4 4l12 12"/>'),
+  arrowRight: s('<path d="M4 10h11.5M11 5.5l4.5 4.5-4.5 4.5"/>'),
 } as const;
 
 export type IconName = keyof typeof ICON;

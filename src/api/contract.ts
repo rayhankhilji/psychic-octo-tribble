@@ -45,8 +45,14 @@ export const LEGAL = { terms: '/legal/terms.html', privacy: '/legal/privacy.html
 /** `GET /api/account/export` → a JSON download of everything we hold about the signed-in founder. */
 /** `DELETE /api/account` { confirm: email } → { ok: true }: cancels the plan, disconnects everything, deletes the account. */
 export interface DeleteAccountRequest {
-  /** The account's email, typed again, so a stray click can't delete a city. */
+  /** The account's email, typed again, so a stray click can't delete a city ("DELETE" for an account with no email). */
   confirm: string;
+}
+
+/** `DELETE /api/account` → this: our apps the founder still has to remove on their side, and where. */
+export interface DeleteAccountResponse {
+  ok: true;
+  stillInstalled: { provider: 'stripe' | 'github'; url: string }[];
 }
 
 /** `POST /api/telemetry` (public, rate-limited): a browser error report. No personal data. */
