@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Page not found · TinyTown</title>
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f5ecdb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f1424" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,500..800&family=Geist+Mono:wght@400..600&family=Geist:wght@400..700&display=swap" rel="stylesheet" />
+    <style>
+      /* Self-contained (it can be served at any path), in the boot screen's palette. */
+      :root {
+        --bg: #f5ecdb;
+        --ink: #1b2236;
+        --ink-2: #4b5168;
+        --ink-3: #62667a;
+        --city: #1b2236;
+        --gate: #e5512b;
+        --code: #a83818;
+        --sun: #f6b53d;
+        --water: #2c6fb7;
+        --fill: #cc4420;
+        --fill-hover: #b93d1c;
+        --focus: #2c6fb7;
+        --glow: radial-gradient(120% 80% at 50% 0%, #fbf5ea 0%, #f5ecdb 55%, #ecdfc6 100%);
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1424;
+          --ink: #f6eedf;
+          --ink-2: #c8c2b6;
+          --ink-3: #9a98a7;
+          --city: #c8c2b6;
+          --gate: #ff6a3d;
+          --code: #ff8a62;
+          --water: #78b2ef;
+          --focus: #78b2ef;
+          --glow: radial-gradient(120% 80% at 50% 0%, #1a2136 0%, #0f1424 60%, #0b0f1c 100%);
+          color-scheme: dark;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        display: grid;
+        place-items: center;
+        min-height: 100%;
+        padding: 32px 16px;
+        background: var(--bg);
+        background-image: var(--glow);
+        color: var(--ink);
+        font: 400 16px/1.6 Geist, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-align: center;
+      }
+      main { display: grid; justify-items: center; max-width: 460px; }
+      .mark { width: 72px; height: 72px; filter: drop-shadow(0 14px 14px rgba(27, 34, 54, 0.16)); }
+      .code { margin: 22px 0 0; color: var(--code); font: 500 12.5px/1 'Geist Mono', ui-monospace, Menlo, monospace; letter-spacing: 0.08em; }
+      h1 { margin: 10px 0 0; font: 800 clamp(32px, 8vw, 44px)/1.05 'Bricolage Grotesque', Geist, system-ui, sans-serif; font-stretch: 88%; letter-spacing: -0.035em; text-wrap: balance; }
+      p.why { margin: 14px 0 0; color: var(--ink-2); font-size: 17px; text-wrap: pretty; }
+      .skyline { width: min(300px, 80vw); height: auto; margin-top: 30px; overflow: visible; }
+      .skyline path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .skyline .city { stroke: var(--city); stroke-width: 1.4; }
+      .skyline .bridge { stroke: var(--gate); stroke-width: 1.6; }
+      .skyline .sun { stroke: var(--sun); stroke-width: 1.6; }
+      .skyline .water { stroke: var(--water); stroke-width: 1.2; opacity: 0.6; }
+      /* The empty lot: dashed, where the missing page would stand. */
+      .skyline .lot { stroke: var(--gate); stroke-width: 1.2; stroke-dasharray: 2.5 3; }
+      .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 18px; align-items: center; margin-top: 30px; }
+      .btn { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 18px; border-radius: 999px; background: var(--fill); color: #fff; font-weight: 560; font-size: 15px; text-decoration: none; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 1px rgba(27, 34, 54, 0.06), 0 4px 10px -4px rgba(27, 34, 54, 0.3); transition: background 120ms; }
+      .btn:hover { background: var(--fill-hover); }
+      .btn svg { width: 15px; height: 15px; }
+      .quiet { color: var(--ink-3); font-size: 15px; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; }
+      .quiet:hover { color: var(--ink); }
+      :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a href="/" aria-label="TinyTown home"><img class="mark" src="/mark.svg" alt="" width="72" height="72" /></a>
+      <p class="code">404 · NOTHING BUILT HERE</p>
+      <h1>This street isn’t on the map.</h1>
+      <p class="why">The page you followed doesn’t exist, or it moved. The city is still where you left it.</p>
+      <svg class="skyline" viewBox="0 0 280 64" aria-hidden="true">
+        <path class="water" d="M0 60.5h280" />
+        <path class="bridge" d="M20 44h96M44 56V14M92 56V14M20 50 44 15Q68 42 92 15L116 50M41 14h6M89 14h6" />
+        <path class="city" d="M0 56q10-14 22-8M118 56V40h8V30h8v-6h4v32M142 56V36h6V28h6v28M156 56l8-44 8 44M192 56V40h8v16M202 56q16-26 40-20 22 6 38 20M223 40.5h2.4M228.5 38.6h2.4M234 37.4h2.4M239.5 36.9h2.4M245 37.2h2.4M250.5 38h2.4M0 56h280" />
+        <path class="lot" d="M175 56V30h15v26" />
+        <path class="sun" d="M252 20a7 7 0 1 0 14 0a7 7 0 1 0-14 0" />
+      </svg>
+      <div class="actions">
+        <a class="btn" href="/">Back to the city <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg></a>
+        <a class="quiet" href="/legal/contact.html">Tell us about a broken link</a>
+      </div>
+    </main>
+  </body>
+</html>
