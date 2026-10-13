@@ -163,7 +163,7 @@ These live in provider dashboards, not in code. Set them before launch.
 - **Authentication → Attack Protection → leaked password protection**: not applicable; TinyTown has no passwords (magic links and Google/GitHub only). Keep **Email + Password** sign-in switched off under **Sign In / Providers** so nobody can create a password account.
 - **Authentication → Sessions**: access tokens last 1 hour (keep it). Keep **detect and revoke compromised refresh tokens** on. On Pro, consider an **inactivity timeout** of 30 days so abandoned sessions end on their own.
 - **Authentication → Emails**: custom SMTP (Resend) so sign-in mail always arrives, and the branded templates from `supabase/templates/`.
-- **Authentication → Multi-factor**: enable TOTP and ask everyone in `ADMIN_EMAILS` to enrol. (The admin API doesn't yet require `aal2`; see "Known gaps".)
+- **Authentication → Multi-factor**: keep TOTP enabled. The admin API refuses sessions below `aal2`, and the console walks each admin through adding an authenticator on their first visit (`ADMIN_MFA=off` only for local testing).
 - **Project Settings → Data API**: keep it on (the server uses it). No table is granted to the browser roles; to check, run this in the SQL editor and expect no rows: `select table_name, privilege_type from information_schema.role_table_grants where grantee in ('anon', 'authenticated') and table_schema = 'public';`
 - **Database → Network Restrictions**: these limit direct Postgres connections only (the HTTPS Data API, which our server uses, is not affected). Our migrations run from GitHub Actions (`.github/workflows/migrate.yml`), whose addresses change, so either leave restrictions off and keep the database password strong and in GitHub secrets only, or run migrations from a fixed address and restrict to it.
 - **Database → SSL Configuration**: enforce SSL on direct connections.
@@ -217,7 +217,6 @@ The detailed playbooks are in `docs/RUNBOOK.md`. The basics:
 ## Known gaps and accepted risks
 
 - **Signed-out tokens work for up to a minute** (the auth cache). Supabase access tokens also live an hour on their own; signing out everywhere ends the refresh token, not the current access token. Accepted.
-- **Admin access is by email only.** An admin whose email account is taken over can sign in as admin. Supabase MFA is available; the admin API should require `aal2` in the token for admins (a small change in `server/admin.ts`).
 - **Rate limits fail open** when the database is unreachable, by design: refusing every founder to stop a hypothetical abuser is the worse outage. During that window each instance still applies its own in-memory limit, and the Vercel Firewall rule is the coarse backstop.
 - **`style-src 'unsafe-inline'`.** Removing it means moving the boot screen's styles to a hashed `<style>` and the HUD's `style` attributes to CSSOM (`el.style.width = …`); worth doing if the CSP ever needs to be stricter.
 - **The Supabase URL in the CSP** is narrowed to the project only when `SUPABASE_URL` is set at build time (it is on Vercel); otherwise any `*.supabase.co` project is allowed.
