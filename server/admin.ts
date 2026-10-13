@@ -304,6 +304,26 @@ const pick = (row: Record<string, unknown>, ...names: string[]): number | null =
   return null;
 };
 
+/** Both columns as one number, or null when the row has neither. */
+function sumOf(row: Record<string, unknown>, ...names: string[]): number | null {
+  const vals = names.map((n) => pick(row, n)).filter((v): v is number => v !== null);
+  return vals.length ? vals.reduce((a, b) => a + b, 0) : null;
+}
+
+/**
+ * Stripe connections the hourly job found broken and the founder hasn't
+ * reconnected since: a break is keyed by the connection's `connected_at`,
+ * so reconnecting (a new `connected_at`) leaves the old break behind.
+ */
+async function brokenNow(ctx: Hosted): Promise<{ user_id: string }[]> {
+  const breaks = await pg<{ user_id: string; connected_at: string }>(ctx, 'GET', 'connection_breaks', [['select', 'user_id,connected_at'], ['provider', 'eq.stripe'], ['order', 'detected_at.desc'], ['limit', '50']], { missingOk: true }).catch(() => null);
+  const rows = breaks?.rows ?? [];
+  if (!rows.length) return [];
+  const live = await select<{ user_id: string; connected_at: string }>(ctx, 'connections', [['select', 'user_id,connected_at'], ['provider', 'eq.stripe'], ['user_id', `in.(${[...new Set(rows.map((r) => r.user_id))].join(',')})`]]);
+  const current = new Set(live.map((c) => `${c.user_id}|${Date.parse(c.connected_at)}`));
+  return rows.filter((b) => current.has(`${b.user_id}|${Date.parse(b.connected_at)}`)).slice(0, 20);
+}
+
 async function overview(ctx: Hosted): Promise<Overview> {
   const since = (days: number) => `gte.${iso(ctx.now - days * DAY)}`;
   const app = ctx.s.stripeApp;
@@ -326,7 +346,7 @@ async function overview(ctx: Hosted): Promise<Overview> {
       select<{ user_id: string }>(ctx, 'connections', [['select', 'user_id'], ['provider', 'eq.stripe'], ['secret', 'is.null'], ['limit', '20']]),
       // The server refuses a connection made in the other mode (see accessToken in stripe-app.ts).
       app ? select<{ user_id: string }>(ctx, 'connections', [['select', 'user_id'], ['provider', 'eq.stripe'], ['livemode', app.livemode ? 'is.false' : 'is.true'], ['limit', '20']]) : [],
-      select<{ user_id: string }>(ctx, 'connections', [['select', 'user_id'], ['provider', 'eq.stripe'], ['metadata->>broken_at', 'not.is.null'], ['limit', '20']]),
+      brokenNow(ctx),
     ]);
 
   const real = paying.filter((r) => !r.comp);
@@ -349,13 +369,14 @@ async function overview(ctx: Hosted): Promise<Overview> {
   const series = days.map((r) => ({
     day: typeof r.day === 'string' ? Date.parse(r.day) : (pick(r, 'day', 't') ?? 0),
     mrr: pick(r, 'mrr_cents', 'mrr'),
-    paying: pick(r, 'paying', 'paid', 'subscribers'),
+    // The pipeline keeps paying founders by plan; older shapes kept one total.
+    paying: pick(r, 'paying', 'paid', 'subscribers') ?? sumOf(r, 'paying_monthly', 'paying_yearly'),
     accounts: pick(r, 'accounts', 'signups_total', 'users'),
   }));
   let source: Overview['source'] = 'live';
-  if (days.length && pick(days.at(-1)!, 'new_paying', 'started') != null) {
+  if (days.length && pick(days.at(-1)!, 'new_paid', 'new_paying', 'started') != null) {
     const sum = (n: number, ...names: string[]) => days.slice(-n).reduce((s, r) => s + (pick(r, ...names) ?? 0), 0);
-    const from = (n: number): Movement => ({ started: sum(n, 'new_paying', 'started'), ended: sum(n, 'churned', 'ended') });
+    const from = (n: number): Movement => ({ started: sum(n, 'new_paid', 'new_paying', 'started'), ended: sum(n, 'churned', 'ended') });
     movement = { d1: from(1), d7: from(7), d30: from(30) };
     source = 'product_daily';
   }
