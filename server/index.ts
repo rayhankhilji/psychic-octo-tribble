@@ -1,11 +1,13 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { createServer, type ServerResponse } from 'node:http';
+import { createServer } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Timeline } from '../src/data/types.ts';
+import { handle } from './app.ts';
+import { settings } from './env.ts';
+import { nodeHandler } from './node.ts';
 import { staticPath } from './static.ts';
-import { buildTimeline, readConfig } from './timeline.ts';
+import { readConfig } from './timeline.ts';
 
 try {
   process.loadEnvFile();
@@ -13,10 +15,8 @@ try {
   // No .env file; environment variables or demo mode.
 }
 
-const config = readConfig(process.env);
 const port = Number(process.env.PORT ?? 8787);
 const root = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
-const CACHE_MS = 60_000;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -28,35 +28,12 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
-let cached: { at: number; timeline: Promise<Timeline | null> } | undefined;
-
-function timeline(): Promise<Timeline | null> {
-  if (!cached || Date.now() - cached.at > CACHE_MS) {
-    const pending = buildTimeline(config);
-    cached = { at: Date.now(), timeline: pending };
-    pending.catch(() => (cached = undefined));
-  }
-  return cached.timeline;
-}
-
-function json(res: ServerResponse, status: number, body: unknown) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(body));
-}
+// Every /api route goes through the same handler Vercel runs.
+const api = nodeHandler((req) => handle(req, process.env));
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
-
-  if (url.pathname === '/api/timeline') {
-    try {
-      const t = await timeline();
-      if (!t) return json(res, 404, { error: 'No integrations configured. Add STRIPE_SECRET_KEY or GITHUB_REPO to .env.' });
-      return json(res, 200, t);
-    } catch (err) {
-      console.error(err);
-      return json(res, 502, { error: err instanceof Error ? err.message : 'Upstream error' });
-    }
-  }
+  if (url.pathname === '/api' || url.pathname.startsWith('/api/')) return api(req, res);
 
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405).end();
@@ -79,6 +56,13 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, () => {
+  const s = settings(process.env);
+  if (s.supabase) {
+    const on = [s.billing && 'billing', s.stripeApp && `Stripe App (${s.stripeApp.livemode ? 'live' : 'test'})`, s.githubApp && 'GitHub App'].filter(Boolean);
+    console.log(`TinyTown on http://localhost:${port} · hosted mode${on.length ? `: ${on.join(', ')}` : ''}`);
+    return;
+  }
+  const config = readConfig(process.env);
   const live = [config.stripeKey && 'Stripe', config.githubRepo && `GitHub (${config.githubRepo})`].filter(Boolean);
   console.log(`TinyTown on http://localhost:${port} · ${live.length ? `live: ${live.join(', ')}` : 'demo mode (no integrations configured)'}`);
 });

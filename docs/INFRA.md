@@ -19,7 +19,8 @@ browser (Vite build, three.js)
   │  everything else: fetch /api/* with the Supabase access token
   ▼
 /api/*  ── one handler, `server/app.ts` (web-standard Request → Response)
-  │         served by `api/[...route].ts` on Vercel, and by `server/index.ts` locally
+  │         on Vercel: one Node 22 function built by `server/build-vercel.mjs` (Build Output API v3);
+  │         locally: `server/index.ts` through the same handler (`server/node.ts` adapts Node's req/res)
   ├─ Supabase Auth: who is this token? (GET /auth/v1/user)
   ├─ Supabase Postgres via PostgREST with the service-role key (server only)
   ├─ Stripe (our account): Checkout, customer portal, webhooks
@@ -28,6 +29,7 @@ browser (Vite build, three.js)
   └─ PostHog (optional): monthly active users
 ```
 
+- **Vercel build:** `npm run build && node server/build-vercel.mjs` (set in `vercel.json`) writes `.vercel/output`: the static site plus one function at `/api`. Vercel's own TypeScript compile isn't used, because the server imports `.ts` files across `src/`; Vite bundles the function instead and the build ends with a smoke test.
 - The server has **no npm dependencies**: Stripe, Supabase and GitHub are plain `fetch` calls, as `server/sources.ts` already does. The browser adds one dependency, `@supabase/supabase-js`, loaded only when someone signs in.
 - **Local development keeps working with no accounts.** Without `SUPABASE_URL`, `/api/config` says `hosted: false`, the app runs the demo or the `.env` integrations exactly as before, and no sign-in UI appears.
 
@@ -42,7 +44,7 @@ All tables have row-level security on and **no policies**: the browser can't rea
 | `connections` | per user and provider: account id, display name, livemode, **encrypted** refresh token or key, metadata |
 | `worlds` | the founder's actions (builds, home picks) as JSON |
 | `timelines` | cached metrics timeline per user, with when it was fetched |
-| `oauth_states` | not needed: OAuth `state` is an HMAC-signed, expiring token naming the user |
+| (no `oauth_states`) | OAuth `state` is an HMAC-signed, expiring token naming the user, plus a nonce in an HttpOnly cookie so a callback only completes in the browser that started it |
 
 Secrets at rest (Stripe refresh tokens, PostHog keys) are encrypted with AES-256-GCM under `TOKEN_ENCRYPTION_KEY`, which lives only in the server environment.
 

@@ -12,8 +12,8 @@
  * - The browser never talks to Stripe, GitHub or PostHog directly, and never
  *   holds a secret. OAuth callbacks land on the server and redirect home.
  */
-import type { Timeline } from '../data/types.ts';
-import type { Action } from '../game/economy.ts';
+import { DAY, type Timeline } from '../data/types.ts';
+import type { Action, SimOptions } from '../game/economy.ts';
 
 export type ErrorCode = 'unauthenticated' | 'payment_required' | 'rejected' | 'not_configured' | 'not_connected' | 'upstream' | 'bad_request';
 
@@ -114,7 +114,8 @@ export interface RedirectResponse {
 
 /** `POST /api/connect/stripe` → RedirectResponse (Stripe App install link). Callback: `GET /api/connect/stripe/callback`. */
 /** `POST /api/connect/github` → RedirectResponse (GitHub App install). Callback: `GET /api/connect/github/callback`. */
-/** `DELETE /api/connect/:provider` → { ok: true } */
+/** `DELETE /api/connect/:provider` → { ok: true }. Disconnecting PostHog puts the population back on customers. */
+export type Provider = 'stripe' | 'github' | 'posthog';
 
 /** `GET /api/connect/github/repos` → { repos } (repositories the installation can see). */
 export interface ReposResponse {
@@ -156,4 +157,19 @@ export const ROUTES = {
 /** A plan that unlocks the hosted game. */
 export function isPaid(status: PlanStatus): boolean {
   return status === 'active' || status === 'trialing' || status === 'past_due';
+}
+
+/**
+ * Back pay: a newly connected founder's treasury counts revenue from this
+ * many days before they joined (the "grand opening" fund, GAME_DESIGN).
+ */
+export const BACK_PAY_DAYS = 90;
+
+/**
+ * The options every hosted simulation runs with. The browser and the server
+ * must use exactly these, or they'd disagree about how much money there is
+ * and the server would refuse purchases the browser allowed.
+ */
+export function simOptionsFor(joinedAt: number | null): SimOptions {
+  return joinedAt == null ? {} : { incomeFrom: joinedAt - BACK_PAY_DAYS * DAY };
 }
