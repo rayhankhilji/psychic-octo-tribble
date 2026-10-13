@@ -2,6 +2,7 @@
 <!-- Replace YOUR-DOMAIN with the live address before launch (also in robots.txt). -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://YOUR-DOMAIN/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://YOUR-DOMAIN/brand/</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
   <url><loc>https://YOUR-DOMAIN/legal/terms.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://YOUR-DOMAIN/legal/privacy.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://YOUR-DOMAIN/legal/refunds.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>

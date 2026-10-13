@@ -1,0 +1,89 @@
+/* Shared by every social image (tools/brand-assets.mjs inlines it). Brand values, copied from
+   src/ui/styles.css: these pages render on their own, outside the app. */
+:root {
+  --ink: #1b2236;
+  --ink-2: #3a4157;
+  --ink-3: #62667a;
+  --sand: #f5ecdb;
+  --sand-50: #fdf9f2;
+  --gate: #e5512b;
+  --accent-text: #a83818;
+  --bay-text: #235e9c;
+  --sun: #f6b53d;
+  --cream: #f6eedf;
+  --cream-2: #c8c2b6;
+  --night: #0f1424;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--sand); }
+body { -webkit-font-smoothing: antialiased; font-feature-settings: 'ss01', 'cv11'; color: var(--ink); font-family: Geist, system-ui, sans-serif; }
+
+.frame { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+.city { position: absolute; inset: 0; background-size: cover; background-position: center; }
+.layer { position: absolute; inset: 0; }
+/* A soft frame of shadow, like the boot screen's paper. */
+.vignette { position: absolute; inset: 0; box-shadow: inset 0 0 160px rgba(27, 34, 54, 0.16); pointer-events: none; }
+.night .vignette { box-shadow: inset 0 0 180px rgba(5, 8, 20, 0.5); }
+
+.lockup { display: block; height: 52px; width: auto; }
+.mark { display: block; width: 56px; height: 56px; }
+
+.eyebrow {
+  margin: 0;
+  font: 500 15px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+.night .eyebrow { color: #ff8a62; }
+
+h1 {
+  margin: 0;
+  font: 800 68px/0.98 'Bricolage Grotesque', Geist, system-ui, sans-serif;
+  font-stretch: 88%;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+  color: var(--ink);
+}
+h1 em { font-style: normal; color: var(--gate); }
+.night h1 { color: var(--cream); }
+.night h1 em { color: #ff7a50; }
+
+.sub {
+  margin: 0;
+  font: 450 23px/1.4 Geist, system-ui, sans-serif;
+  letter-spacing: -0.01em;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.night .sub { color: var(--cream-2); }
+.num { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+.night .num { color: var(--cream); }
+
+/* The honest caption: what you're looking at, with the numbers behind it. */
+.caption {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px 9px 10px;
+  border-radius: 999px;
+  background: rgba(253, 249, 242, 0.9);
+  box-shadow: 0 1px 1px rgba(27, 34, 54, 0.06), 0 8px 24px -10px rgba(27, 34, 54, 0.35);
+  font: 500 13px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.caption img { width: 22px; height: 22px; }
+.caption b { font-weight: 600; color: var(--ink); }
+.caption i { font-style: normal; color: rgba(27, 34, 54, 0.3); }
+.night .caption { background: rgba(21, 27, 45, 0.88); color: var(--cream-2); box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6); }
+.night .caption b { color: var(--cream); }
+.night .caption i { color: rgba(245, 236, 219, 0.3); }
+
+/* Paper on one side, the city bleeding in from the other: the words always sit on calm sand,
+   whatever the render behind them. */
+.paper-left { background: linear-gradient(90deg, rgba(246, 238, 223, 0.98) 0%, rgba(246, 238, 223, 0.95) 30%, rgba(246, 238, 223, 0.72) 42%, rgba(246, 238, 223, 0.25) 54%, rgba(246, 238, 223, 0) 64%); }
+.paper-right { background: linear-gradient(270deg, rgba(246, 238, 223, 0.98) 0%, rgba(246, 238, 223, 0.95) 30%, rgba(246, 238, 223, 0.72) 42%, rgba(246, 238, 223, 0.25) 54%, rgba(246, 238, 223, 0) 64%); }
+.night .paper-left { background: linear-gradient(90deg, rgba(12, 16, 30, 0.96) 0%, rgba(12, 16, 30, 0.92) 30%, rgba(12, 16, 30, 0.66) 42%, rgba(12, 16, 30, 0.2) 54%, rgba(12, 16, 30, 0) 64%); }

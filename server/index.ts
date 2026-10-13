@@ -24,6 +24,7 @@ const MIME: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
   '.json': 'application/json',
   '.woff2': 'font/woff2',
 };
@@ -45,7 +46,13 @@ const server = createServer(async (req, res) => {
     res.writeHead(400).end();
     return;
   }
-  const info = await stat(file).catch(() => null);
+  let info = await stat(file).catch(() => null);
+  // A folder with its own page (/brand/) serves that page, not the app.
+  if (info?.isDirectory()) {
+    const page = join(file, 'index.html');
+    const pageInfo = await stat(page).catch(() => null);
+    if (pageInfo?.isFile()) [file, info] = [page, pageInfo];
+  }
   if (!info?.isFile()) file = join(root, 'index.html');
   if (!(await stat(file).catch(() => null))) {
     res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Run `npm run build` first, or use `npm run dev`.');

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,500..800&family=Geist+Mono:wght@400..600&family=Geist:wght@400..700&display=swap" rel="stylesheet">
+<!-- Square launch post, 1080 × 1080: the words on sand, the city rising out of it. -->
+<style>
+  .city { top: 330px; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 220px); mask-image: linear-gradient(to bottom, transparent 0, #000 220px); }
+  .glow { background: radial-gradient(120% 60% at 50% 0%, #fbf5ea 0%, #f5ecdb 60%, #ecdfc6 100%); }
+  .copy { position: absolute; left: 0; right: 0; top: 84px; display: grid; justify-items: center; gap: 24px; text-align: center; }
+  .copy .lockup { height: 46px; }
+  .copy h1 { font-size: 80px; margin-top: 10px; }
+  .copy .sub { width: 760px; font-size: 25px; }
+  .foot { position: absolute; left: 0; right: 0; bottom: 44px; display: flex; justify-content: center; }
+</style></head>
+<body><div class="frame">
+  <div class="layer glow"></div>
+  <div class="city" style="background-image: url({{city}})"></div>
+  <div class="vignette"></div>
+  <div class="copy">
+    <img class="lockup" src="logo-horizontal-light.svg" alt="TinyTown">
+    <h1>A Tamagotchi for your&nbsp;startup.</h1>
+    <p class="sub">Connect Stripe and your real MRR builds a tiny San&nbsp;Francisco. Every $1 is $10,000 to spend.</p>
+  </div>
+  <div class="foot"><span class="caption"><img src="mark.svg" alt="">Nightjar, a demo startup <i>/</i> <b>{{mrr}}</b> MRR</span></div>
+</div></body></html>

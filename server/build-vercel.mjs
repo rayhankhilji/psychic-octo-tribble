@@ -61,6 +61,8 @@ export function outputConfig(env = process.env) {
       // Pages always revalidate, so a deploy shows at once (they're small, and everything they load is hashed).
       { src: '^/(?:.*\\.html)?$', headers: { 'Cache-Control': 'no-cache' }, continue: true },
       // Real files (the Vite build) first, as Vercel's own framework adapters do.
+      // The brand and press page is a folder with its own index.
+      { src: '^/brand/?$', dest: '/brand/index.html' },
       { handle: 'filesystem' },
       // Every API path goes to the one function; the original path rides along.
       { src: '^(/api(?:/.*)?)$', dest: '/api?__path=$1' },
