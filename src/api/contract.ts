@@ -55,6 +55,12 @@ export interface DeleteAccountResponse {
   stillInstalled: { provider: 'stripe' | 'github'; url: string }[];
 }
 
+/** Which optional emails the founder gets. */
+export interface EmailPrefs {
+  weeklyDigest: boolean;
+  productUpdates: boolean;
+}
+
 /** `POST /api/telemetry` (public, rate-limited): a browser error report. No personal data. */
 export interface TelemetryReport {
   kind: 'error' | 'unhandledrejection' | 'webgl' | 'perf';
@@ -192,6 +198,8 @@ export const ROUTES = {
   health: '/api/health',
   /** `GET /api/email/unsubscribe?token=…` (public, signed link in every non-essential email). */
   unsubscribe: '/api/email/unsubscribe',
+  /** `GET` / `PUT /api/email/prefs` (signed in): EmailPrefs. Transactional email (receipts, payment problems) is always sent. */
+  emailPrefs: '/api/email/prefs',
 } as const;
 
 /** A plan that unlocks the hosted game. */

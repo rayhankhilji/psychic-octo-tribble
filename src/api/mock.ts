@@ -97,6 +97,7 @@ export function installMockApi(state: MockState): AuthProvider | null {
   };
   const err = (status: number, error: string, code: string) => json({ error, code }, status);
 
+  const emailPrefs = { weeklyDigest: true, productUpdates: true };
   const real = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.href);
@@ -123,6 +124,12 @@ export function installMockApi(state: MockState): AuthProvider | null {
         return json({ ok: true, stillInstalled: [{ provider: 'stripe', url: 'https://dashboard.stripe.com/settings/apps' }, { provider: 'github', url: 'https://github.com/settings/installations' }] });
       case `GET ${ROUTES.me}`:
         return json(me());
+      case `GET ${ROUTES.emailPrefs}`:
+        return json(emailPrefs);
+      case `PUT ${ROUTES.emailPrefs}`:
+        if (fail === 'email') return err(502, "Couldn't save that just now. Try again in a moment.", 'upstream');
+        Object.assign(emailPrefs, body);
+        return json(emailPrefs);
       case `POST ${ROUTES.checkout}`:
         if (fail === 'checkout') return err(502, "Stripe didn't answer. Nothing was charged; try again in a moment.", 'upstream');
         return json({ url: hrefFor('paid-unconnected', { checkout: 'success' }) });

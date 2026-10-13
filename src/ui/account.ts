@@ -3,7 +3,7 @@
  * what's connected, the name on the HQ sign, and signing out.
  */
 import type { Api } from '../api/client.ts';
-import { isPaid, LEGAL, type ConfigResponse, type Connections, type MeResponse, type Provider, type WorldInfo } from '../api/contract.ts';
+import { isPaid, LEGAL, type ConfigResponse, type Connections, type EmailPrefs, type MeResponse, type Provider, type WorldInfo } from '../api/contract.ts';
 import { perInterval } from '../api/pricing.ts';
 import { busy, focusFirst, longDate, makeDialog, message } from './dialogs.ts';
 import { escape, showModal } from './dom.ts';
@@ -40,6 +40,8 @@ export class AccountDialog {
   private d: HTMLDialogElement;
   private deps: AccountDeps;
   private confirming: Provider | null = null;
+  /** The founder's email choices, loaded when the menu opens (not on every page load). */
+  private prefs: EmailPrefs | 'loading' | 'error' = 'loading';
   private live: HTMLElement;
   private body: HTMLElement;
   private nameSaved = false;
@@ -62,6 +64,10 @@ export class AccountDialog {
       if (form.classList.contains('delete-form')) void this.deleteAccount(form);
       else void this.saveName(form);
     });
+    this.d.addEventListener('change', (e) => {
+      const t = e.target as HTMLInputElement;
+      if (t.dataset.pref) void this.savePref(t, t.dataset.pref as keyof EmailPrefs);
+    });
     this.d.addEventListener('input', (e) => {
       const t = e.target as HTMLInputElement;
       if (t.name === 'confirm') {
@@ -81,9 +87,53 @@ export class AccountDialog {
     this.view = 'account';
     this.confirming = null;
     this.nameSaved = false;
+    this.prefs = 'loading';
     this.render();
     showModal(this.d);
     focusFirst(this.d, '[data-autofocus]');
+    void this.loadPrefs();
+  }
+
+  private async loadPrefs() {
+    try {
+      this.prefs = await this.deps.api.emailPrefs();
+    } catch {
+      this.prefs = 'error';
+    }
+    // Only the switches change: re-rendering the whole menu would move the reader's focus.
+    const section = this.d.querySelector('[data-section=email]');
+    if (section && this.view === 'account') section.outerHTML = this.emailSection();
+  }
+
+  private emailSection(): string {
+    const p = this.prefs;
+    const ready = typeof p === 'object';
+    const toggle = (key: keyof EmailPrefs, title: string, about: string) =>
+      `<label class="switch"><input type="checkbox" role="switch" data-pref="${key}" ${ready && p[key] ? 'checked' : ''} ${ready ? '' : 'disabled'}><span class="switch-track"><i></i></span><span><b>${title}</b><small>${about}</small></span></label>`;
+    return `<section class="acct-section" aria-labelledby="acct-email" data-section="email" ${p === 'loading' ? 'aria-busy="true"' : ''}>
+        <h3 id="acct-email">Email</h3>
+        <div class="acct-prefs">
+          ${toggle('weeklyDigest', 'Your city this week', 'A Monday note with the week’s numbers and what you built.')}
+          ${toggle('productUpdates', 'Product updates', 'New buildings, regions and features, a few times a year.')}
+        </div>
+        <p class="acct-fine">Receipts, payment problems and broken connections always come through.</p>
+        <div class="acct-error" data-slot="email">${p === 'error' ? message('bad', 'Couldn’t load your email settings. Close and reopen to try again.') : ''}</div>
+      </section>`;
+  }
+
+  private async savePref(input: HTMLInputElement, key: keyof EmailPrefs) {
+    const on = input.checked;
+    this.slot('email', '');
+    input.disabled = true;
+    try {
+      this.prefs = await this.deps.api.setEmailPrefs({ [key]: on });
+      this.live.textContent = `${key === 'weeklyDigest' ? 'Weekly email' : 'Product updates'} ${on ? 'on' : 'off'}.`;
+    } catch (err) {
+      input.checked = !on;
+      this.slot('email', message('bad', err instanceof Error ? err.message : 'Couldn’t save that. Try again.'));
+    } finally {
+      input.disabled = false;
+    }
   }
 
   private render() {
@@ -185,6 +235,7 @@ export class AccountDialog {
             </section>`
           : ''
       }
+      ${this.emailSection()}
       <section class="acct-section" aria-labelledby="acct-data">
         <h3 id="acct-data">Your data</h3>
         <div class="acct-data">

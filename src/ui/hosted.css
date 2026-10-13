@@ -1336,6 +1336,20 @@
   height: 16px;
 }
 
+.acct-prefs {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 12px);
+}
+.acct-prefs .switch small {
+  margin-top: 1px;
+}
+.acct-section[aria-busy='true'] .switch {
+  opacity: 0.6;
+  cursor: progress;
+}
 .acct-fine {
   margin: -2px 0 0;
   font-size: var(--t-sm);

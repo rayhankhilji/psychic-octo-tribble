@@ -15,6 +15,7 @@ const DEFAULTS: Record<string, () => Row> = {
   connections: () => ({ display_name: null, livemode: null, secret: null, access_token: null, access_expires_at: null, token_version: 0, metadata: {}, connected_at: new Date().toISOString() }),
   worlds: () => ({ actions: [], version: 0 }),
   timelines: () => ({ fetched_at: new Date().toISOString() }),
+  email_prefs: () => ({ product_updates: true, weekly_digest: true }),
 };
 
 export class FakeSupabase {

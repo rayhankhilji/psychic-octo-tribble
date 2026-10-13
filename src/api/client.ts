@@ -12,6 +12,7 @@ import {
   type Connections,
   type DeleteAccountRequest,
   type DeleteAccountResponse,
+  type EmailPrefs,
   type ErrorCode,
   type MeResponse,
   type PlanInterval,
@@ -224,6 +225,14 @@ export class Api {
     if (!res.ok) throw this.failed(toApiError(res.status, await res.json().catch(() => null)));
     const filename = filenameFrom(res.headers.get('Content-Disposition'), `tinytown-account-${new Date().toISOString().slice(0, 10)}.json`);
     return { blob: await res.blob(), filename };
+  }
+
+  emailPrefs() {
+    return this.call<EmailPrefs>('GET', ROUTES.emailPrefs);
+  }
+
+  setEmailPrefs(patch: Partial<EmailPrefs>) {
+    return this.call<EmailPrefs>('PUT', ROUTES.emailPrefs, patch);
   }
 
   /** Cancels the plan at once, disconnects everything and deletes the account. `confirm` is the email typed again (or "DELETE" without one). */
