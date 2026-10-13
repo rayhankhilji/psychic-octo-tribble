@@ -25,7 +25,7 @@ Built and committed (2026-10-13): accounts, billing, the paywall, onboarding, th
 - [x] Admins need a second factor: `/api/admin/*` refuses sessions below `aal2` (`mfa_required`), and the console walks an admin through adding an authenticator the first time. `ADMIN_MFA=off` for local testing.
 - [x] Email settings in the account menu (weekly digest, product updates).
 - [x] Fewer database calls per visit (reads rate-limited in memory; lastSeen written once a day in one call).
-- [ ] Known gaps: founders must remove the Stripe App themselves after deleting; per-instance limits on telemetry; `style-src 'unsafe-inline'`; one Stripe account can connect to several cities.
+- [ ] Known gaps: founders must remove the Stripe App themselves after deleting; per-instance limits on telemetry; `style-src 'unsafe-inline'` (inline `style=` attributes in the HUD). Several cities on one Stripe account is allowed on purpose: co-founders share one company account.
 
 ## P1: The reference-image quality push (in progress)
 
