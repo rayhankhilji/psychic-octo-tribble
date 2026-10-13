@@ -42,6 +42,15 @@ function shortDate(t: number): string {
   return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** What an app can and can't see, side by side, before anyone installs it. */
+function permissions(can: string, cannot: string): string {
+  return `
+    <div class="perm" role="group" aria-label="What TinyTown can see">
+      <div class="perm-col can"><span class="perm-label">${ICON.eye}Can see</span><p>${can}</p></div>
+      <div class="perm-col cannot"><span class="perm-label">${ICON.lock}Can't see or do</span><p>${cannot}</p></div>
+    </div>`;
+}
+
 function hostLabel(host: string): string {
   try {
     return new URL(host).host;
@@ -165,7 +174,7 @@ export class OnboardingDialog {
             ? `${ICON.check}<span>Stripe is connected. You can change any of this later in your account.</span>`
             : `${ICON.info}<span>${this.stripeBroken ? 'Reconnect Stripe to bring your city back.' : 'Connect Stripe to build your city: it runs on your revenue.'}</span>`
         }</span>
-        <button class="btn primary lg" type="button" data-act="finish" ${ready ? '' : 'disabled aria-disabled="true"'}>${ICON.build}<span class="label">${this.deps.inWorld ? 'Back to my city' : this.stripeBroken ? 'Open my city' : 'Build my city'}</span></button>
+        <button class="btn primary lg finish" type="button" data-act="finish" ${ready ? '' : 'disabled aria-disabled="true"'}>${ready ? ICON.build : ICON.lock}<span class="label">${this.deps.inWorld ? 'Back to my city' : this.stripeBroken ? 'Open my city' : 'Build my city'}</span></button>
       </footer>`;
   }
 
@@ -173,11 +182,10 @@ export class OnboardingDialog {
 
   private stripeStep(): string {
     const s = this.c.stripe;
-    const sees = `
-      <ul class="sees">
-        <li class="can">${ICON.eye}<span><b>Can see</b> your subscriptions: their prices, status and when each started or ended. That's how your city counts MRR and paying customers.</span></li>
-        <li class="cannot">${ICON.lock}<span><b>Can't see</b> card or bank details, and can't charge, refund or change anything.</span></li>
-      </ul>`;
+    const sees = permissions(
+      "Your subscriptions: their prices, status, and when each started or ended. That's how your city counts MRR and paying customers.",
+      "Card or bank details. And it can't charge, refund or change anything.",
+    );
     if (!s) {
       if (!this.deps.config.connect.stripe) return message('info', "Connecting Stripe isn't set up on this server yet.");
       return `
@@ -209,10 +217,7 @@ export class OnboardingDialog {
     if (!g) {
       return `
         <p class="step-lede">Every release adds a floor to your HQ, and commits speed up the train. Skip it and your city simply runs on revenue.</p>
-        <ul class="sees">
-          <li class="can">${ICON.eye}<span><b>Reads</b> the repositories you share with it, and only ever looks at their releases and commit history.</span></li>
-          <li class="cannot">${ICON.lock}<span><b>Can't</b> push code, open issues or pull requests, or change any settings.</span></li>
-        </ul>
+        ${permissions('Only the repositories you choose to share with it, and TinyTown only ever reads their releases and commit history.', "Anything outside those repositories. And it can't push code, open issues or pull requests, or change any settings.")}
         <div class="step-actions">
           <button class="btn primary" type="button" data-act="connect-github" data-autofocus>${ICON.github}<span class="label">Install on GitHub</span></button>
           <button class="btn ghost" type="button" data-act="skip-github">Skip for now</button>

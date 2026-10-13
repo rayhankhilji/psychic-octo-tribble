@@ -47,16 +47,34 @@ export class SignInDialog {
       else void this.send();
     });
     // The code field takes digits only, however it arrives (typed, pasted with spaces, autofilled), and submits at six.
+    const repaint = (e: Event) => {
+      const t = e.target as HTMLInputElement;
+      if (t.name === 'code') this.paintCode(t);
+    };
+    this.d.addEventListener('focusin', repaint);
+    this.d.addEventListener('focusout', repaint);
     this.d.addEventListener('input', (e) => {
       const t = e.target as HTMLInputElement;
       if (t.name !== 'code') return;
       const digits = t.value.replace(/\D/g, '').slice(0, CODE_LENGTH);
       if (t.value !== digits) t.value = digits;
+      this.paintCode(t);
       if (t.getAttribute('aria-invalid')) {
         t.removeAttribute('aria-invalid');
         this.body.querySelector('#otp-error')!.innerHTML = '';
       }
       if (digits.length === CODE_LENGTH) void this.verifyCode();
+    });
+  }
+
+  /** The six boxes behind the code field: one digit each, and a caret in the next one while it has focus. */
+  private paintCode(input: HTMLInputElement) {
+    const cells = input.parentElement?.querySelectorAll('.otp-cells i');
+    if (!cells) return;
+    const focused = document.activeElement === input;
+    cells.forEach((c, i) => {
+      if (c.textContent !== (input.value[i] ?? '')) c.textContent = input.value[i] ?? '';
+      c.classList.toggle('is-next', focused && i === Math.min(input.value.length, CODE_LENGTH - 1));
     });
   }
 
@@ -79,10 +97,11 @@ export class SignInDialog {
     if (this.sent) return this.renderSent();
     this.body.className = 'dialog-body auth';
     this.body.innerHTML = `
-      <header class="dialog-head">
-        <span class="tile auth-mark">${markSvg({ cls: 'auth-logo' })}</span>
-        <div><h2 id="signin-title">Sign in to TinyTown</h2><p>New here? Signing in makes your account. There's no password to remember.</p></div>
-        <button class="btn ghost icon-only close" type="button" data-act="close" aria-label="Close">${ICON.close}</button>
+      <button class="btn ghost icon-only close auth-sent-close" type="button" data-act="close" aria-label="Close">${ICON.close}</button>
+      <header class="auth-head">
+        <span class="auth-mark" aria-hidden="true">${markSvg({ cls: 'auth-logo' })}</span>
+        <h2 id="signin-title">Sign in to TinyTown</h2>
+        <p>New here? Signing in makes your account. There's no password to remember.</p>
       </header>
       ${this.context ? `<p class="auth-context">${ICON.arrowRight}<span>${escape(this.context)}</span></p>` : ''}
       <div class="auth-providers">
@@ -111,19 +130,22 @@ export class SignInDialog {
       <div class="sent-art" aria-hidden="true"><span class="sent-envelope">${ICON.mailOpen}</span><span class="sent-spark">${ICON.sparkle}</span></div>
       <h2 id="signin-title">Check your inbox</h2>
       <p class="sent-lede">We sent a sign-in link to <b>${escape(this.email)}</b>. Open it on this device or any other, and you'll land back in TinyTown, signed in.</p>
-      <ul class="sent-tips">
-        <li>${ICON.info}<span>It can take a minute to arrive. If it doesn't, look in spam.</span></li>
-        <li>${ICON.lock}<span>The link and the code work once, for an hour.</span></li>
-      </ul>
       <form class="otp-form" novalidate>
-        <label class="field" for="otp-code"><span>Or enter the 6-digit code from the email</span></label>
+        <label class="field" for="otp-code"><span>Or type the 6-digit code from the email</span></label>
         <div class="otp-row">
-          <input id="otp-code" class="otp-input num" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="${CODE_LENGTH}" spellcheck="false" placeholder="••••••" data-autofocus aria-describedby="otp-help otp-error">
+          <div class="otp-box">
+            <span class="otp-cells num" aria-hidden="true">${'<i></i>'.repeat(CODE_LENGTH)}</span>
+            <input id="otp-code" class="otp-input num" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="${CODE_LENGTH}" spellcheck="false" data-autofocus aria-describedby="otp-help otp-error">
+          </div>
           <button class="btn primary" type="submit">Sign in</button>
         </div>
         <p class="field-help" id="otp-help">Handy if a work email scanner opened the link before you could.</p>
         <div id="otp-error"></div>
       </form>
+      <ul class="sent-tips">
+        <li>${ICON.info}<span>It can take a minute to arrive. If it doesn't, look in spam.</span></li>
+        <li>${ICON.lock}<span>The link and the code work once, for an hour.</span></li>
+      </ul>
       ${this.captcha ? '<div class="captcha-slot"></div>' : ''}
       <div class="dialog-actions">
         <button class="btn ghost" type="button" data-act="change">Use a different email</button>

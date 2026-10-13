@@ -132,6 +132,8 @@ export class HostedShell {
           ? { label: 'Open my city', aside: '', icon: ICON.arrowRight, tip: 'Leave the demo for your own city.' }
           : kind === 'waitlist'
             ? { label: "You're on the list", aside: '', icon: ICON.check, tip: "We'll email you the moment your spot opens." }
+          : this.me?.plan.status === 'canceled'
+            ? { label: 'Bring your city back', aside: price, icon: ICON.sparkle, tip: 'Your city and its saves are kept. Pick a plan and it runs on your real numbers again.' }
           : { label: 'Make it yours', aside: price, icon: ICON.sparkle, tip: `Your startup's real numbers, your own city. ${price ? `${price.replace('/mo', ' a month')} or ${sheet.year ? formatPrice(sheet.year.amount, sheet.year.currency) : ''} a year. ` : ''}No free trial; the demo stays free.` };
     if (kind === 'signin') {
       const signIn = el('button', { class: 'btn ghost cta-signin', type: 'button' }, '<span class="label">Sign in</span>');
@@ -216,7 +218,9 @@ export class HostedShell {
       go: (url) => location.assign(url),
     });
     const plan = this.me?.plan;
-    this.plans.open({ interval: opts.interval, note: opts.note ?? null, status: plan?.status, endedAt: plan?.status === 'canceled' ? plan.renewsAt : null });
+    // A lapsed founder is bringing their city back, however they got here.
+    const note = opts.note ?? (plan?.status === 'canceled' ? 'canceled' : null);
+    this.plans.open({ interval: opts.interval, note, status: plan?.status, endedAt: plan?.status === 'canceled' ? plan.renewsAt : null });
   }
 
   openOnboarding(opts: { step?: 1 | 2 | 3; welcome?: boolean; error?: string | null; stripeBroken?: boolean }) {

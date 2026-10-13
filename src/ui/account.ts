@@ -5,6 +5,7 @@
 import type { Api } from '../api/client.ts';
 import { isPaid, LEGAL, type ConfigResponse, type Connections, type EmailPrefs, type MeResponse, type Provider, type WorldInfo } from '../api/contract.ts';
 import { perInterval } from '../api/pricing.ts';
+import { markSvg } from './brand.ts';
 import { busy, focusFirst, longDate, makeDialog, message } from './dialogs.ts';
 import { escape, showModal } from './dom.ts';
 import { ICON } from './icons.ts';
@@ -201,9 +202,9 @@ export class AccountDialog {
       ${plan.status === 'past_due' ? message('bad', "Your last payment didn't go through. Your city stays live while Stripe retries; update your card to keep it that way.") : ''}
       <section class="acct-section" aria-labelledby="acct-plan">
         <h3 id="acct-plan">Plan</h3>
-        <div class="acct-plan">
-          <span class="tile tone-brand">${ICON.sparkle}</span>
-          <span class="acct-plan-text"><b>TinyTown · ${planName} ${chip}</b><small>${ICON.calendar}<span>${when}</span></small></span>
+        <div class="acct-plan" data-status="${plan.status}">
+          <span class="acct-plan-mark" aria-hidden="true">${markSvg({ cls: 'acct-mark' })}</span>
+          <span class="acct-plan-text"><b>TinyTown ${planName} ${chip}</b><small>${when}</small></span>
           ${
             paid || plan.status === 'canceled'
               ? `<button class="btn ${plan.status === 'past_due' ? 'primary' : ''}" type="button" data-act="portal" ${paid ? 'data-autofocus' : ''}>${ICON.external}<span class="label">${plan.status === 'past_due' ? 'Update card' : 'Manage billing'}</span></button>`
@@ -212,7 +213,7 @@ export class AccountDialog {
           ${!paid ? `<button class="btn primary" type="button" data-act="plans" data-autofocus>Pick a plan</button>` : ''}
         </div>
         <div class="acct-error" data-slot="plan"></div>
-        ${paid ? `<p class="acct-fine">${plan.status === 'past_due' ? 'Update card' : 'Manage billing'} opens Stripe's billing portal: update your card, switch plans, get your invoices, or Cancel plan.</p>` : ''}
+        ${paid ? `<p class="acct-fine">${ICON.external}<span>Opens Stripe's billing portal: update your card, switch between monthly and yearly, download invoices, or cancel.</span></p>` : ''}
       </section>
       <section class="acct-section" aria-labelledby="acct-conn">
         <h3 id="acct-conn">Connections</h3>
@@ -238,10 +239,16 @@ export class AccountDialog {
       ${this.emailSection()}
       <section class="acct-section" aria-labelledby="acct-data">
         <h3 id="acct-data">Your data</h3>
-        <div class="acct-data">
-          <button class="btn" type="button" data-act="export">${ICON.download}<span class="label">Download my data</span></button>
-          <button class="btn ghost danger-text" type="button" data-act="delete-start">Delete account…</button>
-        </div>
+        <ul class="conns acct-rows">
+          <li class="acct-row">
+            <span class="conn-text"><b>Export</b><small>Everything TinyTown stores about you, as a JSON file.</small></span>
+            <button class="btn sm" type="button" data-act="export">${ICON.download}<span class="label">Download my data</span></button>
+          </li>
+          <li class="acct-row is-danger">
+            <span class="conn-text"><b>Delete account</b><small>Cancels your plan, disconnects everything and takes down your city. It can't be undone.</small></span>
+            <button class="btn sm danger-quiet" type="button" data-act="delete-start">Delete account…</button>
+          </li>
+        </ul>
         <div class="acct-error" data-slot="data"></div>
       </section>
       <footer class="dialog-actions acct-foot">

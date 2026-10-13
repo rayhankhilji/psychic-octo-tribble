@@ -19,12 +19,12 @@
 }
 
 .btn.danger {
-  background: var(--rose-500);
-  color: #fff;
+  background: var(--bad);
+  color: var(--surface-solid);
 }
 
 .btn.danger:hover {
-  background: #b0301f;
+  background: color-mix(in srgb, var(--bad) 86%, var(--ink-900));
 }
 
 .btn.is-busy,
@@ -327,21 +327,51 @@
 /* Sign in */
 
 .auth-dialog {
-  width: min(436px, calc(100vw - 32px));
+  width: min(420px, calc(100vw - 32px));
 }
 
-.auth .dialog-head {
-  margin-bottom: 2px;
+.dialog-body.auth {
+  position: relative;
+  gap: 16px;
+  padding: 30px 28px 24px;
+}
+
+.auth-head {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  text-align: center;
 }
 
 .auth-mark {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 8px;
+  border-radius: 17px;
   background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line), var(--highlight);
 }
 
 .auth-logo {
-  width: 32px;
-  height: 32px;
-  margin-top: -2px;
+  width: 40px;
+  height: 40px;
+  margin-top: -3px;
+}
+
+.auth-head h2 {
+  margin: 0;
+  font: 750 24px/1.15 var(--font-display);
+  letter-spacing: -0.025em;
+}
+
+.auth-head p {
+  margin: 0;
+  max-width: 32ch;
+  color: var(--ink-2);
+  text-wrap: balance;
 }
 
 .auth-context {
@@ -444,8 +474,13 @@
 
 .auth-sent-close {
   position: absolute;
+  z-index: 2;
   top: 14px;
   right: 14px;
+}
+
+.waitlist .auth-sent-close {
+  background: color-mix(in srgb, var(--surface-solid) 70%, transparent);
 }
 
 .sent-art {
@@ -548,17 +583,229 @@
   width: 100%;
 }
 
-/* Plans */
+/* Plans: the pitch on the left (a sky over the brand skyline), the choice on the right */
 
 .plan-dialog {
-  width: min(600px, calc(100vw - 32px));
+  width: min(880px, calc(100vw - 32px));
+}
+
+.dialog-body.plans {
+  position: relative;
+  grid-template-columns: minmax(0, 0.94fr) minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+}
+
+.plans-close {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  right: 14px;
+}
+
+.plans-pitch {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 22px;
+  padding: 30px 30px 136px;
+  border-right: 1px solid var(--line);
+  /* Sand paper at the top, hazing to a pale sky at the horizon where the skyline stands. */
+  background: linear-gradient(180deg, var(--surface-2) 0%, color-mix(in srgb, var(--bay-300) 30%, var(--surface-solid)) 100%);
+  overflow: hidden;
+}
+
+:root[data-theme='night'] .plans-pitch {
+  background: linear-gradient(180deg, var(--surface-solid) 0%, color-mix(in srgb, var(--bay-700) 34%, var(--surface-solid)) 100%);
+}
+
+.plans-art {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 104px;
+  pointer-events: none;
+}
+
+.plans-art .skyline {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: calc(100% - 24px);
+  height: auto;
+  transform: translateX(-50%);
+}
+
+.plans-head h2 {
+  margin: 16px 0 10px;
+  font: 750 34px/1.02 var(--font-display);
+  letter-spacing: -0.035em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.plans-head p {
+  margin: 0;
+  max-width: 34ch;
+  color: var(--ink-2);
+  font-size: var(--t-lg);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.plans-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 700 14px/1 var(--font-display);
+  letter-spacing: -0.02em;
+  color: var(--ink-2);
+}
+
+.plans-mark {
+  width: 26px;
+  height: 26px;
+  margin: -3px 0 -1px -2px;
+}
+
+.plan-includes > ul {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-includes > ul > li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.plan-includes .tile {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-solid) 72%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--accent);
+}
+
+.plan-includes .tile .ico {
+  width: 16px;
+  height: 16px;
+}
+
+.plan-includes > ul > li > span:last-child {
+  padding-top: 5px;
+}
+
+.plan-includes b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+/* The house ladder, four rungs of it: a track with a stop at each. */
+.climb {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 12px 0 2px;
+  padding: 0;
+  list-style: none;
+}
+
+.climb li {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding-top: 17px;
+  padding-right: 6px;
+  line-height: 1.2;
+}
+
+.climb li::before {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: 4px;
+  right: -4px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--accent) 35%, var(--line-strong));
+}
+
+.climb li:last-child::before {
+  display: none;
+}
+
+.climb li::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--surface-solid);
+}
+
+.climb li:first-child::after {
+  background: var(--accent);
+}
+
+/* The moon, in sunlight. */
+.climb li:last-child::after {
+  border-color: var(--sun);
+  background: var(--sun);
+  box-shadow: 0 0 0 3px var(--sun-soft);
+}
+
+.climb b {
+  font: 700 12.5px/1.2 var(--font-ui);
+  color: var(--ink);
+}
+
+.climb span {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.plans-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 30px 30px 26px;
+}
+
+/* A note at the top of the column keeps clear of the close button. */
+.plans-choice > .inline-msg:first-child {
+  margin-right: 30px;
+}
+
+/* The button sits at the foot, level with the skyline's waterline. */
+.plans-choice > .plan-foot {
+  margin-top: auto;
+}
+
+.plans-label {
+  margin: 0 0 10px;
+  padding: 0;
+  font: 600 10.5px/1 var(--font-ui);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-3);
 }
 
 .plan-options {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 10px;
-  margin: 0;
+  margin: 8px 0 0;
   padding: 0;
   border: 0;
   min-width: 0;
@@ -567,16 +814,19 @@
 .plan-option {
   position: relative;
   display: grid;
-  gap: 4px;
-  padding: 14px 16px 15px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  min-height: 72px;
+  padding: 14px 18px 14px 16px;
   border: 1.5px solid var(--line-strong);
   border-radius: var(--r-lg);
   background: var(--surface-solid);
   cursor: pointer;
   transition:
-    border-color var(--dur-1),
-    background-color var(--dur-2),
-    box-shadow var(--dur-2);
+    border-color var(--dur-1) var(--ease-out),
+    background-color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
 }
 
 .plan-option:hover {
@@ -593,115 +843,150 @@
 
 .plan-option:has(input:checked) {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 5%, var(--surface-solid));
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-solid));
+  box-shadow: 0 0 0 4px var(--accent-soft);
 }
 
 .plan-option:has(input:focus-visible),
 .choice-card:has(input:focus-visible),
 .segmented label:has(input:focus-visible) {
   outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
-.plan-option-top {
-  display: flex;
-  align-items: center;
-  gap: 9px;
+.plan-label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
 }
 
 .plan-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-lg);
   font-weight: 650;
+  color: var(--ink);
+}
+
+.plan-label small {
+  font-size: var(--t-sm);
+  color: var(--ink-3);
 }
 
 .plan-badge {
-  position: absolute;
-  top: -10px;
-  right: 12px;
   display: inline-flex;
   align-items: center;
-  height: 21px;
-  padding: 0 8px;
+  height: 20px;
+  padding: 0 7px;
   border-radius: var(--r-pill);
-  background: var(--good);
-  color: #fff;
+  background: var(--good-soft);
+  color: var(--good);
   font: 650 11px/1 var(--font-ui);
-  box-shadow: 0 0 0 3px var(--surface-solid);
-}
-
-:root[data-theme='night'] .plan-badge {
-  color: var(--ink-900);
 }
 
 .plan-price {
   display: flex;
   align-items: baseline;
-  gap: 3px;
-  margin-top: 6px;
+  gap: 2px;
+  color: var(--ink);
 }
 
 .plan-price b {
-  font: 750 32px/1 var(--font-display);
-  letter-spacing: -0.03em;
+  font: 750 30px/1 var(--font-display);
+  letter-spacing: -0.035em;
 }
 
 .plan-price small {
   color: var(--ink-3);
   font-size: var(--t-md);
+  font-weight: 500;
 }
 
-.plan-sub {
-  font-size: var(--t-sm);
-  color: var(--ink-3);
-}
-
-.plan-includes,
-.acct-section {
+/* What happens after the button, in order. */
+.plan-steps {
   display: grid;
-  gap: 10px;
-}
-
-.plan-includes h3,
-.acct-section h3 {
-  margin: 0;
-  font: 600 10.5px/1 var(--font-ui);
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-
-.plan-includes ul {
-  display: grid;
-  gap: 10px;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
+  counter-reset: none;
 }
 
-.plan-includes li {
+.plan-steps li {
+  position: relative;
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 11px;
-  align-items: start;
+  align-content: start;
+  gap: 6px;
+  font-size: var(--t-sm);
+  line-height: 1.3;
   color: var(--ink-2);
 }
 
-.plan-includes .tile {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+.plan-steps b {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--ink-2);
+  font: 700 11px/1 var(--font-ui);
 }
 
-.plan-includes .tile .ico {
+/* A hairline from each step to the next. */
+.plan-steps li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 28px;
+  right: 0;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+/* Exactly what happens to their card, in a sentence. */
+.plan-today {
+  margin: -6px 0 0;
+  padding-left: 2px;
+  color: var(--ink-2);
+}
+
+.plan-today b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.plan-terms ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px 16px;
+  list-style: none;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.plan-terms li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+}
+
+.plan-terms .ico {
   width: 16px;
   height: 16px;
+  margin-top: 1.5px;
+  color: var(--ink-3);
 }
 
-.plan-includes li > span:last-child {
-  padding-top: 4px;
-}
-
-.plan-includes b {
+.plan-terms b {
   color: var(--ink);
   font-weight: 650;
 }
@@ -709,17 +994,6 @@
 .plan-foot {
   display: grid;
   gap: 10px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-}
-
-.plan-honest {
-  margin: 0;
-  color: var(--ink-2);
-}
-
-.plan-honest b {
-  color: var(--ink);
 }
 
 .plan-error:empty {
@@ -737,25 +1011,153 @@
   height: 17px;
 }
 
+.plan-foot .btn.primary .ico {
+  transition: transform var(--dur-2) var(--ease-out);
+}
+
+.plan-foot .btn.primary:hover .ico {
+  transform: translateX(2px);
+}
+
 .plan-fine {
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  margin: 0;
+  margin: 2px 0 0;
   font-size: var(--t-sm);
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 
 .plan-fine .ico {
   width: 14px;
   height: 14px;
   margin-top: 2px;
+  color: var(--good);
+}
+
+/* The skyline draws itself in when the plans open: water, bridge, city, then the sun. */
+.skyline {
+  display: block;
+  overflow: visible;
+}
+
+.skyline path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.skyline .sky-city {
+  stroke: var(--ink);
+  stroke-width: 1.3;
+  opacity: 0.85;
+}
+
+.skyline .sky-bridge {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.skyline .sky-sun {
+  stroke: var(--sun);
+  stroke-width: 1.5;
+}
+
+.skyline .sky-water {
+  stroke: var(--bay);
+  stroke-width: 1.2;
+  opacity: 0.55;
+}
+
+.skyline .sky-windows,
+.skyline .sky-stars {
+  opacity: 0;
+  transition: opacity var(--dur-4) var(--ease-out);
+}
+
+.skyline .sky-windows {
+  fill: var(--sun);
+}
+
+.skyline .sky-stars {
+  fill: var(--ink-2);
+}
+
+/* At night the sun pales to a moon, the stars come out and the offices light up. */
+:root[data-theme='night'] .skyline .sky-sun {
+  stroke: var(--ink-2);
+}
+
+:root[data-theme='night'] .skyline .sky-windows {
+  opacity: 0.9;
+}
+
+:root[data-theme='night'] .skyline .sky-stars {
+  opacity: 0.55;
+}
+
+.dialog[open] .skyline path {
+  stroke-dasharray: 1;
+  animation: sky-draw 600ms var(--ease-in-out) 80ms backwards;
+}
+
+.dialog[open] .skyline .sky-bridge {
+  animation-delay: 140ms;
+}
+
+.dialog[open] .skyline .sky-city {
+  animation-delay: 200ms;
+}
+
+.dialog[open] .skyline .sky-sun {
+  animation-duration: 400ms;
+  animation-delay: 440ms;
+}
+
+@keyframes sky-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+.dialog[open] .plans-choice > * {
+  animation: rise-in var(--dur-3) var(--ease-out) backwards;
+}
+
+.dialog[open] .plans-choice > :nth-child(2) {
+  animation-delay: 50ms;
+}
+
+.dialog[open] .plans-choice > :nth-child(3) {
+  animation-delay: 100ms;
+}
+
+.dialog[open] .plans-choice > :nth-child(n + 4) {
+  animation-delay: 150ms;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog[open] .skyline path,
+  .dialog[open] .plans-choice > * {
+    animation: none;
+  }
 }
 
 /* Setup: three steps */
 
 .onboard-dialog {
   width: min(620px, calc(100vw - 32px));
+}
+
+.onboard .dialog-head p {
+  text-wrap: pretty;
 }
 
 .steps {
@@ -934,6 +1336,57 @@
 .sees b {
   color: var(--ink);
   font-weight: 650;
+}
+
+/* Can see / can't see, side by side: what an install gives away, before it happens. */
+.perm {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-solid);
+  overflow: hidden;
+}
+
+.perm-col {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 12px 14px 13px;
+}
+
+.perm-col + .perm-col {
+  border-left: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.perm-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-sm);
+  font-weight: 650;
+}
+
+.perm-label .ico {
+  width: 15px;
+  height: 15px;
+}
+
+.perm .can .perm-label {
+  color: var(--good);
+}
+
+.perm .cannot .perm-label {
+  color: var(--ink-2);
+}
+
+.perm p {
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  color: var(--ink-2);
+  text-wrap: pretty;
 }
 
 .step-actions {
@@ -1277,24 +1730,84 @@
   color: var(--good);
 }
 
-/* Account */
+/* "Build my city" before Stripe is connected: plainly locked, not a faded orange that reads as broken. */
+.btn.primary.finish[disabled] {
+  background: var(--surface-2);
+  color: var(--ink-3);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.btn.primary.finish[disabled] .ico {
+  width: 16px;
+  height: 16px;
+}
+
+/* Account: settings. Quiet section labels, one bordered list per section. */
 
 .account-dialog {
   width: min(560px, calc(100vw - 32px));
 }
 
+.dialog-body.account {
+  gap: 22px;
+  padding: 22px 24px 18px;
+}
+
+.acct-section {
+  display: grid;
+  gap: 9px;
+}
+
+.acct-section h3 {
+  margin: 0;
+  font: 600 10.5px/1 var(--font-ui);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
 .acct-plan {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
-  padding: 12px;
+  padding: 14px 14px 14px 12px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--accent) 5%, var(--surface-solid)), var(--surface-solid) 60%);
+}
+
+.acct-plan[data-status='none'],
+.acct-plan[data-status='canceled'] {
+  background: var(--surface-solid);
 }
 
 .acct-plan:has(.btn + .btn) {
   grid-template-columns: auto 1fr auto auto;
+}
+
+.acct-plan-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.acct-mark {
+  width: 30px;
+  height: 30px;
+  margin-top: -2px;
+}
+
+.acct-plan[data-status='none'] .acct-mark,
+.acct-plan[data-status='canceled'] .acct-mark {
+  filter: grayscale(1);
+  opacity: 0.6;
 }
 
 .acct-plan-text {
@@ -1308,32 +1821,29 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  font-weight: 650;
+  font: 700 16px/1.2 var(--font-display);
+  letter-spacing: -0.015em;
+}
+
+.acct-plan-text b .chip {
+  font-family: var(--font-ui);
+  letter-spacing: 0;
 }
 
 .acct-plan-text small {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
   font-size: var(--t-sm);
   color: var(--ink-2);
-}
-
-.acct-plan-text small .ico {
-  width: 14px;
-  height: 14px;
-  margin-top: 1.5px;
-  color: var(--ink-3);
 }
 
 .acct-plan .btn:not(.primary) {
   border: 1px solid var(--line-strong);
   background: var(--surface-solid);
+  box-shadow: var(--shadow-1);
 }
 
 .acct-plan .btn .ico {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 
 .acct-prefs {
@@ -1351,9 +1861,18 @@
   cursor: progress;
 }
 .acct-fine {
-  margin: -2px 0 0;
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  margin: -1px 0 0;
   font-size: var(--t-sm);
   color: var(--ink-3);
+}
+
+.acct-fine .ico {
+  width: 13px;
+  height: 13px;
+  margin-top: 2.5px;
 }
 
 .acct-error:empty {
@@ -1533,24 +2052,129 @@
     animation: fade-in var(--dur-3);
   }
 
-  .billing-text {
-    flex: 1 1 200px;
+  /* Icon, words and the close in a row; the button under the words. */
+  .billing-banner:has([data-act]) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 8px 12px;
+    padding: 12px 8px 12px 12px;
+  }
+
+  .billing-banner [data-act='portal'] {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  .billing-banner [data-act='dismiss'] {
+    grid-column: 3;
+    grid-row: 1;
+    margin-top: -4px;
+  }
+
+  /* Every hosted dialog is a full-width sheet on a phone (their desktop widths would otherwise win). */
+  .dialog.plan-dialog,
+  .dialog.auth-dialog,
+  .dialog.onboard-dialog,
+  .dialog.account-dialog,
+  .dialog.waitlist-dialog {
+    width: 100%;
+  }
+
+  /* Plans as one column: the picture and the promise, the price, then what you get and the small print. */
+  .dialog-body.plans {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    padding: 0 16px 16px;
+  }
+
+  .plans-pitch,
+  .plans-choice {
+    display: contents;
+  }
+
+  .plans-art {
+    position: relative;
+    order: 0;
+    height: 96px;
+    margin: 0 -16px -8px;
+    background: linear-gradient(180deg, var(--surface-2), color-mix(in srgb, var(--bay-300) 30%, var(--surface-solid)));
+  }
+
+  :root[data-theme='night'] .plans-art {
+    background: linear-gradient(180deg, var(--surface-solid), color-mix(in srgb, var(--bay-700) 34%, var(--surface-solid)));
+  }
+
+  /* Left of the close button, so the sun isn't under it. */
+  .plans-art .skyline {
+    left: 10px;
+    width: calc(100% - 62px);
+    transform: none;
+  }
+
+  .plan-steps {
+    order: 6;
+  }
+
+  .plans-head {
+    order: 1;
+  }
+
+  .plans-head h2 {
+    margin-top: 12px;
+    font-size: 29px;
+  }
+
+  .plans-choice > .inline-msg {
+    order: 2;
+    margin-right: 0;
   }
 
   .plan-options {
-    gap: 8px;
+    order: 3;
+    margin: 0;
+  }
+
+  .plan-today {
+    order: 4;
+  }
+
+  .plan-includes {
+    order: 5;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+
+  .plan-terms {
+    order: 6;
+  }
+
+  /* The button stays in reach while the rest scrolls. */
+  .plan-foot {
+    order: 7;
+    position: sticky;
+    bottom: 0;
+    margin: 0 -16px -16px;
+    padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+    background: var(--surface-solid);
+    box-shadow: 0 -1px 0 var(--line), 0 -12px 20px -12px color-mix(in srgb, var(--ink) 18%, transparent);
   }
 
   .plan-option {
-    padding: 13px 12px 13px;
+    min-height: 66px;
+    padding: 12px 14px 12px 13px;
+    gap: 12px;
   }
 
   .plan-price b {
-    font-size: 28px;
+    font-size: 27px;
   }
 
-  .plan-badge {
-    right: 8px;
+  .plans-close {
+    top: 10px;
+    right: 10px;
+    background: color-mix(in srgb, var(--surface-solid) 70%, transparent);
   }
 
   .step {
@@ -1571,6 +2195,15 @@
 
   .choice-extra {
     padding-left: 0;
+  }
+
+  .perm {
+    grid-template-columns: 1fr;
+  }
+
+  .perm-col + .perm-col {
+    border-left: 0;
+    border-top: 1px solid var(--line);
   }
 
   .field-row {
@@ -1661,9 +2294,53 @@
   width: min(460px, calc(100vw - 32px));
 }
 
+.dialog-body.waitlist {
+  padding: 0 28px 24px;
+}
+
+/* A sky over the brand skyline, full-bleed across the top. */
 .waitlist-art {
-  background: var(--bay-soft);
-  color: var(--bay);
+  position: relative;
+  width: calc(100% + 56px);
+  height: 112px;
+  margin: 0 -28px 6px;
+  background: linear-gradient(180deg, var(--surface-2), color-mix(in srgb, var(--bay-300) 30%, var(--surface-solid)));
+}
+
+:root[data-theme='night'] .waitlist-art {
+  background: linear-gradient(180deg, var(--surface-solid), color-mix(in srgb, var(--bay-700) 34%, var(--surface-solid)));
+}
+
+.waitlist-art .skyline {
+  position: absolute;
+  left: 20px;
+  bottom: 0;
+  width: calc(100% - 76px);
+  height: auto;
+}
+
+.waitlist-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: var(--t-sm);
+  font-weight: 650;
+  animation: spark-in var(--dur-4) var(--ease-spring) 0.35s both;
+}
+
+.waitlist-pill .ico {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.4;
+}
+
+.waitlist h2 {
+  margin-top: 0;
 }
 
 .waitlist .sent-tips a {
@@ -1679,22 +2356,47 @@
   color: var(--palm-500);
 }
 
-/* Account: your data, deleting, help */
+/* Account: your data, and a quiet danger zone */
 
-.acct-data {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.acct-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 11px 12px 11px 14px;
 }
 
-.acct-data .btn:not(.ghost) {
+.acct-row + .acct-row {
+  border-top: 1px solid var(--line);
+}
+
+.acct-row .conn-text small {
+  white-space: normal;
+}
+
+.acct-row .btn.sm:not(.danger-quiet) {
   border: 1px solid var(--line-strong);
   background: var(--surface-solid);
 }
 
-.acct-data .btn .ico {
-  width: 16px;
-  height: 16px;
+.acct-row .btn .ico {
+  width: 15px;
+  height: 15px;
+}
+
+.acct-row.is-danger b {
+  color: var(--bad);
+}
+
+/* Red only in its words until you reach for it. */
+.btn.danger-quiet {
+  border: 1px solid color-mix(in srgb, var(--bad) 28%, transparent);
+  color: var(--bad);
+}
+
+.btn.danger-quiet:hover {
+  border-color: var(--bad);
+  background: var(--bad-soft);
 }
 
 .btn.danger-text {
@@ -1733,8 +2435,13 @@
   font-weight: 650;
 }
 
+/* Until the email is typed, the button is plainly unavailable rather than a faded red. */
 .delete-form .btn.danger[disabled] {
-  opacity: 0.45;
+  background: var(--surface-2);
+  color: var(--ink-3);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  opacity: 1;
+  cursor: not-allowed;
 }
 
 .goodbye-art {
@@ -1771,58 +2478,146 @@
   color: var(--ink-3);
 }
 
-/* The 6-digit code, for when a mail scanner used up the link */
+/* The 6-digit code, for when a mail scanner used up the link: six boxes behind one real input. */
 
 .otp-form {
   display: grid;
-  gap: 7px;
+  gap: 8px;
   width: 100%;
+  margin-top: 4px;
   text-align: left;
 }
 
 .otp-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
 }
 
-.otp-input {
-  height: 46px;
+.otp-box {
+  position: relative;
   min-width: 0;
-  padding: 0 14px;
-  border-radius: var(--r-sm);
+}
+
+.otp-cells {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  height: 50px;
+  pointer-events: none;
+}
+
+.otp-cells i {
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
   border: 1px solid var(--line-strong);
   background: var(--surface-2);
   color: var(--ink);
   font: 600 22px/1 var(--font-mono);
-  letter-spacing: 0.42em;
-  /* Letter-spacing trails the last digit: indent by the same so the code sits centred. */
-  text-indent: 0.42em;
-  text-align: center;
+  font-style: normal;
   transition:
-    border-color var(--dur-1),
-    box-shadow var(--dur-1);
+    border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out);
 }
 
-.otp-input::placeholder {
-  color: var(--ink-4);
-  letter-spacing: 0.36em;
+.otp-cells i:not(:empty) {
+  background: var(--surface-solid);
+  animation: digit-in var(--dur-2) var(--ease-out);
 }
 
-.otp-input:focus {
-  outline: none;
+.otp-cells i.is-next {
   border-color: var(--focus);
   box-shadow: 0 0 0 3px var(--bay-soft);
 }
 
-.otp-input[aria-invalid='true'] {
+/* The caret, in the box the next digit goes into. */
+.otp-cells i.is-next:empty::after {
+  content: '';
+  width: 1.5px;
+  height: 22px;
+  border-radius: 1px;
+  background: var(--ink);
+  animation: caret 1.06s steps(1) infinite;
+}
+
+/* The real field sits on top of the boxes, invisible, so typing, pasting and autofill all just work. */
+.otp-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+  letter-spacing: 0;
+  outline: none;
+}
+
+.otp-input::selection {
+  background: transparent;
+}
+
+.otp-input:-webkit-autofill {
+  transition: background-color 99999s;
+}
+
+.otp-box:has(.otp-input[aria-invalid='true']) .otp-cells i {
   border-color: var(--bad);
+  box-shadow: none;
+}
+
+.otp-box:has(.otp-input[aria-invalid='true']) .otp-cells {
+  animation: shake 320ms var(--ease-out);
+}
+
+.otp-box:has(.otp-input:read-only) .otp-cells i {
+  opacity: 0.6;
+}
+
+@keyframes digit-in {
+  from {
+    transform: translateY(3px) scale(0.92);
+  }
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* "Not that one": a small no, side to side. */
+@keyframes shake {
+  20%,
+  60% {
+    transform: translateX(-4px);
+  }
+  40%,
+  80% {
+    transform: translateX(4px);
+  }
 }
 
 .otp-row .btn {
-  height: 46px;
+  height: 50px;
 }
 
 .otp-form #otp-error:empty {
   display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .otp-cells,
+  .otp-cells i,
+  .otp-cells i::after {
+    animation: none !important;
+  }
 }

@@ -2,7 +2,7 @@
  * "You're on the list": signed in while the waitlist is on, before this
  * email's spot has opened. Warm, specific, and honest about what happens next.
  */
-import { busy, focusFirst, makeDialog } from './dialogs.ts';
+import { busy, focusFirst, makeDialog, skylineSvg } from './dialogs.ts';
 import { escape, showModal } from './dom.ts';
 import { ICON } from './icons.ts';
 
@@ -27,7 +27,8 @@ export class WaitlistDialog {
     this.d.innerHTML = `
       <div class="dialog-body auth-sent waitlist">
         <button class="btn ghost icon-only close auth-sent-close" type="button" data-act="close" aria-label="Close">${ICON.close}</button>
-        <div class="sent-art waitlist-art" aria-hidden="true"><span class="sent-envelope">${ICON.flag}</span><span class="sent-spark">${ICON.sparkle}</span></div>
+        <div class="waitlist-art" aria-hidden="true">${skylineSvg()}</div>
+        <span class="waitlist-pill">${ICON.check}<span>Your spot is saved</span></span>
         <h2 id="waitlist-title">You're on the list</h2>
         <p class="sent-lede">TinyTown is opening to its waitlist a few founders at a time, so every new city gets a smooth start. We'll email ${email ? `<b>${escape(email)}</b>` : 'you'} the moment your spot opens. Then you can pick a plan and build yours.</p>
         <ul class="sent-tips">
