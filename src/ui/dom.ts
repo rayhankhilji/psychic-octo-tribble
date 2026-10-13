@@ -91,3 +91,61 @@ export function shortMrr(n: number): string {
 export function dateLabel(t: number, opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }): string {
   return new Date(t).toLocaleDateString('en-US', { ...opts, timeZone: 'UTC' });
 }
+
+const openers = new WeakMap<HTMLDialogElement, HTMLElement>();
+
+/** Opens a modal dialog, remembering what had focus so closing can hand it back. */
+const trapped = new WeakSet<HTMLDialogElement>();
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, summary, [tabindex]:not([tabindex="-1"])';
+
+export function showModal(dialog: HTMLDialogElement) {
+  if (dialog.open) return;
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== document.body) openers.set(dialog, active);
+  if (!trapped.has(dialog)) {
+    trapped.add(dialog);
+    // A modal dialog already makes the page inert; this also keeps Tab from wandering into the browser's own UI.
+    dialog.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const items = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((x) => x.offsetParent !== null || x === document.activeElement);
+      if (!items.length) return;
+      const first = items[0]!;
+      const last = items.at(-1)!;
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    });
+  }
+  dialog.showModal();
+}
+
+/**
+ * Modal dialogs already trap focus and close on Esc; this hands focus back to
+ * whatever opened them, unless something else has taken it since.
+ */
+export function returnFocusOnClose(dialog: HTMLDialogElement, onClose?: () => void) {
+  dialog.addEventListener('close', () => {
+    onClose?.();
+    const back = openers.get(dialog);
+    openers.delete(dialog);
+    const now = document.activeElement;
+    if (back?.isConnected && (!now || now === document.body || dialog.contains(now))) back.focus({ preventScroll: true });
+  });
+}
+
+/**
+ * Restarts an element's CSS animation (adding `cls` the first time) without
+ * the `void el.offsetWidth` trick, which forces a synchronous layout. That
+ * matters in code that runs 12 times a second during the replay.
+ */
+export function replayAnimation(e: Element, cls?: string) {
+  if (cls && !e.classList.contains(cls)) return void e.classList.add(cls);
+  for (const a of e.getAnimations?.() ?? []) {
+    a.cancel();
+    a.play();
+  }
+}

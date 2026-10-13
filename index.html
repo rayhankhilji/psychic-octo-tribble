@@ -42,7 +42,7 @@
       .boot-skyline .sky-water { stroke: #2c6fb7; stroke-width: 1.2; stroke-dasharray: 1; opacity: 0.6; animation-delay: 1.2s; }
       .boot-bar { position: relative; width: 148px; height: 3px; margin-top: 22px; border-radius: 3px; background: rgba(27, 34, 54, 0.1); overflow: hidden; }
       .boot-bar i { position: absolute; inset: 0; width: 40%; border-radius: 3px; background: linear-gradient(90deg, transparent, #e5512b, transparent); animation: boot-slide 1.3s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
-      .boot-status { min-height: 18px; margin: 12px 0 0; font-size: 12.5px; color: #8a8a94; font-variant-numeric: tabular-nums; }
+      .boot-status { min-height: 18px; margin: 12px 0 0; font-size: 12.5px; color: #62667a; font-variant-numeric: tabular-nums; }
       .boot.failed .boot-bar { display: none; }
       .boot.failed .boot-status { color: #b83c1c; max-width: 360px; font-size: 14px; }
       @keyframes boot-rise { from { opacity: 0; transform: translateY(10px) scaleY(0.2); } }
@@ -73,7 +73,7 @@
         <p class="boot-status">Laying out the streets…</p>
       </div>
     </div>
-    <div id="world" aria-label="Your city"></div>
+    <div id="world" role="img" aria-label="Your city, drawn from your real metrics. Use Build (B) and Your home (H) to play from the keyboard."></div>
     <div id="ui"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

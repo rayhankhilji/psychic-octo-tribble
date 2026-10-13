@@ -14,9 +14,10 @@ import { DAY } from './data/types.ts';
 import type { Item } from './game/catalog.ts';
 import { demoActions } from './game/demo-script.ts';
 import { describeGame, diffGame, freePlots, money, simulate, type Action, type GameState, type SimOptions } from './game/economy.ts';
-import { clearActions, joinedAt, loadActions, saveActions } from './game/save.ts';
+import { clearActions, joinedAt, lastSeen, loadActions, markSeen, saveActions } from './game/save.ts';
+import { awaySummary, snapshotIndexAt } from './game/away.ts';
 import { HOME_TIERS } from './game/catalog.ts';
-import { drawMark } from './ui/brand.ts';
+import { composePostcard } from './ui/postcard.ts';
 import { afterFrames, bootError, hideBoot, narrateBoot } from './ui/loader.ts';
 import { setThumbnailContext } from './ui/thumbnails.ts';
 
@@ -168,14 +169,35 @@ class App {
     }
     if (notice) this.hud.notice(notice);
     // Demo opens with the story from day one; a live world opens on today.
-    if (timeline.source === 'demo' || params.has('replay')) this.replay();
+    // `?away=N` previews the welcome-back card as if you last looked N days ago.
+    if ((timeline.source === 'demo' && !params.has('away')) || params.has('replay')) this.replay();
     else this.show(this.last, false);
     this.stage.start();
     this.refreshClock();
-    // Lift the boot screen once the world has drawn its first few frames.
-    afterFrames(3, () => hideBoot());
+    // Lift the boot screen once the world has drawn its first few frames, then say what changed.
+    afterFrames(3, () => {
+      hideBoot();
+      this.welcomeBack();
+    });
 
     if (timeline.source === 'live') window.setInterval(() => this.poll(), POLL_MS);
+  }
+
+  /** "While you were away": what happened since this browser last showed the city. */
+  private welcomeBack() {
+    const snaps = this.timeline.snapshots;
+    const now = snaps.length - 1;
+    const forced = Number(params.get('away'));
+    const preview = params.has('away') && forced > 0;
+    if (now < 1 || (this.timeline.source === 'demo' && !preview)) return;
+    const seen = preview ? snaps[Math.max(0, now - forced)]!.t : lastSeen(this.saveKey);
+    if (!preview) markSeen(this.saveKey, snaps[now]!.t);
+    if (seen === null) return;
+    const from = snapshotIndexAt(snaps, seen);
+    if (from < 0 || from >= now) return;
+    const before = simulate(snaps, this.actions, from, this.sim);
+    const summary = awaySummary(before, this.game, snaps[from]!, snaps[now]!);
+    if (summary) this.hud.showAway(summary);
   }
 
   private refreshClock() {
@@ -323,143 +345,23 @@ class App {
     const tier = HOME_TIERS[g.home.tier]!;
     const home = tier.options.find((o) => o.id === g.home.option)?.name ?? tier.options[0]!.name;
 
-    /** A postcard: the city framed on warm sand, the mark, the name, the day and a few numbers. */
-    const compose = (src: HTMLCanvasElement, withMetrics: boolean) => {
-      // Never upscale a small (phone) capture much: blur reads worse than a smaller card.
-      const OW = Math.round(Math.min(1600, Math.max(960, src.width * 1.12)));
-      const K = OW / 1600;
-      const pad = 44 * K;
-      const band = 168 * K;
-      // Keep the picture between portrait 4:5 and wide 2:1, cropping the middle.
-      const aspect = Math.min(2, Math.max(0.8, src.width / src.height));
-      const iw = OW - pad * 2;
-      const ih = Math.round(iw / aspect);
-      const OH = Math.round(pad + ih + band);
-      const out = document.createElement('canvas');
-      out.width = OW;
-      out.height = OH;
-      const ctx = out.getContext('2d')!;
-      const ink = '#1b2236';
-      const ink3 = '#7c7f8e';
-      const display = '"Bricolage Grotesque", Geist, system-ui, sans-serif';
-      const ui = 'Geist, system-ui, sans-serif';
-
-      // Paper
-      const paper = ctx.createLinearGradient(0, 0, 0, OH);
-      paper.addColorStop(0, '#fbf5ea');
-      paper.addColorStop(1, '#f1e6d2');
-      ctx.fillStyle = paper;
-      ctx.fillRect(0, 0, OW, OH);
-      ctx.strokeStyle = 'rgba(27,34,54,0.10)';
-      ctx.lineWidth = 2 * K;
-      ctx.strokeRect(16 * K, 16 * K, OW - 32 * K, OH - 32 * K);
-
-      // The picture, cropped to the chosen aspect, with a soft shadow.
-      let sw = src.width;
-      let sh = src.height;
-      if (sw / sh > aspect) sw = sh * aspect;
-      else sh = sw / aspect;
-      const r = 20 * K;
-      ctx.save();
-      ctx.shadowColor = 'rgba(27,34,54,0.28)';
-      ctx.shadowBlur = 36 * K;
-      ctx.shadowOffsetY = 14 * K;
-      ctx.fillStyle = '#cfe4f4';
-      ctx.beginPath();
-      ctx.roundRect(pad, pad, iw, ih, r);
-      ctx.fill();
-      ctx.restore();
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(pad, pad, iw, ih, r);
-      ctx.clip();
-      ctx.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, pad, pad, iw, ih);
-      // A whisper of vignette so the frame reads as a print.
-      const vg = ctx.createRadialGradient(OW / 2, pad + ih / 2, ih * 0.45, OW / 2, pad + ih / 2, iw * 0.75);
-      vg.addColorStop(0, 'rgba(27,34,54,0)');
-      vg.addColorStop(1, 'rgba(27,34,54,0.16)');
-      ctx.fillStyle = vg;
-      ctx.fillRect(pad, pad, iw, ih);
-      ctx.restore();
-      ctx.strokeStyle = 'rgba(27,34,54,0.12)';
-      ctx.lineWidth = 1.5 * K;
-      ctx.beginPath();
-      ctx.roundRect(pad, pad, iw, ih, r);
-      ctx.stroke();
-
-      // Stamp: the mark and wordmark, pinned to the picture's corner.
-      ctx.font = `800 ${30 * K}px ${display}`;
-      const word = 'TinyTown';
-      const ww = ctx.measureText(word).width;
-      const sx = pad + 22 * K;
-      const sy = pad + 22 * K;
-      const sH = 60 * K;
-      ctx.save();
-      ctx.shadowColor = 'rgba(27,34,54,0.22)';
-      ctx.shadowBlur = 18 * K;
-      ctx.shadowOffsetY = 6 * K;
-      ctx.fillStyle = 'rgba(253,249,242,0.96)';
-      ctx.beginPath();
-      ctx.roundRect(sx, sy, 16 * K + 40 * K + 12 * K + ww + 22 * K, sH, sH / 2);
-      ctx.fill();
-      ctx.restore();
-      drawMark(ctx, sx + 12 * K, sy + 9 * K, 42 * K);
-      ctx.fillStyle = ink;
-      ctx.textBaseline = 'middle';
-      ctx.fillText(word, sx + 16 * K + 40 * K + 10 * K, sy + sH / 2 + 1 * K);
-
-      // Caption: city name and the day.
-      const by = pad + ih;
-      ctx.textBaseline = 'alphabetic';
-      ctx.textAlign = 'left';
-      ctx.fillStyle = ink;
-      ctx.font = `800 ${50 * K}px ${display}`;
-      ctx.fillText(t.name, pad + 4 * K, by + 86 * K);
-      ctx.font = `500 ${23 * K}px ${ui}`;
-      ctx.fillStyle = ink3;
-      ctx.fillText(`Day ${day.toLocaleString('en-US')} · ${date}`, pad + 6 * K, by + 124 * K);
-
-      // Stats on the right, as little cards.
-      const stats: [string, string][] = withMetrics
-        ? [
-            ['MRR', formatMoney(s.mrr, t.currency)],
-            ['Customers', s.customers.toLocaleString('en-US')],
-            ['Releases', s.releases.toLocaleString('en-US')],
-          ]
-        : [
-            ['Satisfaction', `${g.satisfaction.score}/100`],
-            ['Built', `${g.owned.length}`],
-            ['Home', home],
-          ];
-      let x = OW - pad;
-      const ch = 84 * K;
-      const cy = by + 34 * K;
-      for (const [label, value] of [...stats].reverse()) {
-        ctx.font = `750 ${30 * K}px ${display}`;
-        const vw = ctx.measureText(value).width;
-        ctx.font = `600 ${14 * K}px ${ui}`;
-        const lw = ctx.measureText(label.toUpperCase()).width * 1.1;
-        const cw = Math.max(vw, lw) + 40 * K;
-        x -= cw;
-        ctx.fillStyle = 'rgba(253,249,242,0.9)';
-        ctx.strokeStyle = 'rgba(27,34,54,0.10)';
-        ctx.lineWidth = 1.5 * K;
-        ctx.beginPath();
-        ctx.roundRect(x, cy, cw, ch, 16 * K);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = ink3;
-        ctx.font = `600 ${14 * K}px ${ui}`;
-        ctx.letterSpacing = `${1.4 * K}px`;
-        ctx.fillText(label.toUpperCase(), x + 20 * K, cy + 32 * K);
-        ctx.letterSpacing = '0px';
-        ctx.fillStyle = label === 'MRR' || label === 'Satisfaction' ? '#e5512b' : ink;
-        ctx.font = `750 ${30 * K}px ${display}`;
-        ctx.fillText(value, x + 20 * K, cy + 66 * K);
-        x -= 12 * K;
-      }
-      return out;
-    };
+    /** A postcard of the city: day or night to match the world, real numbers only when asked. */
+    const compose = (src: HTMLCanvasElement, withMetrics: boolean) =>
+      composePostcard(src, {
+        name: t.name,
+        caption: `Day ${day.toLocaleString('en-US')} · ${date}`,
+        stats: withMetrics
+          ? [
+              ['MRR', formatMoney(s.mrr, t.currency), true],
+              ['Customers', s.customers.toLocaleString('en-US')],
+              ['Releases', s.releases.toLocaleString('en-US')],
+            ]
+          : [
+              ['Satisfaction', `${g.satisfaction.score}/100`, true],
+              ['Built', `${g.owned.length}`],
+              ['Home', home],
+            ],
+      });
     const slug = t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'city';
     this.hud.openShare(frame, compose, `tinytown-${slug}-day-${day}.png`);
   }

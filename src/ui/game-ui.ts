@@ -1,8 +1,8 @@
 import { CATALOG, HOME_TIERS, HQ_LEVEL_NAMES, ITEMS, REGIONS, SWAP_FEE, type Category, type Item } from '../game/catalog.ts';
 import { canBuy, decayOf, FREE_HOUSED, money, MRR_PER_USER, type GameState } from '../game/economy.ts';
-import { compact, el, escape, setHtml, setText, shortMrr, Tween } from './dom.ts';
+import { compact, el, escape, returnFocusOnClose, setHtml, setText, shortMrr, showModal, Tween } from './dom.ts';
 import { ICON, type IconName } from './icons.ts';
-import { lazyThumbnail, prewarmThumbnails } from './thumbnails.ts';
+import { lazyThumbnail, prewarmThumbnails, setThumbnailBusy } from './thumbnails.ts';
 
 export interface GameHandlers {
   onBuild(item: Item, plot?: string): void;
@@ -88,13 +88,23 @@ export class GameUI {
   private grid: HTMLElement;
   private cards = new Map<string, { root: HTMLElement; action: HTMLElement; sig: string }>();
   private buildBtn: HTMLButtonElement;
+  private drawerReturn: HTMLElement | null = null;
 
   private homeDialog: HTMLDialogElement;
+  private homeBody: HTMLElement;
+  private homeLive: HTMLElement;
   private homeSig = '';
+  private homeStatus = '';
+  /** The renovation waiting for a second click, as `tier:option`. */
+  private confirmPick: string | null = null;
+  /** The control to focus after the next re-render (`data-key`). */
+  private focusAfter: string | undefined;
   private banner: HTMLElement;
 
   constructor(root: HTMLElement, side: HTMLElement, tools: HTMLElement, h: GameHandlers) {
     this.h = h;
+    // Thumbnail prewarming waits out the replay (the HUD marks the root while it plays).
+    setThumbnailBusy(() => root.classList.contains('is-playing'));
 
     // ── City card ──────────────────────────────────────────────────────
     this.card = el(
@@ -103,7 +113,7 @@ export class GameUI {
       `<div class="card-head"><span class="eyebrow" data-tip-title="Your treasury" data-tip="Every $1 of real revenue is $10,000 to build with, paid daily. Nothing in the game makes money: the only way to grow your city is to grow your startup.">City treasury</span><span class="chip mood"></span></div>
        <div class="treasury"><b class="num treasury-value">–</b><span class="chip net num"></span><span class="floaters" aria-hidden="true"></span></div>
        <div class="vitals">
-         <div class="ring" tabindex="0">
+         <div class="ring" tabindex="0" role="img" aria-label="Satisfaction">
            <svg viewBox="0 0 50 50" aria-hidden="true"><circle class="ring-track" cx="25" cy="25" r="21"/><circle class="ring-fill" cx="25" cy="25" r="21" stroke-dasharray="${RING.toFixed(2)}" stroke-dashoffset="${RING.toFixed(2)}"/></svg>
            <span class="ring-value num">–</span>
          </div>
@@ -112,7 +122,7 @@ export class GameUI {
            ${(['housing', 'upkeep', 'amenities', 'momentum'] as const).map((k) => `<div class="part" data-part="${k}"><span>${k[0]!.toUpperCase() + k.slice(1)}</span><i><b></b></i></div>`).join('')}
          </div>
        </div>
-       <div class="housing" tabindex="0"></div>
+       <div class="housing" tabindex="0" role="group" aria-label="Housing"></div>
        <div class="alerts"></div>
        <p class="fine num"></p>`,
     );
@@ -163,8 +173,8 @@ export class GameUI {
         </div>
         <button class="btn ghost icon-only" data-act="close" aria-label="Close (Esc)" data-tip="Close (Esc)">${ICON.close}</button>
       </header>
-      <nav class="tabs" role="tablist" aria-label="Categories">${TABS.map((t) => `<button class="tab" role="tab" type="button" data-tab="${t.id}" aria-selected="false"><span>${t.label}</span><small class="num"></small></button>`).join('')}</nav>
-      <div class="items" role="list"></div>
+      <nav class="tabs" role="tablist" aria-label="Categories">${TABS.map((t) => `<button class="tab" role="tab" type="button" data-tab="${t.id}" aria-selected="false" aria-controls="build-items"><span>${t.label}</span><small class="num"></small></button>`).join('')}</nav>
+      <div class="items" id="build-items" role="list" aria-label="Things to build"></div>
       <p class="drawer-foot">${ICON.coin}<span>Every dollar here came from real revenue.</span></p>`;
     this.drawerTitle = this.drawer.querySelector('.drawer-title')!;
     this.drawerSub = this.drawer.querySelector('.drawer-sub')!;
@@ -183,13 +193,32 @@ export class GameUI {
 
     // ── Your home ──────────────────────────────────────────────────────
     this.homeDialog = el('dialog', { class: 'dialog home-dialog', 'aria-labelledby': 'home-title', tabindex: '-1', autofocus: '' });
+    // The body re-renders as the city changes; the live region stays put so screen readers hear it.
+    this.homeBody = el('div', { class: 'dialog-body' });
+    this.homeLive = el('p', { class: 'sr-only', role: 'status' });
+    this.homeDialog.append(this.homeBody, this.homeLive);
     this.homeDialog.addEventListener('click', (e) => {
       if (e.target === this.homeDialog) return this.homeDialog.close();
       const btn = (e.target as HTMLElement).closest('button');
       if (!btn) return;
+      if (btn.getAttribute('aria-disabled') === 'true') return;
+      if (btn.dataset.ask) {
+        // Renovations cost real treasury: ask once more before spending it.
+        this.confirmPick = btn.dataset.ask;
+        this.focusAfter = `confirm:${btn.dataset.ask}`;
+        return this.renderHome();
+      }
+      if (btn.dataset.act === 'keep') {
+        this.focusAfter = btn.dataset.key?.replace(/^keep:/, 'pick:');
+        this.confirmPick = null;
+        return this.renderHome();
+      }
       if (btn.dataset.pick) {
         const [tier, choice] = btn.dataset.pick.split(':');
+        this.confirmPick = null;
         h.onPickHome(Number(tier), choice!);
+        // Rejected (nothing changed): show the buttons again rather than a stale confirm.
+        this.renderHome();
       }
       if (btn.dataset.act === 'moon') {
         this.homeDialog.close();
@@ -204,6 +233,11 @@ export class GameUI {
         this.homeDialog.close();
         h.onFocus(btn.dataset.focus as never);
       }
+    });
+    returnFocusOnClose(this.homeDialog, () => {
+      this.confirmPick = null;
+      this.homeStatus = '';
+      setText(this.homeLive, '');
     });
     document.body.append(this.homeDialog);
 
@@ -244,6 +278,7 @@ export class GameUI {
       if (spent > 0) this.floater(`−${money(spent)}`);
     }
     this.lastOwned = g.owned.length;
+    if (prev) this.notePick(prev, g);
     this.renderCard(prev);
     if (!this.drawer.hidden) this.refreshDrawer();
     if (this.homeDialog.open) this.renderHome();
@@ -268,6 +303,7 @@ export class GameUI {
 
     this.ringTween.set(sat.score, glide);
     this.ringWrap.dataset.level = level(sat.score, 60, 40);
+    this.ringWrap.setAttribute('aria-label', `Satisfaction ${sat.score} out of 100, ${mood}. Housing ${Math.round(sat.housing * 100)}%, upkeep ${Math.round(sat.upkeep * 100)}%, amenities ${Math.round(sat.amenities * 100)}%, momentum ${Math.round(sat.momentum * 100)}%.`);
     this.ringWrap.dataset.tipHtml = `<b>Satisfaction ${sat.score}/100 · ${mood}</b><span>Housing counts 35%, upkeep 25%, amenities 20% and MRR momentum 20%. Only real growth raises it.</span>`;
     for (const [k, v] of Object.entries({ housing: sat.housing, upkeep: sat.upkeep, amenities: sat.amenities, momentum: sat.momentum })) {
       const p = this.parts[k as keyof typeof this.parts];
@@ -309,8 +345,8 @@ export class GameUI {
     if (worst) {
       alerts += `<div class="alert" data-tone="${g.maintenance < 60 ? 'bad' : 'warn'}">
         <span class="tile">${ICON[worst.icon]}</span>
-        <div><b>${worst.title}</b><span>Upkeep ${Math.round(g.maintenance)}% covered. Repairs start as soon as it's paid.</span>
-        <ol class="pips" aria-label="Decay stages">${DECAY_STAGES.map((s) => `<li class="${decay[s.key] ? 'on' : ''}" data-tip="${s.title} below ${s.at}% upkeep">${ICON[s.icon]}</li>`).join('')}</ol></div>
+        <div><b>${worst.title}</b><span>Upkeep ${Math.round(g.maintenance)}% covered.<em class="aside"> Repairs start as soon as it's paid.</em></span>
+        <ol class="pips" aria-label="Decay stages">${DECAY_STAGES.map((s) => `<li class="${decay[s.key] ? 'on' : ''}" data-tip="${s.title} below ${s.at}% upkeep">${ICON[s.icon]}<span class="sr-only">${decay[s.key] ? '' : 'Not yet: '}${s.title} below ${s.at}% upkeep</span></li>`).join('')}</ol></div>
       </div>`;
     }
     if (g.unhoused > 0) {
@@ -360,12 +396,15 @@ export class GameUI {
     if (tab) this.tab = tab;
     else if (this.plot && (this.tab === 'vehicles' || this.tab === 'hq')) this.tab = 'all';
     const wasHidden = this.drawer.hidden;
+    if (wasHidden) this.drawerReturn = document.activeElement as HTMLElement | null;
     this.drawer.hidden = false;
     this.buildBtn.classList.add('on');
     this.buildBtn.setAttribute('aria-expanded', 'true');
     this.refreshDrawer();
     if (wasHidden) {
       this.grid.scrollTop = 0;
+      // Keyboard users land in the menu (on the selected category), not back at the top of the page.
+      this.tabsEl.querySelector<HTMLElement>('[aria-selected=true]')?.focus({ preventScroll: true });
       for (const c of this.cards.values()) {
         const img = c.root.querySelector('img')!;
         if (!img.dataset.thumb && !img.src) lazyThumbnail(img, `item:${c.root.dataset.id}`);
@@ -375,7 +414,10 @@ export class GameUI {
 
   closeBuild() {
     if (this.drawer.hidden) return;
+    const hadFocus = this.drawer.contains(document.activeElement);
     this.drawer.hidden = true;
+    if (hadFocus) (this.drawerReturn?.isConnected && this.drawerReturn !== document.body ? this.drawerReturn : this.buildBtn).focus({ preventScroll: true });
+    this.drawerReturn = null;
     this.plot = undefined;
     this.buildBtn.classList.remove('on');
     this.buildBtn.setAttribute('aria-expanded', 'false');
@@ -418,7 +460,7 @@ export class GameUI {
       if (state === 'buy') {
         sig = `buy|${this.plot ?? ''}`;
         const label = this.plot || i.placement.kind !== 'plot' ? 'Buy' : 'Buy & place';
-        html = `<button class="btn primary buy" type="button" data-buy="${i.id}">${label}</button>`;
+        html = `<button class="btn primary buy" type="button" data-buy="${i.id}" aria-label="${label} ${escape(i.name)}, ${money(i.price)}">${label}</button>`;
       } else if (state === 'locked') {
         const pct = Math.min(100, (g.mrr / i.unlock) * 100);
         sig = `locked|${Math.round(pct)}`;
@@ -471,22 +513,50 @@ export class GameUI {
 
   openHome() {
     this.homeSig = '';
+    this.confirmPick = null;
     this.renderHome();
     if (!this.homeDialog.open) {
-      this.homeDialog.showModal();
+      showModal(this.homeDialog);
       const current = this.homeDialog.querySelector<HTMLElement>('.rung.current');
       current?.scrollIntoView({ block: 'center' });
+    }
+  }
+
+  /** A pick the founder just made: say what it cost, in the dialog and on the treasury. */
+  private notePick(prev: GameState, g: GameState) {
+    if (g.t !== prev.t) return;
+    for (const i of g.home.explicit) {
+      if (prev.home.picks[i] === g.home.picks[i] && prev.home.explicit.includes(i)) continue;
+      const t = HOME_TIERS[i]!;
+      const name = t.options.find((o) => o.id === g.home.picks[i])?.name ?? '';
+      const fee = prev.home.explicit.includes(i) ? t.value * SWAP_FEE : 0;
+      if (fee) this.floater(`−${money(fee)}`);
+      this.homeStatus = fee ? `Renovated into the ${name} for ${money(fee)}.` : `You picked the ${name}. Changing it later costs ${money(t.value * SWAP_FEE)}.`;
+      this.focusAfter = `opt:${i}:${g.home.picks[i]}`;
+      setText(this.homeLive, this.homeStatus);
     }
   }
 
   private renderHome() {
     const g = this.state;
     if (!g) return;
-    const sig = JSON.stringify([g.home, this.ownsRocket, Math.floor(g.peakMrr), g.treasury > 0 ? Math.floor(Math.log10(g.treasury) * 4) : 0]);
-    if (sig === this.homeSig) return;
-    this.homeSig = sig;
+    const html = this.homeHtml(g);
+    if (html === this.homeSig) return;
+    this.homeSig = html;
     const ladder = this.homeDialog.querySelector('.ladder');
     const scroll = ladder?.scrollTop ?? 0;
+    // Re-rendering replaces every button: put focus back on the same one (or where a pick landed).
+    const active = document.activeElement as HTMLElement | null;
+    const key = this.focusAfter ?? (active && this.homeDialog.contains(active) ? active.dataset.key : undefined);
+    this.focusAfter = undefined;
+    this.homeBody.innerHTML = html;
+    this.homeDialog.querySelectorAll<HTMLImageElement>('img[data-home]').forEach((img) => lazyThumbnail(img, `home:${img.dataset.home}`));
+    const fresh = this.homeDialog.querySelector('.ladder');
+    if (fresh && scroll) fresh.scrollTop = scroll;
+    if (key && this.homeDialog.open) this.homeDialog.querySelector<HTMLElement>(`[data-key="${key}"]`)?.focus({ preventScroll: true });
+  }
+
+  private homeHtml(g: GameState): string {
 
     const tier = g.home.tier;
     const next = HOME_TIERS[tier + 1];
@@ -508,34 +578,52 @@ export class GameUI {
       const reached = tier >= i;
       const current = tier === i;
       const picked = g.home.picks[i];
+      const many = t.options.length > 1;
+      // The first pick is free; after that, changing your mind is a renovation (see economy.ts).
+      const explicit = g.home.explicit.includes(i);
+      const fee = t.value * SWAP_FEE;
+      const afford = g.treasury >= fee;
       const opts = t.options
         .map((o) => {
           const chosen = picked === o.id && reached;
-          const canPick = reached && t.options.length > 1 && !chosen;
-          const fee = g.home.explicit.includes(i) ? t.value * SWAP_FEE : 0;
-          const afford = g.treasury >= fee;
-          const action = canPick
-            ? `<button class="btn ${fee ? 'ghost' : 'primary'} sm" type="button" data-pick="${i}:${o.id}" ${afford ? '' : 'disabled'}>${fee ? `Renovate · ${money(fee)}` : 'Choose'}</button>`
-            : chosen && t.options.length > 1
-              ? `<span class="chosen-tag">${ICON.check}Your pick</span>`
-              : '';
-          return `<div class="opt ${chosen ? 'chosen' : ''}">
+          const key = `${i}:${o.id}`;
+          const canPick = reached && many && !chosen;
+          let action = '';
+          if (canPick && !explicit) {
+            action = `<button class="btn primary sm" type="button" data-pick="${key}" data-key="pick:${key}" aria-describedby="fee-${i}" aria-label="Choose the ${escape(o.name)}, free">Choose</button>`;
+          } else if (canPick && this.confirmPick === key) {
+            action = `<span class="confirm"><button class="btn primary sm" type="button" data-pick="${key}" data-key="confirm:${key}" aria-describedby="fee-${i}">Spend ${money(fee)} to renovate</button><button class="btn ghost sm" type="button" data-act="keep" data-key="keep:${key}" aria-label="Cancel, keep the ${escape(t.options.find((x) => x.id === picked)?.name ?? 'house you have')}">Cancel</button></span>`;
+          } else if (canPick) {
+            action = `<button class="btn ghost sm renovate" type="button" data-ask="${key}" data-key="pick:${key}" aria-describedby="fee-${i}" aria-label="Renovate into the ${escape(o.name)} for ${money(fee)}"${afford ? '' : ' aria-disabled="true"'}>${ICON.wrench}<span>Renovate · ${money(fee)}</span></button>`;
+          } else if (chosen && many) {
+            action = `<span class="chosen-tag">${ICON.check}${explicit ? 'Your pick' : 'Moved in here'}</span>`;
+          }
+          return `<div class="opt ${chosen ? 'chosen' : ''}"${chosen && many ? ` tabindex="-1" data-key="opt:${key}"` : ''}>
             <span class="thumb"><span class="thumb-fallback">${ICON.home}</span><img alt="" data-home="${o.id}"></span>
             <div class="opt-body"><b>${escape(o.name)}</b><span>${escape(o.blurb)}</span>${action}</div>
           </div>`;
         })
         .join('');
+      let feeNote = '';
+      if (many && reached) {
+        const value = `25% of the house's ${money(t.value)} value`;
+        feeNote = !explicit
+          ? `<p class="rung-fee" id="fee-${i}">${ICON.info}<span>Your first pick is free. After that, changing your mind is a renovation: ${value}, so <b class="num">${money(fee)}</b> from your treasury.</span></p>`
+          : afford
+            ? `<p class="rung-fee" id="fee-${i}">${ICON.wrench}<span>Changing your pick is a renovation: <b class="num">${money(fee)}</b>, ${value}. Paid from your treasury, never real money.</span></p>`
+            : `<p class="rung-fee" id="fee-${i}" data-tone="short">${ICON.lock}<span>A renovation costs <b class="num">${money(fee)}</b> (${value}). Your treasury has ${money(g.treasury)}, so you're <b class="num">${money(fee - g.treasury)}</b> short.</span></p>`;
+      }
       let extra = '';
       if (t.where === 'moon') {
         extra = reached
           ? this.ownsRocket
-            ? `<button class="btn primary" type="button" data-act="moon">${ICON.rocket}<span class="label">Fly to the moon</span></button>`
-            : `<button class="btn ghost" type="button" data-act="rocket">${ICON.rocket}<span class="label">Buy a rocket to get there · ${money(ITEMS.get('rocket')!.price)}</span></button>`
+            ? `<button class="btn primary" type="button" data-act="moon" data-key="moon">${ICON.rocket}<span class="label">Fly to the moon</span></button>`
+            : `<button class="btn ghost" type="button" data-act="rocket" data-key="rocket">${ICON.rocket}<span class="label">Buy a rocket to get there · ${money(ITEMS.get('rocket')!.price)}</span></button>`
           : '';
       }
       if (t.yacht && reached) extra = `<span class="perk">${ICON.ship}Came with a superyacht</span>`;
-      if (t.where === 'hills' && reached && i === 3) extra = `<button class="btn ghost sm" type="button" data-focus="hills">${ICON.pin}<span class="label">Show the Hills</span></button>`;
-      if (t.where === 'island' && reached) extra += `<button class="btn ghost sm" type="button" data-focus="island">${ICON.pin}<span class="label">Show my island</span></button>`;
+      if (t.where === 'hills' && reached && i === 3) extra = `<button class="btn ghost sm" type="button" data-focus="hills" data-key="focus:hills">${ICON.pin}<span class="label">Show the Hills</span></button>`;
+      if (t.where === 'island' && reached) extra += `<button class="btn ghost sm" type="button" data-focus="island" data-key="focus:island">${ICON.pin}<span class="label">Show my island</span></button>`;
       const node = current ? ICON.home : reached ? ICON.check : ICON.lock;
       const region = t.where === 'hills' ? REGIONS.hills : t.where === 'island' ? REGIONS.island : t.where === 'moon' ? REGIONS.launchpad : null;
       return `<li class="rung ${current ? 'current' : reached ? 'past' : 'future'}">
@@ -548,24 +636,21 @@ export class GameUI {
             ${t.options.length > 1 ? `<span class="choice">Pick ${t.options.length === 2 ? 'one of two' : `one of ${t.options.length}`}</span>` : ''}
           </div>
           <div class="opts" data-count="${t.options.length}">${opts}</div>
+          ${feeNote}
           ${extra ? `<div class="rung-extra">${extra}</div>` : ''}
           ${!reached && region && region.gate === t.mrr ? `<p class="rung-note">${escape(region.name)} opens at the same time.</p>` : ''}
         </div>
       </li>`;
     }).join('');
 
-    this.homeDialog.innerHTML = `
-      <div class="dialog-body">
+    return `
         <header class="dialog-head">
           <span class="tile tone-brand">${ICON.home}</span>
           <div><h2 id="home-title">Your home</h2><p>You live in your <b>${escape(curName)}</b>. Every extra digit of MRR moves you up; peak MRR counts, so a bad month never evicts you.</p></div>
-          <button class="btn ghost icon-only close" type="button" data-act="close" aria-label="Close">${ICON.close}</button>
+          <button class="btn ghost icon-only close" type="button" data-act="close" data-key="close" aria-label="Close">${ICON.close}</button>
         </header>
         ${nextHtml}
-        <ol class="ladder">${rows}</ol>
-      </div>`;
-    this.homeDialog.querySelectorAll<HTMLImageElement>('img[data-home]').forEach((img) => lazyThumbnail(img, `home:${img.dataset.home}`));
-    const fresh = this.homeDialog.querySelector('.ladder');
-    if (fresh && scroll) fresh.scrollTop = scroll;
+        ${this.homeStatus ? `<p class="home-status">${ICON.check}<span>${escape(this.homeStatus)}</span></p>` : ''}
+        <ol class="ladder" aria-label="Your house, one rung per digit of MRR">${rows}</ol>`;
   }
 }

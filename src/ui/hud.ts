@@ -1,8 +1,11 @@
 import { formatMoney, runningPeak, type Snapshot, type Timeline } from '../data/types.ts';
 import type { Tip } from '../render/city.ts';
 import { HOME_TIERS, REGIONS } from '../game/catalog.ts';
+import type { AwaySummary } from '../game/away.ts';
+import { describeGame, money, RATE, type GameEvent } from '../game/economy.ts';
+import { lazyThumbnail } from './thumbnails.ts';
 import { markSvg } from './brand.ts';
-import { compact, dateLabel, el, escape, reducedMotion, setHtml, setText, shortMrr, Tween } from './dom.ts';
+import { compact, dateLabel, el, escape, reducedMotion, replayAnimation, returnFocusOnClose, setHtml, setText, shortMrr, showModal, Tween } from './dom.ts';
 import { ICON, type IconName } from './icons.ts';
 
 export { el, escape } from './dom.ts';
@@ -51,6 +54,24 @@ const LEGEND: { icon: IconName; tone: Tone; title: string; text: string }[] = [
   { icon: 'cloudRain', tone: 'info', title: 'Rain', text: 'when MRR falls more than 1% in a week. HQ gains a floor per release; the train speeds up with commits.' },
 ];
 
+/** How each kind of "while you were away" event looks. Good news first: recoveries are the headline. */
+const AWAY_EVENT: Record<GameEvent['type'], { icon: IconName; tone: Tone; rank: number }> = {
+  'sign.lit': { icon: 'bulb', tone: 'good', rank: 0 },
+  'homeless.cleared': { icon: 'home', tone: 'good', rank: 0 },
+  'home.moved': { icon: 'home', tone: 'brand', rank: 1 },
+  'region.opened': { icon: 'cloudSun', tone: 'good', rank: 1 },
+  'land.opened': { icon: 'map', tone: 'good', rank: 1 },
+  'sign.dark': { icon: 'bulbOff', tone: 'bad', rank: 2 },
+  decay: { icon: 'wrench', tone: 'warn', rank: 2 },
+  'homeless.appeared': { icon: 'tent', tone: 'bad', rank: 2 },
+};
+
+/** Events shown before the rest fold away. */
+const AWAY_EVENTS_SHOWN = 4;
+/** Unlocks shown as chips; the first few get 3D thumbnails. */
+const AWAY_UNLOCKS_SHOWN = 6;
+const AWAY_THUMBS = AWAY_UNLOCKS_SHOWN;
+
 /** Paying-customer counts worth a moment of their own. */
 const CUSTOMER_MILESTONES = [10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000];
 
@@ -95,6 +116,8 @@ export class Hud {
   private miniMrr: HTMLElement;
   private miniMrrTween: Tween;
 
+  private railMore: HTMLButtonElement;
+  private railScrollable = false;
   private feedEl: HTMLElement;
   private noticeEl: HTMLElement;
 
@@ -117,6 +140,7 @@ export class Hud {
   private uitip: HTMLElement;
   private connect: HTMLDialogElement;
   private share: HTMLDialogElement;
+  private away: HTMLDialogElement | null = null;
   private help: HTMLDetailsElement;
 
   constructor(root: HTMLElement, h: HudHandlers) {
@@ -129,7 +153,7 @@ export class Hud {
       'div',
       { class: 'brand card' },
       `${markSvg({ cls: 'brand-mark' })}
-       <span class="wordmark" aria-label="TinyTown">TinyTown</span>
+       <span class="wordmark">TinyTown</span>
        <span class="brand-sep" aria-hidden="true"></span>
        <button class="brand-city" type="button" data-tip-title="Your city" data-tip="Name it after your startup. Click to rename or connect live data.">
          <span class="brand-city-name"></span>
@@ -169,11 +193,11 @@ export class Hud {
     this.sideEl = side;
     const mini = el(
       'button',
-      { class: 'mini card', type: 'button', 'aria-expanded': 'false', 'aria-label': 'Show details' },
+      { class: 'mini card', type: 'button', 'aria-expanded': 'false' },
       `<span class="mini-stat"><small>MRR</small><b class="num" data-mini="mrr">–</b></span>
        <span class="mini-stat"><small>Treasury</small><b class="num" data-mini="treasury">–</b></span>
        <span class="mini-stat mini-sat" data-mini="sat"></span>
-       <span class="mini-chev">${ICON.chevron}</span>`,
+       <span class="mini-chev">${ICON.chevron}<span class="sr-only">Details</span></span>`,
     );
     mini.addEventListener('click', () => {
       const open = side.classList.toggle('expanded');
@@ -210,6 +234,24 @@ export class Hud {
     heroRow.dataset.tipTitle = 'Monthly recurring revenue';
     heroRow.dataset.tip = 'Straight from Stripe. Every $1 is $10,000 a month for your city, paid daily.';
     side.append(mini, metrics);
+    // On short screens the rail scrolls: fade the edge that has more, and offer a nudge.
+    this.railMore = el('button', { class: 'rail-more', type: 'button', tabindex: '-1', 'aria-hidden': 'true', hidden: '' }, `<span>More</span>${ICON.chevron}`);
+    this.railMore.addEventListener('click', () => side.scrollBy({ top: side.clientHeight * 0.7, behavior: reducedMotion() ? 'auto' : 'smooth' }));
+    // Cheap by design: card sizes come from a ResizeObserver (no per-frame layout reads, so the
+    // count-up numbers never trigger it), work is coalesced into one frame, and scrolling only
+    // matters once the rail actually overflows.
+    let queued = 0;
+    const fade = () => {
+      if (!queued) queued = requestAnimationFrame(() => ((queued = 0), this.railFade()));
+    };
+    side.addEventListener('scroll', () => this.railScrollable && fade(), { passive: true });
+    const sizes = new ResizeObserver(fade);
+    sizes.observe(side);
+    const watch = () => {
+      for (const c of side.children) sizes.observe(c);
+    };
+    watch();
+    new MutationObserver(() => (watch(), fade())).observe(side, { childList: true });
 
     // ── How to play ────────────────────────────────────────────────────
     this.help = el('details', { class: 'help card' });
@@ -221,8 +263,9 @@ export class Hud {
         <span><kbd>Space</kbd> play</span><span><kbd>←</kbd><kbd>→</kbd> day</span><span><kbd>B</kbd> build</span><span><kbd>Q</kbd><kbd>E</kbd> rotate</span><span><kbd>+</kbd><kbd>−</kbd> zoom</span>
       </div>`;
 
-    this.feedEl = el('div', { class: 'feed', 'aria-live': 'polite', 'aria-label': 'What happened' });
-    this.noticeEl = el('div', { class: 'notices' });
+    // One polite live region for the whole feed: new toasts are read out without interrupting.
+    this.feedEl = el('div', { class: 'feed', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions text', 'aria-label': 'What happened' });
+    this.noticeEl = el('div', { class: 'notices', role: 'status' });
 
     // ── Map controls ───────────────────────────────────────────────────
     this.mapEl = el('div', { class: 'mapctl card', role: 'toolbar', 'aria-label': 'Map' });
@@ -244,7 +287,7 @@ export class Hud {
     this.scrubWrap.append(this.chart, this.markers, this.thumb, this.hover, this.scrub);
     this.scrubWrap.addEventListener('pointermove', (e) => this.onScrubHover(e));
     this.scrubWrap.addEventListener('pointerleave', () => (this.hover.hidden = true));
-    this.speedBtn = el('button', { class: 'btn ghost speed num', type: 'button', 'aria-label': 'Playback speed', 'data-tip': 'Playback speed' }, '1×');
+    this.speedBtn = el('button', { class: 'btn ghost speed num', type: 'button', 'aria-label': 'Playback speed: 1×', 'data-tip': 'Playback speed' }, '1×');
     this.speedBtn.addEventListener('click', () => h.onSpeed());
     const replay = this.button('replay', 'Replay', () => h.onReplay(), 'ghost', 'Replay your story from day one');
     dock.append(this.playBtn, date, this.scrubWrap, this.speedBtn, replay);
@@ -254,17 +297,30 @@ export class Hud {
     this.uitip = el('div', { class: 'uitip', role: 'tooltip', hidden: '' });
     this.connect = el('dialog', { class: 'dialog connect-dialog', 'aria-labelledby': 'connect-title', tabindex: '-1', autofocus: '' });
     this.connect.addEventListener('click', (e) => e.target === this.connect && this.connect.close());
+    returnFocusOnClose(this.connect);
     this.share = el('dialog', { class: 'dialog share-dialog', 'aria-labelledby': 'share-title', tabindex: '-1', autofocus: '' });
     this.share.addEventListener('click', (e) => e.target === this.share && this.share.close());
+    returnFocusOnClose(this.share);
 
     const lower = el('div', { class: 'lower' });
     lower.append(this.noticeEl, this.feedEl);
-    root.append(top, side, this.help, lower, this.mapEl, dock);
+    root.append(top, side, this.railMore, this.help, lower, this.mapEl, dock);
     document.body.append(this.tip, this.uitip, this.connect, this.share);
 
     this.wireTooltips();
     window.addEventListener('keydown', (e) => this.onKey(e));
     new ResizeObserver(() => this.drawChart()).observe(this.scrubWrap);
+  }
+
+  private railFade() {
+    const r = this.sideEl;
+    this.railScrollable = r.scrollHeight > r.clientHeight + 2;
+    if (!this.railScrollable && !r.classList.contains('more-below') && !r.classList.contains('more-above')) return;
+    const below = r.scrollTop + r.clientHeight < r.scrollHeight - 2;
+    const above = r.scrollTop > 2;
+    r.classList.toggle('more-below', below);
+    r.classList.toggle('more-above', above);
+    this.railMore.hidden = !below;
   }
 
   private addMetric(key: string, row: HTMLElement, fmt: (v: number) => string) {
@@ -393,6 +449,8 @@ export class Hud {
     const label = phase[0]!.toUpperCase() + phase.slice(1);
     setText(this.clockTime, time);
     setText(this.clockLabel, preview ? `Preview · ${preview}` : `${label} · your time`);
+    const aria = `Time of day: ${time}, ${preview ? `previewing ${preview}` : `${phase}, your local time`}. Click to preview another time.`;
+    if (this.clockBtn.getAttribute('aria-label') !== aria) this.clockBtn.setAttribute('aria-label', aria);
     this.clockBtn.classList.toggle('previewing', !!preview);
 
     // Sun by day, moon by night, travelling along the arc.
@@ -420,9 +478,8 @@ export class Hud {
 
   setSpeed(label: string) {
     setText(this.speedBtn, label);
-    this.speedBtn.classList.remove('bump');
-    void this.speedBtn.offsetWidth;
-    this.speedBtn.classList.add('bump');
+    this.speedBtn.setAttribute('aria-label', `Playback speed: ${label}`);
+    replayAnimation(this.speedBtn, 'bump');
   }
 
   // ── Feed ───────────────────────────────────────────────────────────
@@ -437,15 +494,13 @@ export class Hud {
     if (last && last.dataset.kind === kind && !last.classList.contains('out') && Date.now() - Number(last.dataset.at) < 1800) {
       setText(last.querySelector('.toast-text')!, text);
       setText(last.querySelector('.toast-date')!, date);
-      last.classList.remove('bump');
-      void last.offsetWidth;
-      last.classList.add('bump');
+      replayAnimation(last, 'bump');
       this.expire(last, spec.linger);
       return;
     }
     const toast = el(
       'div',
-      { class: `toast tone-${spec.tone}`, role: 'status' },
+      { class: `toast tone-${spec.tone}` },
       `<span class="tile">${ICON[icon]}</span>
        <span class="toast-body"><span class="toast-kicker">${spec.kicker}<span class="toast-date num"></span></span><span class="toast-text"></span></span>
        <button class="toast-close" type="button" aria-label="Dismiss">${ICON.close}</button>
@@ -465,7 +520,7 @@ export class Hud {
   notice(text: string) {
     const toast = el(
       'div',
-      { class: 'toast notice tone-warn', role: 'status' },
+      { class: 'toast notice tone-warn' },
       `<span class="tile">${ICON.info}</span><span class="toast-body"><span class="toast-kicker">Heads up</span><span class="toast-text"></span></span><button class="toast-close" type="button" aria-label="Dismiss">${ICON.close}</button>`,
     );
     setText(toast.querySelector('.toast-text')!, text);
@@ -477,11 +532,7 @@ export class Hud {
     toast.dataset.at = String(Date.now());
     toast.style.setProperty('--linger', `${linger}ms`);
     const timer = toast.querySelector<HTMLElement>('.toast-timer');
-    if (timer) {
-      timer.style.animation = 'none';
-      void timer.offsetWidth;
-      timer.style.animation = '';
-    }
+    if (timer) replayAnimation(timer);
     clearTimeout(Number(toast.dataset.timer));
     toast.dataset.timer = String(window.setTimeout(() => this.dismiss(toast), linger));
   }
@@ -679,7 +730,7 @@ export class Hud {
 
   private openConnect(focusName: boolean) {
     this.renderConnect();
-    this.connect.showModal();
+    showModal(this.connect);
     if (focusName) this.connect.querySelector<HTMLInputElement>('input[name=name]')?.select();
   }
 
@@ -767,7 +818,118 @@ export class Hud {
         }
       });
     });
-    this.share.showModal();
+    showModal(this.share);
+  }
+
+  /**
+   * "While you were away": a calm welcome-back card with what the city earned,
+   * what upkeep cost, the real numbers then and now, what happened, and what
+   * opened up. Every figure is the real one.
+   */
+  showAway(a: AwaySummary) {
+    const name = this.timeline?.name ?? 'your city';
+    const dialog = (this.away ??= this.makeAwayDialog());
+    const real = (v: number) => this.money(v, false);
+    const signed = (d: number, fmt: (v: number) => string) => (d === 0 ? 'No change' : `${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}`);
+    const stat = (label: string, from: string, to: string, delta: number, deltaText: string, tip: string) =>
+      `<div class="away-stat" data-dir="${delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat'}" tabindex="0" data-tip="${escape(tip)}">
+        <small>${label}</small>
+        <b class="num">${to}</b>
+        <span class="num"><s>${from}</s> ${ICON.chevronRight} <em>${deltaText}</em></span>
+      </div>`;
+    const mrrDelta = a.mrr.to - a.mrr.from;
+    // Growth as a percentage, or as a multiple once it passes 10× (a "+13811%" reads as noise).
+    const ratio = a.mrr.from > 0 ? a.mrr.to / a.mrr.from : 0;
+    const change = Math.abs(ratio - 1);
+    const mrrPct = !ratio ? '' : ratio >= 10 ? ` (${Math.round(ratio)}×)` : ` (${ratio >= 1 ? '+' : '−'}${(change * 100).toFixed(change < 0.1 ? 1 : 0)}%)`;
+    const custDelta = a.customers.to - a.customers.from;
+    const satDelta = a.satisfaction.to - a.satisfaction.from;
+    const popDelta = a.population.to - a.population.from;
+
+    const events = [...a.events].sort((x, y) => AWAY_EVENT[x.type].rank - AWAY_EVENT[y.type].rank);
+    const eventRow = (e: GameEvent) => {
+      const spec = AWAY_EVENT[e.type];
+      return `<li class="tone-${spec.tone}"><span class="tile">${ICON[spec.icon]}</span><span>${escape(describeGame(e))}</span></li>`;
+    };
+    const shown = events.slice(0, AWAY_EVENTS_SHOWN);
+    const rest = events.slice(AWAY_EVENTS_SHOWN);
+    const eventsHtml = events.length
+      ? `<ul class="away-events">${shown.map(eventRow).join('')}</ul>${
+          rest.length ? `<details class="away-more"><summary>${rest.length} more ${rest.length === 1 ? 'thing' : 'things'} happened</summary><ul class="away-events">${rest.map(eventRow).join('')}</ul></details>` : ''
+        }`
+      : `<p class="away-quiet">${ICON.check}<span>A quiet stretch: nothing broke and nothing new opened.</span></p>`;
+
+    const chips = a.unlocked.slice(0, AWAY_UNLOCKS_SHOWN);
+    const unlockedHtml = a.unlocked.length
+      ? `<section class="away-section" aria-labelledby="away-new">
+          <h3 id="away-new">New to build</h3>
+          <ul class="away-unlocks">${chips
+            .map(
+              (i, k) => `<li>${k < AWAY_THUMBS ? `<span class="thumb"><span class="thumb-fallback">${ICON.build}</span><img alt="" data-item="${i.id}"></span>` : ''}<span><b>${escape(i.name)}</b><small class="num">${money(i.price)}</small></span></li>`,
+            )
+            .join('')}${a.unlocked.length > chips.length ? `<li class="away-unlocks-more"><span><b>+${a.unlocked.length - chips.length} more</b><small>in Build</small></span></li>` : ''}</ul>
+        </section>`
+      : '';
+
+    const days = a.days === 1 ? 'A day has passed' : `${a.days.toLocaleString('en-US')} days have passed`;
+    const paid = a.earned / RATE;
+    dialog.innerHTML = `
+      <div class="dialog-body">
+        <header class="dialog-head">
+          <span class="tile tone-brand">${ICON.sun}</span>
+          <div><h2 id="away-title">Welcome back</h2><p>${days} in <b>${escape(name)}</b> since you last looked.</p></div>
+          <button class="btn ghost icon-only close" type="button" data-act="close" aria-label="Close">${ICON.close}</button>
+        </header>
+        <section class="away-rent" aria-label="Money">
+          <div class="away-earned">
+            <small>Rent day</small>
+            <b class="num" aria-hidden="true">+$0</b>
+            <span class="sr-only">${money(a.earned)} came in.</span>
+            <p>${paid > 0 ? `Your customers paid <b class="num">${real(paid)}</b> while you were away. At $10,000 to the dollar, that's ${money(a.earned)} for the city.` : 'No revenue came in while you were away, so the treasury only paid upkeep.'}</p>
+          </div>
+          <dl class="away-ledger num">
+            <div><dt>Upkeep paid</dt><dd>−${money(a.upkeep)}</dd></div>
+            <div><dt>Treasury now</dt><dd>${money(a.treasury.to)}<small>was ${money(a.treasury.from)}</small></dd></div>
+          </dl>
+        </section>
+        <section class="away-section" aria-labelledby="away-numbers">
+          <h3 id="away-numbers">Your real numbers</h3>
+          <div class="away-stats">
+            ${stat('MRR', real(a.mrr.from), real(a.mrr.to), mrrDelta, `${signed(mrrDelta, real)}${mrrPct}`, `Monthly recurring revenue: ${real(a.mrr.from)} then, ${real(a.mrr.to)} now.`)}
+            ${stat('Customers', a.customers.from.toLocaleString('en-US'), a.customers.to.toLocaleString('en-US'), custDelta, signed(custDelta, (v) => v.toLocaleString('en-US')), `Paying customers: ${a.customers.from.toLocaleString('en-US')} then, ${a.customers.to.toLocaleString('en-US')} now.`)}
+            ${stat('Residents', compact(a.population.from), compact(a.population.to), popDelta, signed(popDelta, compact), `Active users living in your city: ${a.population.from.toLocaleString('en-US')} then, ${a.population.to.toLocaleString('en-US')} now.`)}
+            ${stat('Satisfaction', String(a.satisfaction.from), `${a.satisfaction.to}<small>/100</small>`, satDelta, signed(satDelta, (v) => `${v} pts`), `Satisfaction ${a.satisfaction.from} then, ${a.satisfaction.to} now. Only real growth raises it.`)}
+          </div>
+        </section>
+        <section class="away-section" aria-labelledby="away-happened">
+          <h3 id="away-happened">What happened</h3>
+          ${eventsHtml}
+        </section>
+        ${unlockedHtml}
+        <div class="dialog-actions">
+          <button class="btn primary" type="button" data-act="close" data-primary>Back to my city</button>
+        </div>
+      </div>`;
+    dialog.querySelectorAll<HTMLImageElement>('img[data-item]').forEach((img) => lazyThumbnail(img, `item:${img.dataset.item}`));
+    const earned = dialog.querySelector<HTMLElement>('.away-earned > b')!;
+    const tween = new Tween((v) => setText(earned, `+${money(v)}`), 1400);
+    tween.set(0, false);
+    showModal(dialog);
+    // Land on the one button, but keep the card scrolled to its headline (the sheet scrolls on phones).
+    dialog.querySelector<HTMLElement>('[data-primary]')?.focus({ preventScroll: true });
+    dialog.scrollTop = 0;
+    // Count the rent in once the card has landed (instant with reduced motion).
+    window.setTimeout(() => tween.set(a.earned), reducedMotion() ? 0 : 280);
+  }
+
+  private makeAwayDialog(): HTMLDialogElement {
+    const d = el('dialog', { class: 'dialog away-dialog', 'aria-labelledby': 'away-title' });
+    d.addEventListener('click', (e) => {
+      if (e.target === d || (e.target as HTMLElement).closest('[data-act=close]')) d.close();
+    });
+    returnFocusOnClose(d);
+    document.body.append(d);
+    return d;
   }
 
   /** Snapshot day helper for other UI. */
