@@ -1,8 +1,20 @@
-import { CATALOG, HOME_TIERS, HQ_LEVEL_NAMES, ITEMS, REGIONS, SWAP_FEE, type Category, type Item } from '../game/catalog.ts';
+import { CATALOG, HOME_TIERS, HQ_LEVEL_NAMES, ITEMS, REGIONS, SWAP_FEE, type Category, type Item, type Region } from '../game/catalog.ts';
 import { canBuy, decayOf, FREE_HOUSED, money, MRR_PER_USER, type GameState } from '../game/economy.ts';
 import { compact, el, escape, returnFocusOnClose, setHtml, setText, shortMrr, showModal, Tween } from './dom.ts';
 import { ICON, type IconName } from './icons.ts';
 import { lazyThumbnail, prewarmThumbnails, setThumbnailBusy } from './thumbnails.ts';
+
+export type Place = 'downtown' | 'hills' | 'pier' | 'marina' | 'airport' | 'island' | 'launchpad';
+
+const PLACES: { id: Place; name: string; hint: string; icon: IconName; region?: Region }[] = [
+  { id: 'downtown', name: 'Downtown', hint: 'Your HQ and Market Street', icon: 'store' },
+  { id: 'hills', name: 'TinyTown Hills', hint: 'Under the sign', icon: 'home' },
+  { id: 'pier', name: "Fisherman's Wharf", hint: 'The pier and its rides', icon: 'heart' },
+  { id: 'marina', name: 'The Marina', hint: 'Yacht berths', icon: 'ship' },
+  { id: 'airport', name: 'Airport', hint: 'Planes and the helipad', icon: 'plane' },
+  { id: 'island', name: 'Your island', hint: 'Out in the bay', icon: 'sun', region: 'island' },
+  { id: 'launchpad', name: 'Launch site', hint: 'The far end of your island', icon: 'rocket', region: 'launchpad' },
+];
 
 export interface GameHandlers {
   onBuild(item: Item, plot?: string): void;
@@ -10,7 +22,7 @@ export interface GameHandlers {
   onFlyToMoon(): void;
   onZoom(factor: number): void;
   onCancelPlacement(): void;
-  onFocus(what: 'airport' | 'marina' | 'pier' | 'hills' | 'island' | 'launchpad'): void;
+  onFocus(what: Place): void;
 }
 
 type Tab = Category | 'all';
@@ -162,6 +174,34 @@ export class GameUI {
     zoomOut.addEventListener('click', () => h.onZoom(1 / 1.4));
     map.prepend(zoomIn, zoomOut, el('span', { class: 'map-sep', 'aria-hidden': 'true' }));
 
+    // Places: one click to every corner of the world (the airport and your island are far out).
+    this.placesBtn = el('button', { class: 'btn ghost icon-only', type: 'button', 'aria-label': 'Go to a place (G)', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'data-tip': 'Go to a place (G)' }, ICON.pin);
+    this.placesBtn.addEventListener('click', () => this.togglePlaces());
+    map.append(this.placesBtn);
+    this.placesMenu = el('div', { class: 'places-menu card', role: 'menu', 'aria-label': 'Places', hidden: '' });
+    this.placesMenu.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-place]');
+      if (!btn) return;
+      this.togglePlaces(false);
+      h.onFocus(btn.dataset.place as Place);
+    });
+    this.placesMenu.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        this.togglePlaces(false);
+        this.placesBtn.focus();
+      }
+    });
+    document.addEventListener('pointerdown', (e) => {
+      const t = e.target as Node;
+      if (!this.placesMenu.hidden && !this.placesMenu.contains(t) && !this.placesBtn.contains(t)) this.togglePlaces(false);
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === 'g' || e.key === 'G') this.togglePlaces();
+    });
+    root.append(this.placesMenu);
+
     // ── Build menu ─────────────────────────────────────────────────────
     this.drawer = el('aside', { class: 'drawer card', role: 'dialog', 'aria-label': 'Build', hidden: '' });
     this.drawer.innerHTML = `
@@ -262,6 +302,23 @@ export class GameUI {
       if (e.key === '+' || e.key === '=') h.onZoom(1.4);
       if (e.key === '-' || e.key === '_') h.onZoom(1 / 1.4);
     });
+  }
+
+  private placesBtn!: HTMLButtonElement;
+  private placesMenu!: HTMLElement;
+
+  /** Opens or closes the places menu, listing what's open in this city right now. */
+  togglePlaces(open = this.placesMenu.hidden) {
+    if (open) {
+      const g = this.state;
+      const places = PLACES.filter((p) => !p.region || g?.regions[p.region]);
+      this.placesMenu.innerHTML = places
+        .map((p) => `<button class="place" type="button" role="menuitem" data-place="${p.id}">${ICON[p.icon]}<span><b>${p.name}</b><small>${p.hint}</small></span></button>`)
+        .join('');
+    }
+    this.placesMenu.hidden = !open;
+    this.placesBtn.setAttribute('aria-expanded', String(open));
+    if (open) this.placesMenu.querySelector<HTMLButtonElement>('.place')?.focus();
   }
 
   setState(g: GameState) {

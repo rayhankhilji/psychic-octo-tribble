@@ -1598,6 +1598,64 @@ code {
   margin: 3px 0;
 }
 
+/* Places: a small menu beside the map controls. */
+.places-menu {
+  position: absolute;
+  right: calc(var(--right) + 56px);
+  bottom: var(--above-dock);
+  width: 236px;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  border-radius: var(--r-md);
+  z-index: 5;
+}
+
+.places-menu .place {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: calc(var(--r-md) - 4px);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-2) var(--ease-out);
+}
+
+.places-menu .place:hover,
+.places-menu .place:focus-visible {
+  background: var(--surface-hover);
+}
+
+.places-menu .place:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.places-menu .place svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--accent-text);
+}
+
+.places-menu .place b {
+  display: block;
+  font-weight: 600;
+  font-size: var(--t-sm);
+}
+
+.places-menu .place small {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--t-xs);
+}
+
 /* ── Dock: playback and timeline ───────────────────────────────────────── */
 
 .dock {

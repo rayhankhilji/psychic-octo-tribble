@@ -137,7 +137,8 @@ class App {
       },
       onZoom: (f) => this.stage.zoomBy(f),
       onCancelPlacement: () => this.setPlacing(null),
-      onFocus: (what) => this.stage.focus(this.city.focusOf(what), 2.2),
+      // Each place framed whole: the airport and downtown are big, the wharf is close.
+      onFocus: (what) => this.stage.focus(this.city.focusOf(what), { downtown: 1.3, hills: 1.5, pier: 2.2, marina: 2.2, airport: 1.4, island: 1.7, launchpad: 2 }[what]),
     });
     this.stage.onPick = (pick) => {
       if (this.placing) {

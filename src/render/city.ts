@@ -300,8 +300,10 @@ export class City {
   }
 
   /** Where to point the camera for a site. */
-  focusOf(what: 'airport' | 'marina' | 'pier' | 'hills' | 'island' | 'launchpad'): THREE.Vector3 {
+  focusOf(what: 'downtown' | 'airport' | 'marina' | 'pier' | 'hills' | 'island' | 'launchpad'): THREE.Vector3 {
     switch (what) {
+      case 'downtown':
+        return new THREE.Vector3(1, 0, -3);
       case 'airport':
         return new THREE.Vector3(21.5, 0, -43);
       case 'marina':
