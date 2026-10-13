@@ -233,6 +233,11 @@ export class City {
     }
   }
 
+  /** Anything animating right now (pop-ins, building sites, fireworks, a launch): the stage keeps full frame rate. */
+  get lively(): boolean {
+    return this.anims.length > 0 || this.sites.size > 0 || this.busy || this.volleys.length > 0 || this.launch !== null;
+  }
+
   /** Builds everything still queued, now (for screenshots and tests). */
   finishBuilding() {
     this.runJobs(Infinity);

@@ -303,6 +303,7 @@ class App {
   private setPlaying(on: boolean) {
     if (on && this.index >= this.last) this.show(0, false);
     this.playing = on;
+    this.stage.active = on;
     this.hud.setPlaying(on);
   }
 

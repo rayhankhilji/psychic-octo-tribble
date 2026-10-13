@@ -45,6 +45,15 @@ export class Stage {
   /** Adaptive quality: frame times are sampled in windows for the whole session. */
   private perf: { frames: number; time: number; locked: boolean; calm: number; stepsDown: number; stepsUp: number };
   private maxPixelRatio = 2;
+  /** Something is playing (the replay): keep the full frame rate. Set by the app. */
+  active = false;
+  /** Frame pacing: 60 fps while anything moves or you interact, 30 fps once the scene is calm. */
+  private lastFrame = 0;
+  private lastInput = 0;
+  private easing = true;
+  private dragging = false;
+  private lastPick = 0;
+  private wasCalm = false;
 
   constructor(host: HTMLElement, city: City) {
     this.host = host;
@@ -78,7 +87,10 @@ export class Stage {
     this.controls.addEventListener('start', () => {
       this.userZoomed = true;
       this.glide = null;
+      this.dragging = true;
+      this.wake();
     });
+    this.controls.addEventListener('end', () => (this.dragging = false));
     this.controls.addEventListener('change', () => this.clampTarget());
 
     const forced = requestedQuality();
@@ -93,13 +105,18 @@ export class Stage {
       this.pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
       this.lastClient = { x: e.clientX, y: e.clientY };
       this.pointerDirty = true;
+      this.wake();
     });
     el.addEventListener('pointerleave', () => {
       this.pointer.set(2, 2);
       this.onHover(null, 0, 0);
     });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
-    el.addEventListener('pointerdown', (e) => (this.down = { x: e.clientX, y: e.clientY }));
+    el.addEventListener('pointerdown', (e) => {
+      this.down = { x: e.clientX, y: e.clientY };
+      this.wake();
+    });
+    el.addEventListener('wheel', () => this.wake(), { passive: true });
     el.addEventListener('pointerup', (e) => {
       const d = this.down;
       this.down = null;
@@ -110,6 +127,7 @@ export class Stage {
       this.onPick(this.pickAt());
     });
     window.addEventListener('keydown', (e) => {
+      this.wake();
       if (e.target instanceof HTMLInputElement) return;
       if (e.key === 'q' || e.key === 'Q') this.rotate(-1);
       if (e.key === 'e' || e.key === 'E') this.rotate(1);
@@ -251,12 +269,25 @@ export class Stage {
     this.renderer.setAnimationLoop((now) => this.frame(now));
   }
 
+  /** Someone touched the controls: full frame rate for a while. */
+  wake() {
+    this.lastInput = performance.now();
+  }
+
   private frame(now: number) {
+    // A calm city (no input, no replay, nothing moving the camera, nothing popping in) draws at
+    // 30 fps: the miniature still breathes, at half the CPU and GPU. Skipped frames fold into dt.
+    const calm = !this.active && !this.spin && !this.glide && !this.easing && !this.city.lively && now - this.lastInput > 4000;
+    if (this.lastFrame && now - this.lastFrame < (calm ? 1000 / 30 : 1000 / 60) - 2) return;
+    this.lastFrame = now;
+    const paced = calm || this.wasCalm;
+    this.wasCalm = calm;
     this.timer.update(now);
     const raw = this.timer.getDelta();
     const dt = Math.min(0.05, raw);
     const time = this.timer.getElapsed();
-    this.adapt(raw);
+    // Calm frames are slow on purpose: only full-rate frames say anything about the machine.
+    if (!paced) this.adapt(raw);
 
     if (this.spin) {
       this.spin.t = Math.min(1, this.spin.t + dt / 0.6);
@@ -288,7 +319,8 @@ export class Stage {
       const step = target.sub(this.controls.target).multiplyScalar(k);
       this.controls.target.add(step);
       this.camera.position.add(step);
-    }
+      this.easing = Math.abs(zoom - this.camera.zoom) > 0.003 || step.lengthSq() > 1e-5;
+    } else this.easing = false;
 
     this.controls.update();
     const aspect = this.host.clientWidth / Math.max(1, this.host.clientHeight);
@@ -303,8 +335,10 @@ export class Stage {
     this.post.update(time, { bloom: a.bloom, night: a.night, tilt, focusY: 0.47, warmth: evening });
     this.onFrame(dt);
 
-    if (this.pointerDirty) {
+    // Hover picks raycast hundreds of models: ten times a second is plenty, and none while dragging.
+    if (this.pointerDirty && !this.dragging && now - this.lastPick > 100) {
       this.pointerDirty = false;
+      this.lastPick = now;
       this.raycaster.setFromCamera(this.pointer, this.camera);
       const pick = this.pickAt();
       this.renderer.domElement.style.cursor = pick?.plot ? 'pointer' : '';
