@@ -51,6 +51,10 @@ export interface FogSpec {
    * flat into each other without seams. Without it, a terrain bank fits a plane to its own ground.
    */
   floor?: (x: number, z: number) => number;
+  /** How much of the bank to keep at each point, 0 to 1: a clearing around something that should stand clear of the fog. */
+  keep?: (x: number, z: number) => number;
+  /** Areas the tooltip answers over, when the bank's shape (`keep`) leaves gaps in its footprint. The whole footprint otherwise. */
+  picks?: { x: number; z: number; w: number; d: number }[];
   seed: number;
 }
 
@@ -61,6 +65,8 @@ interface BankGeo {
   uv: Float32Array;
   /** Per vertex: slot, height above the ground, burn order (1 burns first), opacity (below zero for a wisp). */
   fog: Float32Array;
+  /** Per vertex: how far in from the bank's outline, 0 at the outline to 1 inside. The shader fades the edges by it. */
+  edge: Float32Array;
   index: number[];
   /** The bank's main layer, as triangles of the same vertices: the soft-shadow pass's stand-in (see `shieldMaterial`). */
   solid: number[];
@@ -106,14 +112,21 @@ export function setFogLight(a: Atmosphere) {
   const n = THREE.MathUtils.smoothstep(a.night, 0.5, 1);
   const [lx, ly, lz] = a.lightDir;
   LIGHT.uSunDir.value.set(lx, ly, lz).normalize();
-  // Sunlit tops: the light's colour, eased toward white so noon fog stays white rather than cream.
+  // How golden the light is: next to nothing at noon, a little by 17:00, full at 18:30 as the sun goes down.
+  const [lr, , lb] = a.lightColor;
+  const gold = THREE.MathUtils.smoothstep(lr - lb, 0.35, 0.72) * (1 - n);
+  // Sunlit tops: the light's colour, eased toward white so noon fog stays white rather than cream,
+  // and taken almost whole (peach and apricot) at golden hour.
   const sun = Math.min(1.15, a.lightIntensity / 2.6);
   tmp.setRGB(...a.lightColor);
-  const lit = LIGHT.uLit.value.copy(WHITE).lerp(tmp, 0.6).multiplyScalar(0.56 + 0.24 * sun);
+  const lit = LIGHT.uLit.value.copy(WHITE).lerp(tmp, 0.6 + 0.3 * gold).multiplyScalar(0.56 + 0.24 * sun + 0.12 * gold);
   lit.lerp(MOON_LIT, n);
-  // Shade: the sky's colour pulled toward violet (mauve at golden hour), then night blue.
+  // Shade: the sky's colour pulled toward violet (mauve at golden hour, rosier as the sun sets), then night blue.
   tmp2.setRGB(...a.skyColor);
-  LIGHT.uShade.value.copy(tmp2).lerp(VIOLET, 0.65).multiplyScalar(0.52).lerp(MOON_SHADE, n);
+  LIGHT.uShade.value.copy(tmp2).lerp(VIOLET, 0.65 - 0.2 * gold).multiplyScalar(0.52);
+  // Low sun pours through fog: at golden hour even the side turned away glows warm.
+  tmp2.copy(tmp).multiplyScalar(0.62);
+  LIGHT.uShade.value.lerp(tmp2, 0.45 * gold).lerp(MOON_SHADE, n);
   LIGHT.uSky.value.setRGB(...a.skyColor).multiplyScalar(Math.min(1, a.hemiIntensity / 1.5) * (1 - 0.7 * n));
   LIGHT.uGlow.value.copy(CITY_GLOW).multiplyScalar(n * n);
   LIGHT.uHaze.value.setRGB(...a.fog);
@@ -129,6 +142,7 @@ export function setCloudLight(night: number, fog?: THREE.Color) {
 
 const VERT = /* glsl */ `
   attribute vec4 aFog;
+  attribute float aEdge;
   uniform float uTime;
   uniform vec4 uBank[SLOTS];
   varying vec3 vN;
@@ -137,6 +151,7 @@ const VERT = /* glsl */ `
   varying float vKeep;
   varying float vKind;
   varying float vDensity;
+  varying float vEdge;
   varying vec2 vUv;
 
   void main() {
@@ -167,6 +182,7 @@ const VERT = /* glsl */ `
     vH = h;
     vKind = kind;
     vDensity = abs(aFog.w);
+    vEdge = aEdge;
     vUv = uv;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }`;
@@ -185,16 +201,19 @@ const FRAG = /* glsl */ `
   varying float vKeep;
   varying float vKind;
   varying float vDensity;
+  varying float vEdge;
   varying vec2 vUv;
 
   void main() {
-    vec3 N = normalize(vN);
+    // Drawn from both sides, so a steep far slope fades out instead of being cut off at a hard,
+    // jagged line; seen from behind, it's lit as the side it is.
+    vec3 N = normalize(gl_FrontFacing ? vN : -vN);
     // Soft terminator: fog scatters light deep into its shade.
     // The light rakes a little lower than the real sun, so the billows show their shape even at noon.
     vec3 L = normalize(vec3(uSunDir.x * 2.0, uSunDir.y, uSunDir.z * 2.0));
     float sun = smoothstep(-0.4, 0.65, dot(N, L));
     // Billows read as round: brightest where they face you, cooler as they turn away.
-    float limb = smoothstep(0.05, 0.75, vFacing);
+    float limb = smoothstep(0.05, 0.75, gl_FrontFacing ? vFacing : -vFacing);
     // The crowns catch the light; lower down the bank is in its own shade.
     float top = smoothstep(0.0, 0.7, vH);
     // Folds between billows fall into shade; crests catch a little extra light.
@@ -211,10 +230,10 @@ const FRAG = /* glsl */ `
 
     float a;
     if (vKind < 0.5) {
-      // Soft where each layer thins out (uv.x is its thickness), and at its rim where it turns away
-      // from the camera. Deep in the bank a fold turning away stays solid, so the land never shows in streaks.
-      float rim = mix(smoothstep(0.0, 0.42, vFacing), 1.0, smoothstep(0.12, 0.3, vUv.x));
-      a = vDensity * uDensity * rim * smoothstep(0.0, 0.12, vUv.x);
+      // Soft at the outline: a smooth falloff across the bank's edge band, measured over the ground
+      // rather than from the surface's slope, so the silhouette never breaks into streaks. Also thin
+      // where the layer thins or the ground reaches up into it (uv.x).
+      a = vDensity * uDensity * smoothstep(0.0, 0.55, vEdge) * smoothstep(0.0, 1.0, vUv.x);
     } else {
       float r = length(vUv - 0.5) * 2.0;
       a = vDensity * uDensity * (1.0 - smoothstep(0.1, 1.0, r));
@@ -236,6 +255,7 @@ function fogMaterial(): THREE.ShaderMaterial {
     fragmentShader: FRAG,
     transparent: true,
     depthWrite: false,
+    side: THREE.DoubleSide,
   });
   return m;
 }
@@ -274,6 +294,7 @@ class Out {
   nrm: number[] = [];
   uv: number[] = [];
   fog: number[] = [];
+  edge: number[] = [];
   index: number[] = [];
   solid: number[] = [];
   lo = Infinity;
@@ -310,44 +331,54 @@ function stratum(out: Out, spec: FogSpec, s: Stratum, slot: number, order: (x: n
       const qx = Math.abs(u) - (s.hx - corner);
       const qz = Math.abs(v) - (s.hz - corner);
       const sd = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - corner - wander;
-      const m = smoothstep(0.15, 0.15 - s.edge, sd);
       const bx = s.ox + u;
       const bz = s.oz + v;
+      const m = smoothstep(0.15, 0.15 - s.edge, sd) * (spec.keep ? spec.keep(spec.x + bx, spec.z + bz) : 1);
       let bumps = 0;
-      for (const [x, z, rad, amp] of s.bumps) bumps += amp * Math.exp(-((bx - x) ** 2 + (bz - z) ** 2) / (rad * rad));
+      for (const [x, z, rad, amp] of s.bumps) {
+        const q = ((bx - x) ** 2 + (bz - z) ** 2) / (rad * rad);
+        if (q < 9) bumps += amp * Math.exp(-q);
+      }
       const t = Math.max(0, Math.sqrt(m) * (s.thick + bumps));
       const x = spec.x + bx;
       const z = spec.z + bz;
       // The fog lies level over the land's broad lie (`floor`), not over every bump in it; a rise that
       // reaches up into the bank thins it, and a top that pokes through is left bare.
       const g = ground(x, z);
-      const y = Math.max(floor(x, z) + s.base + t, g + 0.01);
+      const y = Math.max(floor(x, z) + s.base + t, g + 0.04);
       pos.push(x, y, z);
       mask.push(m);
       thick.push(t);
       depth.push(y - g);
       out.fog.push(slot, s.base + t, order(x, z), s.density);
+      out.edge.push(m);
       out.lo = Math.min(out.lo, g);
       out.hi = Math.max(out.hi, y);
     }
   }
-  // How far each point stands above or sinks below its surroundings: the shader darkens the folds
-  // between billows and brightens their crests. (uv.x is the thickness, uv.y this relief.)
+  // uv.y: how far each point stands above or sinks below its surroundings (the shader darkens the
+  // folds between billows and brightens their crests). uv.x: how solid the fog is there, from 0 to 1:
+  // thin where the layer thins, and where the ground rises up into it. The ground's depth is averaged
+  // over its neighbours, so gullies running down a hillside don't comb the fog into streaks.
   const R = 4;
   for (let j = 0; j <= nz; j++) {
     for (let i = 0; i <= nx; i++) {
       let sum = 0;
+      let deep = 0;
       let n = 0;
       for (let dj = -R; dj <= R; dj++) {
         for (let di = -R; di <= R; di++) {
           const jj = Math.min(nz, Math.max(0, j + dj));
           const ii = Math.min(nx, Math.max(0, i + di));
           sum += thick[jj * cols + ii]!;
+          deep += depth[jj * cols + ii]!;
           n++;
         }
       }
       const t = thick[j * cols + i]!;
-      out.uv.push(Math.min(t, depth[j * cols + i]!), t - sum / n);
+      // (And gone wherever it actually lies on the ground, so it never flickers against the slope.)
+      const here = depth[j * cols + i]!;
+      out.uv.push(Math.min(t / 0.16, deep / n / 0.4, (here - 0.04) / 0.12, 1), t - sum / n);
     }
   }
   const index: number[] = [];
@@ -389,7 +420,6 @@ function bankGeometry(spec: FogSpec, slot: number): BankGeo {
   const spill = spec.spill ?? 0.55;
   const hx = spec.w / 2;
   const hz = spec.d / 2;
-  const k = Math.min(1.6, Math.sqrt((spec.w * spec.d) / 16));
   // Burn order: a smooth field, so the fog breaks up into a few soft patches rather than speckle.
   const bo = [r() * 6.28, r() * 6.28, 1.1 + r() * 0.6, 1.0 + r() * 0.6];
   const order = (x: number, z: number) => 0.5 + 0.5 * Math.sin(x * bo[2]! + bo[0]!) * Math.sin(z * bo[3]! + bo[1]!);
@@ -437,9 +467,11 @@ function bankGeometry(spec: FogSpec, slot: number): BankGeo {
   // heaped up here and there into crowns that catch the sun. One surface, so nothing in it crosses.
   const holes = spec.ground ? [] : bumps(1, spec.w * 0.5, spec.d * 0.5, [0.35, 0.5], [-H * 0.8, -H * 0.6]);
   const B = spec.billow ?? 1;
-  const billows = bumps(Math.round((12 * k * k) / (B * B)), spec.w, spec.d, [0.55 * B, 0.95 * B], [(H * 0.35) / B, (H * 0.9) / B]);
-  const crowns = bumps(Math.max(1, Math.round((2 * k) / B)), spec.w * 0.6, spec.d * 0.6, [0.6 * B, 0.9 * B], [H * 0.8, H * 1.2]);
-  stratum(out, spec, { ox: 0, oz: 0, hx: hx + spill * 0.6, hz: hz + spill * 0.6, base: H * 0.1, thick: H * 0.45, wander: 0.3, bumps: [...billows, ...crowns, ...holes], density: 0.95, edge: 0.6, solid: true }, slot, order, floor, r);
+  // A dozen billows to a city block's worth of fog, however big the bank.
+  const area = (spec.w * spec.d) / 16;
+  const billows = bumps(Math.round((12 * area) / (B * B)), spec.w, spec.d, [0.55 * B, 0.95 * B], [(H * 0.35) / B, (H * 0.9) / B]);
+  const crowns = bumps(Math.max(1, Math.round((2 * Math.sqrt(area)) / B)), spec.w * 0.6, spec.d * 0.6, [0.6 * B, 0.9 * B], [H * 0.8, H * 1.2]);
+  stratum(out, spec, { ox: 0, oz: 0, hx: hx + spill * 0.85, hz: hz + spill * 0.85, base: H * 0.1, thick: H * 0.45, wander: 0.3, bumps: [...billows, ...crowns, ...holes], density: 0.95, edge: 0.6, solid: true }, slot, order, floor, r);
 
   // Wisps: thin, soft sheets lying just over the bank, drifting. Density below zero marks a wisp.
   const ground = spec.ground ?? (() => 0);
@@ -463,6 +495,7 @@ function bankGeometry(spec: FogSpec, slot: number): BankGeo {
       out.nrm.push(0, 1, 0);
       out.uv.push((du + 1) / 2, (dv + 1) / 2);
       out.fog.push(slot, H * 1.4, o, -0.3);
+      out.edge.push(1);
     }
     out.index.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
     out.hi = Math.max(out.hi, y);
@@ -472,6 +505,7 @@ function bankGeometry(spec: FogSpec, slot: number): BankGeo {
     nrm: new Float32Array(out.nrm),
     uv: new Float32Array(out.uv),
     fog: new Float32Array(out.fog),
+    edge: new Float32Array(out.edge),
     index: out.index,
     solid: out.solid,
     radius: Math.max(hx, hz) + spill,
@@ -496,6 +530,7 @@ function merge(banks: BankGeo[]): { fog: THREE.BufferGeometry; solid: THREE.Buff
   const nrm = new Float32Array(verts * 3);
   const uv = new Float32Array(verts * 2);
   const fog = new Float32Array(verts * 4);
+  const edge = new Float32Array(verts);
   const index = new Uint32Array(tris);
   const solid: number[] = [];
   let v = 0;
@@ -505,6 +540,7 @@ function merge(banks: BankGeo[]): { fog: THREE.BufferGeometry; solid: THREE.Buff
     nrm.set(b.nrm, v * 3);
     uv.set(b.uv, v * 2);
     fog.set(b.fog, v * 4);
+    edge.set(b.edge, v);
     for (const i of b.index) index[t++] = i + v;
     for (const i of b.solid) solid.push(i + v);
     v += b.pos.length / 3;
@@ -521,6 +557,7 @@ function merge(banks: BankGeo[]): { fog: THREE.BufferGeometry; solid: THREE.Buff
   g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   g.setAttribute('aFog', new THREE.BufferAttribute(fog, 4));
+  g.setAttribute('aEdge', new THREE.BufferAttribute(edge, 1));
   g.setIndex(new THREE.BufferAttribute(sorted, 1));
   g.computeBoundingSphere();
   // Shares the vertex buffers: only the triangle list is new.
@@ -641,11 +678,13 @@ export class FogBanks {
     while (used.has(slot) && slot < SLOTS - 1) slot++;
     const geo = bankGeometry(spec, slot);
     const proxy = new THREE.Group();
-    const box = new THREE.Mesh(pickBox, pickMaterial);
-    box.visible = false;
-    box.scale.set(spec.w + 0.4, geo.hi - geo.lo + 0.1, spec.d + 0.4);
-    box.position.set(spec.x, (geo.hi + geo.lo) / 2, spec.z);
-    proxy.add(box);
+    for (const p of spec.picks ?? [{ x: spec.x, z: spec.z, w: spec.w + 0.4, d: spec.d + 0.4 }]) {
+      const box = new THREE.Mesh(pickBox, pickMaterial);
+      box.visible = false;
+      box.scale.set(p.w, geo.hi - geo.lo + 0.1, p.d);
+      box.position.set(p.x, (geo.hi + geo.lo) / 2, p.z);
+      proxy.add(box);
+    }
     this.object.add(proxy);
     this.uniform(slot).set(spec.x, spec.z, 0, geo.radius);
     this.banks.set(key, { slot, geo, proxy, burn: null });

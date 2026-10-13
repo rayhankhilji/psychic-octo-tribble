@@ -1516,23 +1516,53 @@ export class Scenery {
   private buildClouds() {
     // Banks drape over the land (or lie on the water just off it), so they follow the terrain.
     const ground = (x: number, z: number) => Math.max(0, terrainHeight(x, z));
-    const bank = (region: 'hills' | 'island' | 'launch', x: number, z: number, w: number, d: number, height: number, key: string, tip: string, floor?: (x: number, z: number) => number) => {
-      this.clouds[region].push({ key, spec: { x, z, w, d, height, spill: 0.4, ground, floor, billow: 1.7, seed: hash(this.seed, key) }, tip, proxy: null });
+    // The TINYTOWN sign stands clear of the fog, like Sutro Tower over Karl: the bank thins away
+    // around it and on the slope below it, so the letters read from the start.
+    const sign = LANDMARKS.sign;
+    const clearOfSign = (x: number, z: number) => {
+      const u = (x - sign.x - (z - sign.z)) * Math.SQRT1_2;
+      const v = (x - sign.x + (z - sign.z)) * Math.SQRT1_2;
+      const du = Math.abs(u) - 8;
+      const dv = Math.max(-3 - v, v - 3.4);
+      const out = Math.hypot(Math.max(du, 0), Math.max(dv, 0)) + Math.min(Math.max(du, dv), 0);
+      return THREE.MathUtils.smoothstep(out, -0.4, 1.6);
     };
-    // The Hills: a bank over each cluster of lots (the streets and lots are hidden until they clear).
-    const cells = new Map<string, number>();
+    const bank = (region: 'hills' | 'island' | 'launch', x: number, z: number, w: number, d: number, height: number, key: string, tip: string, more: Partial<FogSpec> = {}) => {
+      this.clouds[region].push({ key, spec: { x, z, w, d, height, spill: 0.4, ground, billow: 1.7, seed: hash(this.seed, key), ...more }, tip, proxy: null });
+    };
+    // The Hills: fog over each cluster of lots (the streets and lots are hidden until they clear),
+    // as one bank, so where clusters meet the fog runs on without a seam.
+    const counts = new Map<string, number>();
     const plan = hillsPlan();
     const cell = (x: number, z: number) => `${Math.floor((x + 2) / 6.5)},${Math.floor((z + 1) / 6)}`;
-    for (const l of plan.lots) cells.set(cell(l.x, l.z), (cells.get(cell(l.x, l.z)) ?? 0) + 1);
-    const banks = [...cells].filter(([, n]) => n >= 3).map(([key]) => {
+    for (const l of plan.lots) counts.set(cell(l.x, l.z), (counts.get(cell(l.x, l.z)) ?? 0) + 1);
+    const cells = [...counts].filter(([, n]) => n >= 3).map(([key]) => {
       const [i, j] = key.split(',').map(Number) as [number, number];
-      return { key, x: i * 6.5 - 2 + 3.25, z: j * 6 - 1 + 3 };
+      return { x: i * 6.5 - 2 + 3.25, z: j * 6 - 1 + 3, w: 6.8, d: 6.2 };
     });
-    // One broad lie of the land for all of them, so neighbouring banks run into one sheet of fog.
-    const xs = banks.map((b) => b.x);
-    const zs = banks.map((b) => b.z);
-    const lie = banks.length ? smoothGround(ground, Math.min(...xs) - 4, Math.min(...zs) - 4, Math.max(...xs) + 4, Math.max(...zs) + 4) : ground;
-    for (const b of banks) bank('hills', b.x, b.z, 6.8, 6.2, 0.5, `hills-${b.key}`, 'The fog over TinyTown Hills lifts at $1k MRR', lie);
+    if (cells.length) {
+      const x0 = Math.min(...cells.map((c) => c.x - c.w / 2));
+      const x1 = Math.max(...cells.map((c) => c.x + c.w / 2));
+      const z0 = Math.min(...cells.map((c) => c.z - c.d / 2));
+      const z1 = Math.max(...cells.map((c) => c.z + c.d / 2));
+      // The fog's outline: the clusters' rounded footprints run together, its edge wandering a little.
+      const shape = (x: number, z: number) => {
+        let sd = Infinity;
+        for (const c of cells) {
+          const qx = Math.abs(x - c.x) - (c.w / 2 - 1.4);
+          const qz = Math.abs(z - c.z) - (c.d / 2 - 1.4);
+          sd = Math.min(sd, Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - 1.4);
+        }
+        sd -= 0.3 * Math.sin(x * 0.7 + 1.3) * Math.sin(z * 0.6 + 0.4);
+        return (1 - THREE.MathUtils.smoothstep(sd, -0.9, 0.3)) * clearOfSign(x, z);
+      };
+      bank('hills', (x0 + x1) / 2, (z0 + z1) / 2, x1 - x0 + 1, z1 - z0 + 1, 0.5, 'hills', 'The fog over TinyTown Hills lifts at $1k MRR', {
+        // One broad lie of the land for the whole bank: it follows the valleys, and the highest tops poke through.
+        floor: smoothGround(ground, x0 - 3, z0 - 3, x1 + 3, z1 + 3),
+        keep: shape,
+        picks: cells,
+      });
+    }
     bank('island', ISLANDS.founder.x - 0.3, ISLANDS.founder.z - 0.2, 10.0, 9.8, 0.6, 'island', 'The fog over your island lifts at $100k MRR');
     // Offset away from the estate, so the fog never sits on the house or its helipad.
     bank('launch', ISLANDS.launch.x + 0.35, ISLANDS.launch.z - 0.35, 5.6, 5.6, 0.5, 'launch', 'The fog over the launch site lifts at $1M MRR');
