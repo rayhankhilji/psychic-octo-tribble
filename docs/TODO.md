@@ -18,11 +18,12 @@ The owner sent reference images (the Silicon Valley title slide is the art-direc
 - [x] **Downtown and brand assets.** Two new tower styles, a roof and signage kit, richer plot items and HQ levels, new yacht hulls and plane liveries.
 - [x] **Mansion choices.** Three Hills houses and three island estates to choose from. The first pick is free; rebuilding costs 25% of the tier's value in game money.
 - [x] **Neighbourhoods.** One street style per block, the same building line on every street, corner homes that turn the corner, richer homes, block grounds with evenly spaced street trees, gardens and corner stores.
-- [ ] **Helicopter** (written, waiting on the landscape commit for `HELIPAD`). It comes with the island, parks on the airport helipad, and flies you to your estate's pad from the home dialog, with the camera following.
-- [ ] **Landscape** (agent running): the Hills as a real neighbourhood on contour streets that connect to the city; terrain without the odd humps; the island further out and bigger; an airport you can see.
+- [x] **Helicopter.** It comes with the island, parks on the airport helipad, and flies you to your estate's pad (and back) from Your home, with the camera following (`City.flyHelicopter`, `Stage.follow`).
+- [x] **Landscape.** The Hills as a real neighbourhood on contour streets that come down to the grid; Twin Peaks with two summits; Yerba Buena a clean dome; real backdrop towns instead of stripes; the airport on fill with a lit runway, terminal and helipad; a bigger island with a cove, jetty, beach and lighthouse; Treasure Island rebuilt.
+- [ ] Landscape leftovers: parks, waterfront and Marina polish; Hills street lamps have no light pools at night; backdrop town windows barely show at night; the island's cove and jetty face away from the default camera; check the Hills from `az=225`.
 - [ ] **Bay** (agent running): a whole, grounded Bay Bridge; Yerba Buena and Treasure Island; better boats; bulbs on the TINYTOWN sign that light up at night.
 - [ ] **Over-budget plot items** (low priority: each is a one-off, so the cost is a few thousand triangles in all): the stadium (7.9k triangles), the university (6.4k) and the amusement park (6.1k), against a ~5k budget for plot items. The supertall (8.5k) is near the 8k tower budget.
-- [ ] The rocket on the launch site stands right in front of the estate's helipad from the default camera. Move one of them.
+- [ ] The rocket on the launch site stands right in front of the estate's helipad from the default camera. The landscape agent is moving the launch site.
 
 ## P1: Finish the visual overhaul (leftovers from the parallel agents)
 
