@@ -117,7 +117,16 @@ export const HOME_TIERS: readonly HomeTier[] = [
       { id: 'loft', name: 'Loft apartment', blurb: 'Exposed brick, big windows, city views.' },
     ],
   },
-  { mrr: 1_000, where: 'hills', value: 0, options: [{ id: 'hills-modern', name: 'Hills mid-century modern', blurb: 'Your first house in TinyTown Hills, with a pool.' }] },
+  {
+    mrr: 1_000,
+    where: 'hills',
+    value: 20_000_000,
+    options: [
+      { id: 'hills-modern', name: 'Hills mid-century modern', blurb: 'Glass walls, a cantilever over the canyon, a pool.' },
+      { id: 'hills-spanish', name: 'Hills Spanish Revival', blurb: 'White stucco, a tile roof, a courtyard fountain.' },
+      { id: 'hills-canyon', name: 'Canyon house', blurb: 'Redwood decks, string lights, a hot tub in the trees.' },
+    ],
+  },
   {
     mrr: 10_000,
     where: 'hills',
@@ -128,7 +137,17 @@ export const HOME_TIERS: readonly HomeTier[] = [
       { id: 'compound', name: 'Modernist compound', blurb: 'Three pavilions and an infinity pool.' },
     ],
   },
-  { mrr: 100_000, where: 'island', value: 0, yacht: true, options: [{ id: 'island-estate', name: 'Island estate', blurb: 'Your own island in the bay, with a superyacht.' }] },
+  {
+    mrr: 100_000,
+    where: 'island',
+    value: 2_000_000_000,
+    yacht: true,
+    options: [
+      { id: 'island-estate', name: 'Island estate', blurb: 'A Mediterranean villa on your own island, with a superyacht.' },
+      { id: 'island-modern', name: 'Island glass house', blurb: 'White stone and glass, an infinity pool over the sea.' },
+      { id: 'island-tropical', name: 'Island compound', blurb: 'Teak pavilions among the palms, a lagoon pool.' },
+    ],
+  },
   { mrr: 1_000_000, where: 'moon', value: 0, options: [{ id: 'moon-house', name: 'Moon house', blurb: 'Buy a rocket to fly there.' }] },
 ];
 

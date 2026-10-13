@@ -176,6 +176,19 @@ describe('the founder home ladder', () => {
     const swapped = simulate(tl, [{ t: 5 * DAY, kind: 'home', tier: 2, choice: 'loft' }, { t: 30 * DAY, kind: 'home', tier: 2, choice: 'bungalow' }], 39);
     expect(free.treasury - swapped.treasury).toBeCloseTo(HOME_TIERS[2]!.value * 0.25, 0);
   });
+
+  it('lets you rebuild your Hills house and your island estate, for a renovation fee', () => {
+    for (const [tier, mrr, a, b] of [[3, 1_500, 'hills-spanish', 'hills-canyon'], [5, 150_000, 'island-modern', 'island-tropical']] as const) {
+      const tl = days(40, () => ({ mrr, customers: 3 }));
+      const pick = { t: 5 * DAY, kind: 'home' as const, tier, choice: a };
+      const once = simulate(tl, [pick], 39);
+      const twice = simulate(tl, [pick, { t: 30 * DAY, kind: 'home', tier, choice: b }], 39);
+      expect(HOME_TIERS[tier]!.options.length).toBe(3);
+      expect(twice.home.option).toBe(b);
+      expect(twice.rejected).toEqual([]);
+      expect(once.treasury - twice.treasury).toBeCloseTo(HOME_TIERS[tier]!.value * 0.25, 0);
+    }
+  });
 });
 
 describe('catalogue', () => {

@@ -212,3 +212,73 @@ Object.assign(SETS, {
     return [{ label: style, object: group(hillsHouse(style, Number(p.get('seed') ?? 11))), size: 1.2 }];
   },
 } satisfies Record<string, () => ShowItem[]>);
+
+// ─── Downtown quality pass: `dt-*` sets ────────────────────────────────────
+// Every tower style at both tiers: `?set=dt-towers&zoom=1.2` (add `&tier=5`).
+import { Kit as DtKit, slab as dtSlab, tower as dtTower, TOWER_STYLES } from '../render/towers.ts';
+Object.assign(SETS, {
+  'dt-towers': (): ShowItem[] => {
+    const tier = Number(new URLSearchParams(location.search).get('tier') ?? 3);
+    return Array.from({ length: TOWER_STYLES }, (_, s) => {
+      const k = new DtKit();
+      dtSlab(k, 0, 0, 1.9, 1.9);
+      dtTower(k, rng(40 + s * 7), 0, 0, tier, [2.4, 1.8, 1.0], s);
+      return { label: `tier ${tier} style ${s}`, object: group(k.build()), size: 2.2 };
+    });
+  },
+} satisfies Record<string, () => ShowItem[]>);
+// One tower style up close, centred on its middle: `?set=dt-tower&style=4&tier=5&zoom=3`.
+Object.assign(SETS, {
+  'dt-tower': (): ShowItem[] => {
+    const p = new URLSearchParams(location.search);
+    const k = new DtKit();
+    dtSlab(k, 0, 0, 1.9, 1.9);
+    dtTower(k, rng(Number(p.get('seed') ?? 40)), 0, 0, Number(p.get('tier') ?? 3), [2.4, 1.8, 1.0], Number(p.get('style') ?? 4));
+    const o = group(k.build());
+    const h = new THREE.Box3().setFromObject(o).max.y * Number(p.get('focus') ?? 0.5);
+    o.position.set(h, 0, h);
+    const g = new THREE.Group();
+    g.add(o);
+    return [{ label: `tower style ${p.get('style') ?? 4}`, object: g, size: 2 }];
+  },
+} satisfies Record<string, () => ShowItem[]>);
+// Plot items by name, in a row: `?set=dt-items&list=shops,cafe&seed=21`.
+Object.assign(SETS, {
+  'dt-items': (): ShowItem[] => {
+    const p = new URLSearchParams(location.search);
+    const seed = Number(p.get('seed') ?? 21);
+    return (p.get('list') ?? 'shops').split(',').map((m) => ({ label: m, object: group(itemModel(m, 0, 0, seed)), size: ['stadium', 'university', 'amusement', 'spire'].includes(m) ? 4 : 2 }));
+  },
+} satisfies Record<string, () => ShowItem[]>);
+
+// Any `tt-one` model, framed on a point `focus` of the way up: `?set=dt-focus&what=hq:3&focus=0.9&zoom=6`.
+Object.assign(SETS, {
+  'dt-focus': (): ShowItem[] => {
+    const [item] = SETS['tt-one']!();
+    const k = Number(new URLSearchParams(location.search).get('focus') ?? 0.5);
+    const h = new THREE.Box3().setFromObject(item!.object).max.y * k;
+    const g = new THREE.Group();
+    item!.object.position.set(h, 0, h);
+    g.add(item!.object);
+    return [{ ...item!, object: g }];
+  },
+} satisfies Record<string, () => ShowItem[]>);
+// The founder's mansions you can choose and rebuild: `?set=dt-mansions` (az=225 for the back).
+Object.assign(SETS, {
+  'dt-mansions': (): ShowItem[] =>
+    ['hills-modern', 'hills-spanish', 'hills-canyon', 'island-estate', 'island-modern', 'island-tropical'].map((id) => ({ label: id, object: group(founderHome(id, 3)), size: 3.2 })),
+} satisfies Record<string, () => ShowItem[]>);
+// The founder's helicopter, rotor turning (and once more from the other side): `?set=dt-heli&zoom=14`.
+import { helicopter, HELI_ROTOR } from '../render/models.ts';
+Object.assign(SETS, {
+  'dt-heli': (): ShowItem[] =>
+    [0, 1].map((i) => {
+      const { body, rotor } = helicopter(7);
+      const g = new THREE.Group();
+      g.add(body.group, rotor.group);
+      rotor.group.position.set(HELI_ROTOR.x, HELI_ROTOR.y, HELI_ROTOR.z);
+      g.rotation.y = i * Math.PI;
+      return { label: i ? 'helicopter (back)' : 'helicopter', object: g, size: 0.9, update: (dt: number) => (rotor.group.rotation.y += dt * 9) };
+    }),
+} satisfies Record<string, () => ShowItem[]>);
+
