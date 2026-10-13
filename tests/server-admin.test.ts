@@ -517,7 +517,8 @@ describe('inviting from the waitlist', () => {
 
     vi.mocked(notify).mockClear();
     expect((await admin('POST', '/api/admin/waitlist/resend', { email: 'lost@example.com', requestId: requestId() })).status).toBe(200);
-    expect(notified()).toEqual([{ kind: 'access.invited', email: 'lost@example.com' }]);
+    // A resend carries its own ref, so the email module's once-per-address dedupe lets it through.
+    expect(notified()).toEqual([{ kind: 'access.invited', email: 'lost@example.com', ref: expect.stringMatching(/^resend:\d+$/) }]);
     expect((await admin('POST', '/api/admin/waitlist/resend', { email: 'waiting@example.com', requestId: requestId() })).status).toBe(409);
   });
 
@@ -681,7 +682,7 @@ describe('users', () => {
     waiting('founder@example.com', '2026-01-01T00:00:00.000Z', { invited_at: '2026-10-01T00:00:00.000Z', wave: 1 });
     const res = await admin('POST', `/api/admin/users/${USER.id}/resend-invite`, { requestId: requestId() });
     expect(res.status).toBe(200);
-    expect(notified()).toEqual([{ kind: 'access.invited', email: 'founder@example.com' }]);
+    expect(notified()).toEqual([{ kind: 'access.invited', email: 'founder@example.com', ref: expect.stringMatching(/^resend:\d+$/) }]);
   });
 });
 
