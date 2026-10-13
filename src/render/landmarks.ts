@@ -4,6 +4,7 @@ import { GLOW, GeoBuilder, type ColorLike, type Facing } from './geo.ts';
 import { PALETTE } from './palette.ts';
 import { BAY_APPROACH, EMBARCADERO, LANDMARKS, PRESIDIO_PKWY, SEA, terrainHeight } from '../world/map.ts';
 import { rng } from '../world/rng.ts';
+import { worldSeed } from '../world/seed.ts';
 
 const ORANGE = 0xc43a2a;
 const ORANGE_DARK = 0x9a2c20;
@@ -477,8 +478,10 @@ interface GGLayout {
 }
 
 let ggCache: GGLayout | null = null;
+let ggSeed = -1;
 function ggLayout(): GGLayout {
-  if (ggCache) return ggCache;
+  if (ggCache && ggSeed === worldSeed()) return ggCache;
+  ggSeed = worldSeed();
   const { x } = LANDMARKS.goldenGate;
   // Marin: the deck runs on until the headland rises to meet it, then dives into the hill.
   let north = 23.4;
@@ -729,8 +732,10 @@ interface BBLayout {
 }
 
 let bbCache: BBLayout | null = null;
+let bbSeed = -1;
 function bbLayout(): BBLayout {
-  if (bbCache) return bbCache;
+  if (bbCache && bbSeed === worldSeed()) return bbCache;
+  bbSeed = worldSeed();
   const { z } = LANDMARKS.bayBridge;
   // The portals sit where Yerba Buena's ridge rises to meet the lower deck.
   const ridge = (x: number) => Math.max(terrainHeight(x, z - 0.6), terrainHeight(x, z), terrainHeight(x, z + 0.6));
@@ -1612,8 +1617,7 @@ export function conservatory(x: number, z: number): THREE.Group {
  */
 export function cliffHouse(): THREE.Group {
   const b = new GeoBuilder();
-  const x = -46.8;
-  const z = -1.6;
+  const { x, z } = LANDMARKS.cliffHouse;
   const y = Math.max(0.2, terrainHeight(x, z));
   const white = 0xf2eee6;
   const trim = 0xdcd6ca;
@@ -1640,14 +1644,16 @@ export function cliffHouse(): THREE.Group {
   b.box(0.2, 0.1, 0.16, cx, y + 0.28, cz, 0x3a3a40);
   b.cylinder(0.04, 0.05, 0.08, cx - 0.12, y + 0.29, cz, 0x2a2a2e, 8);
   // Seal Rocks
-  for (const [rx, rz, rr] of [[-50.5, -0.8, 0.6], [-51.3, 0.6, 0.45], [-50.2, 1.4, 0.35]] as const) {
+  for (const [dx, dz, rr] of [[-3.7, 0.8, 0.6], [-4.5, 2.2, 0.45], [-3.4, 3.0, 0.35]] as const) {
+    const rx = x + dx;
+    const rz = z + dz;
     const g = new THREE.IcosahedronGeometry(rr, 1).scale(1, 0.8, 1);
     b.transformed(g, new THREE.Matrix4().makeTranslation(rx, SEA + 0.1, rz), 0x8f857a);
     b.blob(rr * 0.3, rx + rr * 0.2, SEA + 0.1 + rr * 0.72, rz, 0xe8e4dc); // guano
   }
   // Sutro Baths: the concrete footings of the old pools, half full of seawater
-  const bx = -47.4;
-  const bz = 4.6;
+  const bx = x - 0.6;
+  const bz = z + 6.2;
   b.box(1.9, 0.06, 1.3, bx, SEA - 0.02, bz, 0x2f8ea0, 'glass');
   for (let k = 0; k < 5; k++) b.box(0.07, 0.12, 1.3, bx - 0.9 + k * 0.45, SEA, bz, 0xbab3a6);
   for (const s of [-1, 1]) b.box(1.9, 0.12, 0.07, bx, SEA, bz + s * 0.65, 0xbab3a6);

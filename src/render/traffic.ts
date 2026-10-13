@@ -3,7 +3,7 @@ import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeom
 import { GLOW, glassMaterial } from './geo.ts';
 import { bridgeLanes } from './landmarks.ts';
 import { PITCH, blockCentre, type BlockCoord } from '../world/layout.ts';
-import { AIRPORT_ROAD, BAY_APPROACH, EMBARCADERO, GREAT_HIGHWAY, MARKET_START, PRESIDIO_PKWY, coastDistance, terrainHeight, type Pt } from '../world/map.ts';
+import { AIRPORT_ROAD, BAY_APPROACH, EMBARCADERO, GREAT_HIGHWAY, MARKET_START, PKWY_JOIN, PRESIDIO_PKWY, coastDistance, terrainHeight, type Pt } from '../world/map.ts';
 import { rng } from '../world/rng.ts';
 
 /**
@@ -861,7 +861,7 @@ function buildGraph(cells: readonly RoadCell[]): Graph {
   const crosses = cells.filter((c) => c.kind === 'cross');
   for (const c of crosses) node(c.x, c.z);
   // Where the Presidio Parkway joins the grid, mid-block.
-  const pkwyJoin: Pt = [-32.5, 0];
+  const pkwyJoin: Pt = PKWY_JOIN;
   for (const c of crosses) {
     for (const [dx, dz] of [[PITCH, 0], [0, PITCH]] as const) {
       const ex = c.x + dx, ez = c.z + dz;
@@ -906,7 +906,7 @@ function buildGraph(cells: readonly RoadCell[]): Graph {
   road(airport, junction, [...[...AIRPORT_ROAD].reverse(), ...EMBARCADERO.slice(1, ji + 1), J], art);
   if (has(...pkwyJoin)) {
     const pk = PRESIDIO_PKWY.slice(1, -1);
-    road(junction, nodes.get(key(...pkwyJoin))!, [J, ...EMBARCADERO.slice(ji + 1), ...pk, [-33.1, 0.4], pkwyJoin], { ...art, lane: 0.16 });
+    road(junction, nodes.get(key(...pkwyJoin))!, [J, ...EMBARCADERO.slice(ji + 1), ...pk, [pkwyJoin[0] - 0.6, 0.4], pkwyJoin], { ...art, lane: 0.16 });
   }
 
   // Market Street: crossing the grid diagonally through the crossings on x − z = 10.

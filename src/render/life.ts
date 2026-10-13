@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { GeoBuilder, glowMaterial, type ColorLike } from './geo.ts';
 import { densify } from './effects.ts';
 import { Batch } from './batch.ts';
-import { LANDMARKS, RUNWAY, SEA, type Pt } from '../world/map.ts';
+import { LANDMARKS, MARINA, PIER, RUNWAY, SEA, type Pt } from '../world/map.ts';
+import { bayRoutes } from '../world/routes.ts';
 import { hash, pick, rng } from '../world/rng.ts';
 import type { Atmosphere } from '../world/daylight.ts';
 
@@ -22,14 +23,8 @@ const NAV_GREEN: ColorLike = [0.3, 3, 0.6];
 const NAV_WHITE: ColorLike = [3, 3, 2.8];
 const CABIN: ColorLike = [1.7, 1.2, 0.65];
 
-// ─── Routes on the water (checked against the coastline: ≥1 unit offshore) ──
+// Routes on the water come from `world/routes.ts`: this world's own, at least a unit offshore.
 
-const FERRY_SAUSALITO: Pt[] = [[13.6, -1.2], [16, 5], [9, 14.5], [4.5, 22], [3.5, 32], [-10, 31.5], [-20, 29.5], [-24.2, 27.6]];
-const FERRY_OAKLAND: Pt[] = [[13.6, -2.2], [20, -10.5], [33, -12.6], [45, -11], [54, -8]];
-const TUG_RUN: Pt[] = [[13.4, -4.2], [14.6, -1.2], [13.6, 3.5], [11.2, 8.4], [6, 11.6]];
-const SHIPPING_LANE: Pt[] = [[-110, 14], [-60, 14.5], [-34.6, 15.4], [-22, 18.5], [-13.5, 23], [-11, 30], [4, 34], [22, 29], [40, 18], [53.5, 12]];
-/** Sailing loops: centre, radii. */
-const SAIL_LOOPS: [number, number, number, number][] = [[10, 20, 6, 5], [-18, 18.5, 5, 2.5], [20, 8, 4, 3], [12, 24, 4.5, 3.5]];
 /** Powell Street cable car: from the turntable at Market up to the wharf. */
 const CABLE_LINE = { x: -2.5, z0: -11.9, z1: 7.2 };
 
@@ -61,18 +56,22 @@ export class Life {
   constructor(seed: number) {
     const r = rng(hash(seed, 'life'));
     this.object.add(this.batch.object);
+    const routes = bayRoutes();
     // Ferries back and forth; the Oakland one ducks under the Bay Bridge.
-    this.ferry(FERRY_SAUSALITO, 0.55, 0.1, 0x2f6a4f);
-    this.ferry(FERRY_OAKLAND, 0.6, 0.55, 0x2a5a8a);
+    this.ferry(routes.sausalito, 0.55, 0.1, 0x2f6a4f);
+    this.ferry(routes.oakland, 0.6, 0.55, 0x2a5a8a);
     // A container ship sailing in through the Golden Gate, bound for Oakland.
-    this.ship(SHIPPING_LANE, 0.42);
+    this.ship(routes.shipping, 0.42);
     // A tug pottering along the waterfront between the Ferry Building and the wharf.
-    this.harbourTug(TUG_RUN, 0.2);
-    for (let i = 0; i < SAIL_LOOPS.length; i++) {
-      const [cx, cz, rx, rz] = SAIL_LOOPS[i]!;
+    this.harbourTug(routes.tug, 0.2);
+    // Sloops tacking round their loops; the last keeps a steady course.
+    const loops = routes.sails;
+    for (let i = 0; i < loops.length - 1; i++) {
+      const [cx, cz, rx, rz] = loops[i]!;
       this.sailboat(cx, cz, rx, rz, r() * Math.PI * 2, (r() < 0.5 ? -1 : 1) * (0.05 + r() * 0.03), r);
     }
-    this.sailboat(10, 20, 4.2, 3.2, 2, 0.06, r);
+    const last = loops.at(-1);
+    if (last) this.sailboat(last[0], last[1], last[2], last[3], 2, 0.06, r);
     this.airliners(seed);
     this.cableCars();
     this.kites(r);
@@ -451,8 +450,10 @@ export class Life {
   private kites(r: () => number) {
     const colours: ColorLike[] = [0xe85a4a, 0xf2c84b, 0x3aa3c8, 0x8a5ad8, 0x5ac46a];
     for (let i = 0; i < 4; i++) {
-      const ax = -23 + i * 1.6 + r() * 0.5;
-      const az = 9.4 + r() * 0.5;
+      // On the Marina Green (or the shore by the Marina, if this city has no green).
+      const g = MARINA.green;
+      const ax = (g ? g.x - 2.5 : MARINA.x - 1.6) + i * 1.6 + r() * 0.5;
+      const az = (g ? g.z - 0.2 : MARINA.z - 2.6) + r() * 0.5;
       const b = new GeoBuilder();
       const diamond = new THREE.Shape([new THREE.Vector2(0, 0.16), new THREE.Vector2(0.09, 0), new THREE.Vector2(0, -0.2), new THREE.Vector2(-0.09, 0)]);
       // Both faces of the sail, so it reads from any side without a double-sided material.
@@ -483,7 +484,8 @@ export class Life {
     for (let i = 0; i < 70; i++) {
       // Most of the bank sits offshore and over the Marin Headlands; a tongue reaches through the Gate.
       const tongue = i < 22;
-      const x = tongue ? -44 + r() * 26 : -110 + r() * 68;
+      const gg = LANDMARKS.goldenGate.x + 34.6;
+      const x = tongue ? -44 + gg + r() * 26 : -110 + r() * 68;
       const z = tongue ? 12 + r() * 9 : -40 + r() * 80;
       const mat = new THREE.SpriteMaterial({ map: tex, color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, fog: false });
       const sprite = new THREE.Sprite(mat);
@@ -546,7 +548,7 @@ export class Life {
     for (const f of this.fog) {
       const x = f.base.x + ((time * f.speed + f.phase) % 30);
       // The tongue through the Gate advances and retreats with the density.
-      const reach = f.base.z > 11 && f.base.z < 22 && f.base.x > -45 ? density : 1;
+      const reach = f.base.z > 11 && f.base.z < 22 && f.base.x > LANDMARKS.goldenGate.x - 10.4 ? density : 1;
       f.sprite.position.set(x - 8 * (1 - reach), f.base.y + Math.sin(time * 0.2 + f.phase) * 0.15, f.base.z);
       const fade = Math.min(1, ((time * f.speed + f.phase) % 30) / 4, (30 - ((time * f.speed + f.phase) % 30)) / 4);
       f.mat.opacity = 0.55 * density * fade * reach;
@@ -927,9 +929,9 @@ class Gulls {
 
   constructor(r: () => number) {
     const spots: [number, number, number][] = [
-      [-8.4, 16, 10],
+      [(PIER.x0 + PIER.x1) / 2, PIER.z0 + 5.4, 10],
       [12.4, -1.2, 6],
-      [-20.5, 12.5, 6],
+      [MARINA.x + 0.9, MARINA.z + 0.3, 6],
       [-2, 12, 6],
       [LANDMARKS.coitTower.x, LANDMARKS.coitTower.z, 4],
     ];

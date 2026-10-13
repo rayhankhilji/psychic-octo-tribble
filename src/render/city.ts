@@ -11,13 +11,13 @@ import { Life, SHADOW_ONLY_LAYER } from './life.ts';
 import { Construction } from './construction.ts';
 import { festival, protest, protestBanner } from './mood.ts';
 import { Batch } from './batch.ts';
-import { AIRPORT_SLOTS, DOWNTOWN_HOME, HILLS_HOME, ISLAND, LAUNCH, MARINA_SLOTS, SUPERYACHT, Scenery, hillHeight } from './scenery.ts';
+import { AIRPORT_SLOTS, DOWNTOWN_HOME, HILLS_HOME, MARINA_SLOTS, SUPERYACHT, Scenery, hillHeight } from './scenery.ts';
 import { BUILD_BLOCKS, HOME_TIERS, HQ_FLOOR_CAP, ITEMS } from '../game/catalog.ts';
 import { decayOf, type GameEvent, type GameState } from '../game/economy.ts';
 import { atmosphereAt, localHour, type Atmosphere } from '../world/daylight.ts';
 import { hash, rng } from '../world/rng.ts';
 import { BLOCK, HQ_BLOCK, PITCH, blockCentre, type BlockCoord, type WorldPlan } from '../world/layout.ts';
-import { BLOCKS, EMBARCADERO, HELIPAD, LANDMARKS, MARKET_END, MARKET_START, WORLD, type Pt } from '../world/map.ts';
+import { BLOCKS, EMBARCADERO, HELIPAD, ISLANDS, LANDMARKS, MARINA, MARKET_END, MARKET_START, PIER, WORLD, WORLD_SPEC, type Pt } from '../world/map.ts';
 import type { WorldEvent } from '../world/events.ts';
 
 export interface Tip {
@@ -53,10 +53,10 @@ interface Fade {
   target: number;
 }
 
-/** Blocks on the street grid: every city block has its streets, built up or not. */
-const STREET_BLOCKS: BlockCoord[] = BLOCKS.filter((b) => b.use === 'city' || b.use === 'market' || b.use === 'hq' || b.use === 'civic').map(({ bx, bz }) => ({ bx, bz }));
+/** Blocks on the street grid: every city block has its streets, built up or not. (Read when a City is built: the map depends on the world's seed.) */
+const streetBlocks = (): BlockCoord[] => BLOCKS.filter((b) => b.use === 'city' || b.use === 'market' || b.use === 'hq' || b.use === 'civic').map(({ bx, bz }) => ({ bx, bz }));
 /** The F-line: vintage streetcars from the Castro down Market and along the Embarcadero to the Wharf. */
-const F_LINE: Pt[] = [MARKET_END, MARKET_START, ...EMBARCADERO.slice(EMBARCADERO.findIndex(([, z]) => z > MARKET_START[1]), EMBARCADERO.findIndex(([x]) => x < -9) + 1)];
+const fLine = (): Pt[] => [MARKET_END, MARKET_START, ...EMBARCADERO.slice(EMBARCADERO.findIndex(([, z]) => z > MARKET_START[1]), EMBARCADERO.findIndex(([x]) => x < PIER.x0 + 1.4) + 1)];
 
 const easeOutBack = (t: number) => 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2;
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
@@ -71,7 +71,7 @@ export class City {
   readonly rain = new Rain(24);
   readonly moon = new Moon();
   private camera: THREE.OrthographicCamera | null = null;
-  readonly train = new Train(F_LINE, (x, z) => Math.max(0, hillHeight(x, z)) + 0.012);
+  readonly train = new Train(fLine(), (x, z) => Math.max(0, hillHeight(x, z)) + 0.012);
   readonly traffic = new Traffic();
   /** Objects with `userData.tip` for hover tooltips. */
   readonly pickables: THREE.Object3D[] = [];
@@ -186,7 +186,7 @@ export class City {
     this.game = game;
     const open = BUILD_BLOCKS.filter((b) => game.openBlocks.includes(b.id));
     this.activeBlocks = [HQ_BLOCK, ...plan.neighbourhoods.map(({ bx, bz }) => ({ bx, bz })), ...open.map(({ bx, bz }) => ({ bx, bz }))];
-    this.syncRoads(STREET_BLOCKS);
+    this.syncRoads(streetBlocks());
     this.syncWilds(this.activeBlocks);
     const level = game.hqLevel;
     this.syncHQ(level === 0 ? 1 : Math.min(HQ_FLOOR_CAP[level]!, plan.hqFloors - 2), level, animate);
@@ -331,15 +331,15 @@ export class City {
       case 'airport':
         return new THREE.Vector3(21.5, 0, -43);
       case 'marina':
-        return new THREE.Vector3(-21.4, 0, 12.8);
+        return new THREE.Vector3(MARINA.x, 0, MARINA.z + 0.6);
       case 'pier':
-        return new THREE.Vector3(-8.4, 0, 16);
+        return new THREE.Vector3((PIER.x0 + PIER.x1) / 2, 0, PIER.z0 + 5.4);
       case 'hills':
         return new THREE.Vector3(HILLS_HOME.x, hillHeight(HILLS_HOME.x, HILLS_HOME.z), HILLS_HOME.z);
       case 'island':
-        return new THREE.Vector3(ISLAND.x, hillHeight(ISLAND.x, ISLAND.z), ISLAND.z);
+        return new THREE.Vector3(ISLANDS.founder.x, hillHeight(ISLANDS.founder.x, ISLANDS.founder.z), ISLANDS.founder.z);
       case 'launchpad':
-        return new THREE.Vector3(LAUNCH.x, 1, LAUNCH.z);
+        return new THREE.Vector3(ISLANDS.launch.x, 1, ISLANDS.launch.z);
     }
   }
 
@@ -391,7 +391,7 @@ export class City {
         if (b) this.fireworks.launch(new THREE.Vector3(blockCentre(b).x, 1.5, blockCentre(b).z), 3, 2.5);
       } else if (e.type === 'home.moved' || e.type === 'sign.lit') {
         const where = HOME_TIERS[this.game?.home.tier ?? 0]!.where;
-        const at = e.type === 'sign.lit' ? new THREE.Vector3(LANDMARKS.sign.x, hillHeight(LANDMARKS.sign.x, LANDMARKS.sign.z) + 2, LANDMARKS.sign.z) : where === 'hills' ? new THREE.Vector3(HILLS_HOME.x, hillHeight(HILLS_HOME.x, HILLS_HOME.z) + 1, HILLS_HOME.z) : where === 'island' || where === 'moon' ? new THREE.Vector3(ISLAND.x, 2, ISLAND.z) : new THREE.Vector3(DOWNTOWN_HOME.x, 1.5, DOWNTOWN_HOME.z);
+        const at = e.type === 'sign.lit' ? new THREE.Vector3(LANDMARKS.sign.x, hillHeight(LANDMARKS.sign.x, LANDMARKS.sign.z) + 2, LANDMARKS.sign.z) : where === 'hills' ? new THREE.Vector3(HILLS_HOME.x, hillHeight(HILLS_HOME.x, HILLS_HOME.z) + 1, HILLS_HOME.z) : where === 'island' || where === 'moon' ? new THREE.Vector3(ISLANDS.founder.x, 2, ISLANDS.founder.z) : new THREE.Vector3(DOWNTOWN_HOME.x, 1.5, DOWNTOWN_HOME.z);
         this.fireworks.launch(at, 4, 2);
       } else if (e.type === 'region.opened') {
         const at = this.focusOf(e.region === 'launchpad' ? 'launchpad' : e.region === 'pier' ? 'pier' : e.region === 'marina' ? 'marina' : e.region === 'hills' ? 'hills' : 'island');
@@ -424,8 +424,8 @@ export class City {
     add(LANDMARKS.ferryBuilding.x, LANDMARKS.ferryBuilding.z, 1);
     add(LANDMARKS.coitTower.x, LANDMARKS.coitTower.z + 3);
     if (this.activeBlocks.length > 6) add(LANDMARKS.sign.x, LANDMARKS.sign.z, 3);
-    if (this.game?.regions.island) add(ISLAND.x, ISLAND.z, ISLAND.r + 1);
-    if (this.game?.regions.marina) add(-21, 13, 2);
+    if (this.game?.regions.island) add(ISLANDS.founder.x, ISLANDS.founder.z, ISLANDS.founder.r + 1);
+    if (this.game?.regions.marina) add(MARINA.x + 0.4, MARINA.z + 0.8, 2);
     return { x0: Math.max(WORLD.x0, box.x0), x1: Math.min(WORLD.x1, box.x1), z0: Math.max(WORLD.z0, box.z0), z1: Math.min(WORLD.z1, box.z1) };
   }
 
@@ -816,7 +816,7 @@ export class City {
     }
     if (tier >= 5) {
       const o = name(5);
-      wanted.set(`island|${o.id}`, { option: o.id, x: ISLAND.x, y: hillHeight(ISLAND.x, ISLAND.z) - 0.02, z: ISLAND.z, rot: ESTATE_TURN, title: tier === 5 ? `Your home: ${o.name}` : 'Your island estate', detail: tier === 6 ? 'You live on the moon now. Buy a rocket to visit.' : o.blurb });
+      wanted.set(`island|${o.id}`, { option: o.id, x: ISLANDS.founder.x, y: hillHeight(ISLANDS.founder.x, ISLANDS.founder.z) - 0.02, z: ISLANDS.founder.z, rot: ESTATE_TURN, title: tier === 5 ? `Your home: ${o.name}` : 'Your island estate', detail: tier === 6 ? 'You live on the moon now. Buy a rocket to visit.' : o.blurb });
     }
     for (const [key, g] of this.homesOfFounder) {
       if (wanted.has(key)) continue;
@@ -852,11 +852,11 @@ export class City {
         const slot = MARINA_SLOTS[yacht_++];
         if (slot) wanted.set(`site:marina:${i}|${o.item}`, () => ({ ...yacht('day', hash(this.seed, i)), at: new THREE.Vector3(slot.x, -0.36, slot.z), rot: Math.PI, title: item.name, detail: item.blurb }));
       } else if (o.site === 'launchpad') {
-        wanted.set(`site:launch|rocket`, () => ({ ...rocket(i), at: new THREE.Vector3(LAUNCH.x, this.rocketBase, LAUNCH.z), rot: 0, title: 'Your rocket', detail: 'Open Your home to fly to the moon.' }));
+        wanted.set(`site:launch|rocket`, () => ({ ...rocket(i), at: new THREE.Vector3(ISLANDS.launch.x, this.rocketBase, ISLANDS.launch.z), rot: 0, title: 'Your rocket', detail: 'Open Your home to fly to the moon.' }));
       }
     });
     if (game.home.tier >= 5) {
-      wanted.set('site:superyacht|yacht', () => ({ ...yacht('super', 7), at: new THREE.Vector3(SUPERYACHT.x, -0.34, SUPERYACHT.z), rot: Math.PI / 2, title: 'Your superyacht', detail: 'Came with the island.' }));
+      wanted.set('site:superyacht|yacht', () => ({ ...yacht('super', 7), at: new THREE.Vector3(SUPERYACHT.x, -0.34, SUPERYACHT.z), rot: (Math.PI / 2) * WORLD_SPEC.estate.flip, title: 'Your superyacht', detail: 'Came with the island.' }));
     }
     for (const [key, b] of this.builds) {
       if (!key.startsWith('site:') || wanted.has(key)) continue;
@@ -1159,7 +1159,7 @@ export class City {
 
   /** Top of the launch pad, where the rocket stands. */
   private get rocketBase(): number {
-    return hillHeight(LAUNCH.x, LAUNCH.z) + 0.07;
+    return hillHeight(ISLANDS.launch.x, ISLANDS.launch.z) + 0.07;
   }
 
   private updateLaunch(dt: number) {
@@ -1172,7 +1172,7 @@ export class City {
       // Lift-off: slow, then fast, out of sight
       r.position.y = base + 0.4 * l.t * l.t * l.t;
       this.flame.scale.setScalar(1 + Math.random() * 0.3);
-      if (Math.random() < 0.5) this.fireworks.launch(new THREE.Vector3(LAUNCH.x, base + 0.1, LAUNCH.z), 0, 0);
+      if (Math.random() < 0.5) this.fireworks.launch(new THREE.Vector3(ISLANDS.launch.x, base + 0.1, ISLANDS.launch.z), 0, 0);
     } else if (l.t < 9) {
       r.visible = false;
     } else if (l.t < 14) {
@@ -1349,7 +1349,7 @@ const HELI_CRUISE = 4;
 function padTop(pad: 'airport' | 'island'): THREE.Vector3 {
   if (pad === 'airport') return new THREE.Vector3(HELIPAD.x, 0.03, HELIPAD.z);
   const p = new THREE.Vector3(ESTATE_HELIPAD.x, 0, ESTATE_HELIPAD.z).applyAxisAngle(UP, ESTATE_TURN);
-  return p.add(new THREE.Vector3(ISLAND.x, hillHeight(ISLAND.x, ISLAND.z) - 0.02 + ESTATE_HELIPAD.y, ISLAND.z));
+  return p.add(new THREE.Vector3(ISLANDS.founder.x, hillHeight(ISLANDS.founder.x, ISLANDS.founder.z) - 0.02 + ESTATE_HELIPAD.y, ISLANDS.founder.z));
 }
 
 const UP = new THREE.Vector3(0, 1, 0);

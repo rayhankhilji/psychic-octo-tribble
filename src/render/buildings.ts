@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GeoBuilder, glassMaterial, smoothMaterial, solidMaterial, type ColorLike } from './geo.ts';
 import { PALETTE } from './palette.ts';
 import { pick, rng } from '../world/rng.ts';
+import { WORLD_SPEC } from '../world/map.ts';
 import {
   BLOCK,
   SETBACK,
@@ -777,6 +778,8 @@ const STUCCO = [0xf3e3c3, 0xf2d2b6, 0xedc9c3, 0xcfe3d3, 0xc8d8e8, 0xf1e4a6, 0xdc
 const MED = [0xf4e8cf, 0xf2ddc0, 0xefe2cf, 0xf6eee0, 0xecd2bd, 0xe9dcc4, 0xf3d9c9] as const;
 const TILE = [0xc8643c, 0xb9563a, 0xd47a4c, 0xa94e32] as const;
 const SLATE = [0x4c5563, 0x5d4f4a, 0x56606a, 0x6c5f58, 0x3f4a55] as const;
+const SLATE_COOL = [0x4c5563, 0x56606a, 0x3f4a55, 0x505a66] as const;
+const SLATE_WARM = [0x5d4f4a, 0x6c5f58, 0x6a5246, 0x5a4c48] as const;
 const DOORS = [0x7a2e2a, 0x2f4f6f, 0x2f6a5a, 0x6b4a3a, 0x24272c, 0xc8962e, 0x5a3f6e] as const;
 const WHITE = 0xfbf8f2;
 const CONCRETE = 0xd6d0c3;
@@ -835,26 +838,28 @@ interface Street {
 
 function streetStyle(kind: HomeKind, seed: number, ring: number): Street {
   const r = rng(seed);
-  const family: Family =
-    kind === 'apartment'
-      ? pick(r, ['edwardian', 'edwardian', 'brick', 'deco'] as const)
-      : kind === 'townhouse'
-        ? pick(r, ['italianate', 'queen', 'queen', 'stick'] as const)
-        : ring === 2
-          ? pick(r, ['cottage', 'marina', 'cottage', 'sunset'] as const)
-          : pick(r, ['sunset', 'sunset', 'marina', 'cottage'] as const);
+  // Each world has its own character: which families line its streets, its paint, its roofs, its trees.
+  const look = WORLD_SPEC.look;
+  const H = look.houses;
+  const family = pick(r, kind === 'apartment' ? H.apartment : kind === 'townhouse' ? H.townhouse : ring === 2 ? H.ring2 : H.inner) as Family;
   return {
     family,
     s: r() < 0.5 ? 1 : -1,
     variant: Math.floor(r() * 3),
     floors: kind === 'apartment' ? 4 + Math.floor(r() * 2) : family === 'queen' ? 2 : 3,
-    roof: pick(r, SLATE),
+    roof: pick(r, look.roofs === 'slate' ? SLATE_COOL : look.roofs === 'clay' ? SLATE_WARM : SLATE),
     tile: pick(r, TILE),
     garage: r() < 0.45,
     lawn: mix(PALETTE.lawn, PALETTE.grassDark, 0.25 + r() * 0.25),
-    yardTree: pick(r, ['round', 'plane', 'ficus', 'palm', 'round', 'pine'] as const),
+    yardTree: pick(r, look.yardTrees) as TreeKind,
     accent: pick(r, [0x3f5f7f, 0x6b3a3a, 0x2f5a4a, 0x7a6a3a, 0x4a4a5a] as const),
   };
+}
+
+/** This world's painted-lady colours: a run of the full table, or all of it in the classic city. */
+function ladyPaints(): readonly Scheme[] {
+  const paints = WORLD_SPEC.look.paints;
+  return paints.length ? paints.map((i) => LADIES[i % LADIES.length]!) : LADIES;
 }
 
 /** Which family a street seed builds, for the showcase. */
@@ -1394,7 +1399,7 @@ function marina(b: GeoBuilder, r: () => number, { st, L }: HomeCtx): Massing {
  * its roof and which side the porch is on.
  */
 function cottage(b: GeoBuilder, r: () => number, { st, L }: HomeCtx): Massing {
-  const sch = pick(r, LADIES);
+  const sch = pick(r, ladyPaints());
   const body = mix(sch.body, 0xffffff, 0.12);
   const trim = sch.trim;
   const accent = sch.accent;
@@ -1495,9 +1500,10 @@ function cottage(b: GeoBuilder, r: () => number, { st, L }: HomeCtx): Massing {
 function ladies(b: GeoBuilder, r: () => number, { st, L, role }: HomeCtx): Massing {
   const style = st.family as 'italianate' | 'queen' | 'stick';
   const roof = st.roof;
-  const s1 = pick(r, LADIES);
-  let s2 = pick(r, LADIES);
-  if (s2 === s1) s2 = LADIES[(LADIES.indexOf(s1) + 3) % LADIES.length]!;
+  const paints = ladyPaints();
+  const s1 = pick(r, paints);
+  let s2 = pick(r, paints);
+  if (s2 === s1) s2 = paints[(paints.indexOf(s1) + 3) % paints.length]!;
   const paired = st.variant !== 0;
   const fh = 0.22;
   const gl = 0.12;
@@ -1930,7 +1936,8 @@ export function neighbourhoodGrounds(bx0: number, bz0: number, n: number, seed: 
   }
 
   // Street trees in tree wells on every lot line, all one species, all one size: a tidy avenue.
-  const species = STREET_TREES[n % STREET_TREES.length]!;
+  const avenue = WORLD_SPEC.classic ? STREET_TREES : (WORLD_SPEC.look.yardTrees as readonly TreeKind[]);
+  const species = avenue[n % avenue.length]!;
   const scale = species === 'palm' ? 0.6 : species === 'pine' ? 0.62 : 0.58;
   const well = mul(PALETTE.sidewalk, 0.7);
   for (const s of [-1, 1]) {

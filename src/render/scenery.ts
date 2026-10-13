@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GeoBuilder, smoothMaterial, solidMaterial, type ColorLike } from './geo.ts';
 import { PALETTE } from './palette.ts';
-import { palm, tree } from './buildings.ts';
+import { palm, tree, type TreeKind } from './buildings.ts';
 import { airliner, cloudBank } from './models.ts';
 import { Kit, neonOf, pixelText, shade, tower, wall, winOf } from './towers.ts';
 import { gum, hillsHouse, hillsLots, hillsStreets, oak, pine, rock, scrub, strip, type HillsStyle } from './hills.ts';
@@ -28,16 +28,20 @@ import {
   AIRPORT_FILL,
   AIRPORT_SLOTS,
   HELIPAD,
+  HAS,
   ISLAND_COVE,
   TREASURE_COAST,
   BLOCKS,
   CIVIC_BLOCK,
+  GRID,
   HILLS_HOME,
   ISLANDS,
   LANDMARKS,
+  MARINA,
   MARINA_SLOTS,
   MARKET_END,
   MARKET_START,
+  PARKS,
   PIER,
   AIRPORT_ROAD,
   BAY_APPROACH,
@@ -48,7 +52,10 @@ import {
   SEA,
   SUPERYACHT,
   TWIN_PEAKS_SUMMITS,
+  WORLD_SPEC,
   blockCentre,
+  type BlockCoord,
+  type Park,
   coastDistance,
   fbm,
   gradeWeight,
@@ -56,6 +63,7 @@ import {
   inSignZone,
   isBeach,
   naturalHeight,
+  shoreZ,
   terrainHeight,
   TOWN_STREET,
   backdropTowns,
@@ -64,8 +72,6 @@ import {
 import type { Atmosphere } from '../world/daylight.ts';
 
 export { AIRPORT_SLOTS, DOWNTOWN_HOME, HILLS_HOME, MARINA_SLOTS, SUPERYACHT } from '../world/map.ts';
-export const ISLAND = ISLANDS.founder;
-export const LAUNCH = ISLANDS.launch;
 export const hillHeight = terrainHeight;
 
 export interface SceneryState {
@@ -81,6 +87,8 @@ export interface SceneryState {
 }
 
 const LAMP: ColorLike = [2.4, 1.75, 0.95];
+/** A city block's width (4 lots). */
+const BLOCK_SIZE = 4;
 
 /**
  * Everything around the city that metrics don't drive: terrain and water,
@@ -113,7 +121,7 @@ export class Scenery {
   private beamCentre = new THREE.Vector3();
   private sign: Sign;
   private bay: BayBridge;
-  private mill: Windmill;
+  private mill: Windmill | null = null;
   private rustSolid = solidMaterial.clone();
   private rustSmooth = smoothMaterial.clone();
   /** Sea lions on their docks: one instanced mesh, each rocking on its own. */
@@ -147,10 +155,11 @@ export class Scenery {
       });
     }
     this.sign = sign();
-    this.mill = windmill();
+    if (HAS.windmill) this.mill = windmill();
     const civic = blockCentre(CIVIC_BLOCK);
     // Landmarks with moving or custom-lit parts stay objects of their own; the rest are batched.
-    for (const l of [gg, this.bay.group, this.mill.group, this.sign.group]) {
+    for (const l of [gg, this.bay.group, this.mill?.group, this.sign.group]) {
+      if (!l) continue;
       this.object.add(l);
       this.pickables.push(l);
       this.collectGlows(l);
@@ -158,7 +167,10 @@ export class Scenery {
     this.glows.push(this.sign.floodlights);
     this.object.add(this.batch.object);
     this.pickables.push(this.batch.object);
-    for (const l of [cityHall(civic.x, civic.z), ferryBuilding(), coitTower(), palaceOfFineArts(), sutroTower(), conservatory(-16.5, -14.6), cliffHouse()]) this.fix(l);
+    // Every city has City Hall and the Ferry Building; the rest of the landmarks are this world's own selection.
+    const { conservatory: cons } = LANDMARKS;
+    const optional = [HAS.coit && coitTower, HAS.palace && palaceOfFineArts, HAS.sutro && sutroTower, HAS.conservatory && (() => conservatory(cons.x, cons.z)), HAS.cliffHouse && cliffHouse];
+    for (const l of [cityHall(civic.x, civic.z), ferryBuilding(), ...optional.filter((f): f is () => THREE.Group => !!f).map((f) => f())]) this.fix(l);
     for (const part of [this.roads(), this.marketPlazas(), this.parks(), this.marina(), this.airport(), this.island(), this.suburbs()]) this.fix(part);
     this.object.add(this.waterfront());
     this.object.add(this.clouds.hills, this.clouds.island, this.clouds.launch);
@@ -267,7 +279,9 @@ export class Scenery {
   private marketPlazas(): THREE.Group {
     const b = new GeoBuilder();
     const r = rng(hash(this.seed, 'plazas'));
-    for (const blk of BLOCKS.filter((x) => x.use === 'market')) {
+    const market = BLOCKS.filter((x) => x.use === 'market');
+    const lastBx = Math.min(...market.map((x) => x.bx));
+    for (const blk of market) {
       const c = blockCentre(blk);
       for (const s of [-1, 1] as const) {
         // s = −1: north of Market; s = 1: south (SoMa). Reflecting across Market swaps x and z offsets.
@@ -279,7 +293,8 @@ export class Scenery {
         g.setIndex(s < 0 ? [0, 2, 1] : [0, 1, 2]);
         g.computeVertexNormals();
         b.transformed(g, new THREE.Matrix4(), PALETTE.sidewalk);
-        const plaza = (blk.bx === 1 && s < 0) || (blk.bx === -2 && s > 0);
+        // A plaza at each end: at the Ferry Building (north side) and where Market meets the hills (south side).
+        const plaza = (blk.bx === 1 && s < 0) || (blk.bx === lastBx && s > 0);
         if (plaza) {
           const corner = at(-0.9, 0.9);
           b.transformed(new THREE.CircleGeometry(1.0, 20).rotateX(-Math.PI / 2), new THREE.Matrix4().makeTranslation(corner[0], 0.016, corner[1]), PALETTE.plaza);
@@ -323,58 +338,228 @@ export class Scenery {
   private parks(): THREE.Group {
     const b = new GeoBuilder();
     const r = rng(hash(this.seed, 'parks'));
-    // Golden Gate Park: dense trees, meadows, Stow Lake, a pagoda and the de Young's copper tower.
-    const park = { x0: -37.5, x1: -12.5, z0: -17.5, z1: -12.5 };
+    const classic = WORLD_SPEC.classic;
+    const parkTrees = WORLD_SPEC.look.parkTrees as readonly TreeKind[];
+    const big = PARKS.find((p) => p.kind === 'park');
+    if (big) {
+      if (big.blocks.every((q) => q.bz === big.blocks[0]!.bz)) this.stripPark(b, r, big, parkTrees);
+      else this.centralPark(b, r, big, parkTrees);
+    }
+    for (const sq of PARKS.filter((p) => p.kind === 'square')) this.square(sq);
+    // The Presidio and Lands End: cypress and eucalyptus on rolling ground
+    const gx = LANDMARKS.goldenGate.x;
+    const presidioEast = Math.max(-25, ...BLOCKS.filter((q) => q.use === 'presidio').map((q) => q.bx * 5 + 2.5));
+    const xr = classic ? 22 : presidioEast + 47;
+    const westEdge = GRID.bx0 * 5 - 2.5;
+    for (let i = 0; i < (classic ? 520 : Math.round(520 * (xr / 22))); i++) {
+      const x = -47 + r() * xr;
+      const z = -4 + r() * 14;
+      if (coastDistance(x, z) > -0.8) continue;
+      if (HAS.palace && Math.hypot(x - LANDMARKS.palaceOfFineArts.x, z - LANDMARKS.palaceOfFineArts.z) < 3) continue;
+      if (x > westEdge - 0.1 && z < -2.4) continue;
+      const blk = BLOCKS.find((q) => Math.abs(q.bx * 5 - x) <= 3 && Math.abs(q.bz * 5 - z) <= 3);
+      if (blk && blk.use !== 'presidio' && blk.use !== 'hill') continue;
+      if (Math.abs(x - gx) < 0.8 && z > 0) continue; // the Golden Gate viaduct
+      if (nearPath(PRESIDIO_PKWY, x, z, 0.9)) continue; // and the parkway it comes down onto
+      if (HAS.cliffHouse && hidesCliffHouse(x, z)) continue;
+      if (classic ? Math.abs(x + 39.8) < 0.7 : nearPath(GREAT_HIGHWAY, x, z, 0.75)) continue; // highway
+      if (!classic && (nearPath(EMBARCADERO, x, z, 0.8) || (HAS.windmill && Math.hypot(x - LANDMARKS.windmill.x, z - LANDMARKS.windmill.z) < 1.6))) continue;
+      const y = terrainHeight(x, z);
+      eucalyptus(b, r, x, z, y, r() < 0.5);
+    }
+    // Telegraph Hill: scattered trees on the slopes (all over it when there's no tower on top)
+    if (WORLD_SPEC.telegraph) {
+      for (let i = 0; i < 70; i++) {
+        const a = r() * Math.PI * 2;
+        const d = 0.8 + r() * 2.4;
+        const x = LANDMARKS.coitTower.x + Math.cos(a) * d;
+        const z = LANDMARKS.coitTower.z + Math.sin(a) * d;
+        if (d < 1.1 && HAS.coit) continue;
+        tree(b, r, x, z, 0.8, terrainHeight(x, z) - 0.03, r() < 0.6 ? 'round' : 'cypress');
+      }
+    }
+    // The waterfront's points and headlands: Monterey cypress in windblown clumps, lawn between.
+    if (!classic) {
+      for (let gx2 = gx + 3; gx2 < 8; gx2 += 0.55) {
+        for (let gz = 8.8; gz < 18; gz += 0.55) {
+          const x = gx2 + (r() - 0.5) * 0.5;
+          const z = gz + (r() - 0.5) * 0.5;
+          if (coastDistance(x, z) > -0.9 || isBeach(x, z)) continue;
+          if (BLOCKS.some((q) => Math.max(Math.abs(q.bx * 5 - x), Math.abs(q.bz * 5 - z)) < 3.3)) continue;
+          if (nearPath(EMBARCADERO, x, z, 0.95) || nearPath(PRESIDIO_PKWY, x, z, 0.9)) continue;
+          if (x > PIER.x0 - 1.2 && x < PIER.x1 + 1.2 && z < PIER.z0 + 1.5) continue;
+          const g = MARINA.green;
+          if (g && Math.abs(x - g.x) < g.w / 2 + 0.3 && Math.abs(z - g.z) < g.d / 2 + 0.3) continue;
+          if (Math.abs(x - LANDMARKS.goldenGate.x) < 1.0) continue;
+          const clump = 0.5 + 0.5 * fbm(x * 0.5 + 7, z * 0.5 - 3, 2);
+          if (r() > (clump - 0.42) * 1.6) continue;
+          tree(b, r, x, z, 0.8 + r() * 0.4, terrainHeight(x, z) - 0.02, r() < 0.7 ? 'cypress' : 'round');
+        }
+      }
+    }
+    // Marina Green
+    const green = MARINA.green;
+    if (green) b.box(green.w, 0.012, green.d, green.x, 0.005, green.z, 0x7fc252);
+    return this.add(b);
+  }
+
+  /**
+   * Golden Gate Park: a long strip from the ocean, dense with trees, with
+   * meadows, Stow Lake, a pagoda and the de Young's copper tower.
+   */
+  private stripPark(b: GeoBuilder, r: () => number, big: Park, kinds: readonly TreeKind[]) {
+    const xs = big.blocks.map((q) => q.bx * 5);
+    const zc = big.blocks[0]!.bz * 5;
+    const park = { x0: Math.min(...xs) - 2.5, x1: Math.max(...xs) + 2.5, z0: zc - 2.5, z1: zc + 2.5 };
+    const W = park.x1 - park.x0;
+    // Where things stand along the park: the classic map's spots, or the same proportions on another length.
+    const classic = WORLD_SPEC.classic;
+    const at = (classicDx: number, share: number) => park.x0 + (classic ? classicDx : W * share);
+    const lake = { x: at(10.5, 0.42), z: zc - 0.2 };
+    const pagoda = { x: at(16, 0.62), z: zc - 1.2 };
+    const museum = { x: at(17.7, 0.66), z: zc + 1.4 };
+    const cons = LANDMARKS.conservatory;
+    const meadows = [{ x: at(5.5, 0.22), z: zc }, { x: at(14, 0.54), z: zc + 1 }];
     b.box(park.x1 - park.x0, 0.012, park.z1 - park.z0, (park.x0 + park.x1) / 2, 0, (park.z0 + park.z1) / 2, 0x6aae47);
-    const lake = new THREE.CircleGeometry(1.4, 28).rotateX(-Math.PI / 2).scale(1.4, 1, 0.8);
-    b.transformed(lake, new THREE.Matrix4().makeTranslation(-27, 0.02, -15.2), 0x3d9fb0, 'glass');
-    b.cylinder(0.55, 0.6, 0.08, -27, 0.02, -15.2, 0x6aae47, 12);
-    for (let i = 0; i < 6; i++) tree(b, r, -27 + (r() - 0.5) * 0.8, -15.2 + (r() - 0.5) * 0.6, 0.7, 0.1, 'round');
-    b.box(0.4, 0.3, 0.4, -21.5, 0.01, -16.2, 0xc8402e);
-    for (let k = 0; k < 3; k++) b.hip(0.55 - k * 0.12, 0.12, 0.55 - k * 0.12, -21.5, 0.31 + k * 0.16, -16.2, 0x3a3a3a, 0.08, 0.1);
+    const lakeGeo = new THREE.CircleGeometry(1.4, 28).rotateX(-Math.PI / 2).scale(1.4, 1, 0.8);
+    b.transformed(lakeGeo, new THREE.Matrix4().makeTranslation(lake.x, 0.02, lake.z), 0x3d9fb0, 'glass');
+    b.cylinder(0.55, 0.6, 0.08, lake.x, 0.02, lake.z, 0x6aae47, 12);
+    for (let i = 0; i < 6; i++) tree(b, r, lake.x + (r() - 0.5) * 0.8, lake.z + (r() - 0.5) * 0.6, 0.7, 0.1, 'round');
+    b.box(0.4, 0.3, 0.4, pagoda.x, 0.01, pagoda.z, 0xc8402e);
+    for (let k = 0; k < 3; k++) b.hip(0.55 - k * 0.12, 0.12, 0.55 - k * 0.12, pagoda.x, 0.31 + k * 0.16, pagoda.z, 0x3a3a3a, 0.08, 0.1);
     const cu = new THREE.BoxGeometry(0.6, 1.4, 0.6);
     cu.translate(0, 0.7, 0);
     cu.applyMatrix4(new THREE.Matrix4().makeShear(0, 0, 0.12, 0, 0, 0));
     cu.rotateY(0.3);
-    b.transformed(cu, new THREE.Matrix4().makeTranslation(-19.8, 0.01, -13.6), 0xa86a3e);
-    b.box(2.2, 0.35, 1.0, -19.6, 0.01, -14.6, 0xa86a3e);
-    for (let i = 0; i < 300; i++) {
+    b.transformed(cu, new THREE.Matrix4().makeTranslation(museum.x, 0.01, museum.z), 0xa86a3e);
+    b.box(2.2, 0.35, 1.0, museum.x + 0.2, 0.01, museum.z - 1.0, 0xa86a3e);
+    for (let i = 0; i < (classic ? 300 : Math.round(60 * big.blocks.length)); i++) {
       const x = park.x0 + 0.6 + r() * (park.x1 - park.x0 - 1.2);
       const z = park.z0 + 0.5 + r() * (park.z1 - park.z0 - 1);
-      if (Math.hypot((x + 27) / 1.6, (z + 15.2) / 1.1) < 1.4) continue; // lake
-      if (Math.abs(x + 16.5) < 1.7 && Math.abs(z + 14.6) < 1.1) continue; // conservatory
-      if (Math.abs(x + 20) < 1.4 && Math.abs(z + 14.3) < 1.2) continue; // museum
-      if (Math.hypot(x + 32, z + 15) < 1.3 || Math.hypot(x + 23.5, z + 14) < 0.9) continue; // meadows
-      tree(b, r, x, z, 0.8 + r() * 0.6, 0.01, r() < 0.45 ? 'round' : r() < 0.85 ? 'cypress' : 'palm');
+      if (Math.hypot((x - lake.x) / 1.6, (z - lake.z) / 1.1) < 1.4) continue; // lake
+      if (HAS.conservatory && Math.abs(x - cons.x) < 1.7 && Math.abs(z - cons.z) < 1.1) continue; // conservatory
+      if (Math.abs(x - museum.x + 0.2) < 1.4 && Math.abs(z - museum.z + 0.7) < 1.2) continue; // museum
+      if (Math.hypot(x - meadows[0]!.x, z - meadows[0]!.z) < 1.3 || Math.hypot(x - meadows[1]!.x, z - meadows[1]!.z) < 0.9) continue; // meadows
+      if (!classic && Math.hypot(x - pagoda.x, z - pagoda.z) < 0.5) continue;
+      const scale = 0.8 + r() * 0.6;
+      tree(b, r, x, z, scale, 0.01, classic ? (r() < 0.45 ? 'round' : r() < 0.85 ? 'cypress' : 'palm') : kinds[Math.floor(r() * kinds.length)]!);
     }
-    // The Presidio and Lands End: cypress and eucalyptus on rolling ground
-    for (let i = 0; i < 520; i++) {
-      const x = -47 + r() * 22;
-      const z = -4 + r() * 14;
-      if (coastDistance(x, z) > -0.8) continue;
-      if (Math.hypot(x - LANDMARKS.palaceOfFineArts.x, z - LANDMARKS.palaceOfFineArts.z) < 3) continue;
-      if (x > -37.6 && z < -2.4) continue;
-      const blk = BLOCKS.find((q) => Math.abs(q.bx * 5 - x) <= 3 && Math.abs(q.bz * 5 - z) <= 3);
-      if (blk && blk.use !== 'presidio' && blk.use !== 'hill') continue;
-      if (Math.abs(x + 34.6) < 0.8 && z > 0) continue; // the Golden Gate viaduct
-      if (nearPath(PRESIDIO_PKWY, x, z, 0.9)) continue; // and the parkway it comes down onto
-      if (hidesCliffHouse(x, z)) continue;
-      if (Math.abs(x + 39.8) < 0.7) continue; // highway
-      const y = terrainHeight(x, z);
-      eucalyptus(b, r, x, z, y, r() < 0.5);
+  }
+
+  /**
+   * A park of a few blocks: lawns round a lake with a boathouse, paths, a
+   * bandshell, dense woods round the edge (and the Conservatory, if this city has one).
+   */
+  private centralPark(b: GeoBuilder, r: () => number, big: Park, kinds: readonly TreeKind[]) {
+    const xs = big.blocks.map((q) => q.bx * 5);
+    const zs = big.blocks.map((q) => q.bz * 5);
+    const x0 = Math.min(...xs) - 2.5;
+    const x1 = Math.max(...xs) + 2.5;
+    const z0 = Math.min(...zs) - 2.5;
+    const z1 = Math.max(...zs) + 2.5;
+    const cx = (x0 + x1) / 2;
+    const cz = (z0 + z1) / 2;
+    b.box(x1 - x0, 0.012, z1 - z0, cx, 0, cz, 0x6aae47);
+    // The lake: long, a little off centre, an island with a gazebo.
+    const lake = { x: cx - 0.6, z: cz - 0.4, rx: (x1 - x0) * 0.24, rz: Math.min(1.6, (z1 - z0) * 0.16) };
+    const lakeGeo = new THREE.CircleGeometry(1, 32).rotateX(-Math.PI / 2).scale(lake.rx, 1, lake.rz);
+    b.transformed(lakeGeo.clone().scale(1.06, 1, 1.12), new THREE.Matrix4().makeTranslation(lake.x, 0.014, lake.z), 0xd8cdb8);
+    b.transformed(lakeGeo, new THREE.Matrix4().makeTranslation(lake.x, 0.022, lake.z), 0x3d9fb0, 'glass');
+    b.cylinder(0.38, 0.42, 0.06, lake.x + lake.rx * 0.35, 0.02, lake.z, 0x6aae47, 12);
+    b.cylinder(0.14, 0.16, 0.16, lake.x + lake.rx * 0.35, 0.08, lake.z, 0xf2ede2, 8);
+    b.cylinder(0, 0.2, 0.1, lake.x + lake.rx * 0.35, 0.24, lake.z, 0x6a3a2a, 8);
+    // The boathouse on the north shore, rowing boats tied up.
+    const bh = { x: lake.x - lake.rx * 0.45, z: lake.z + lake.rz + 0.35 };
+    b.box(0.8, 0.26, 0.42, bh.x, 0.012, bh.z, 0xe8dcc4);
+    b.gable(0.8, 0.14, 0.42, bh.x, 0.27, bh.z, 0x7a4a36, 0.04);
+    for (let k = 0; k < 3; k++) b.rbox(0.22, 0.04, 0.08, bh.x - 0.25 + k * 0.25, SEA * 0 + 0.03, bh.z - 0.45, pick(r, [0xe85a2a, 0xf2efe8, 0x2a6db8] as const), 0.02, 'smooth', 0.3);
+    // Paths: a loop round the lake and a cross walk.
+    const loop: Pt[] = [];
+    for (let k = 0; k <= 32; k++) {
+      const a = (k / 32) * Math.PI * 2;
+      loop.push([lake.x + Math.cos(a) * (lake.rx + 0.75), lake.z + Math.sin(a) * (lake.rz + 0.7)]);
     }
-    // Telegraph Hill: scattered trees on the slopes
-    for (let i = 0; i < 70; i++) {
-      const a = r() * Math.PI * 2;
-      const d = 0.8 + r() * 2.4;
-      const x = LANDMARKS.coitTower.x + Math.cos(a) * d;
-      const z = LANDMARKS.coitTower.z + Math.sin(a) * d;
-      if (d < 1.1) continue;
-      tree(b, r, x, z, 0.8, terrainHeight(x, z) - 0.03, r() < 0.6 ? 'round' : 'cypress');
+    ribbon(b, loop, 0.14, 0xd9cdb2, 0.018);
+    ribbon(b, [[x0 + 0.3, cz + 1.9], [x1 - 0.3, cz + 1.9]], 0.16, 0xd9cdb2, 0.018);
+    ribbon(b, [[cx + 1.2, z0 + 0.3], [cx + 1.2, z1 - 0.3]], 0.16, 0xd9cdb2, 0.018);
+    // A bandshell facing a meadow in the south-west.
+    const bs = { x: x0 + 2.2, z: z0 + 1.6 };
+    b.box(1.0, 0.06, 0.6, bs.x, 0.012, bs.z, 0xd8d2c4);
+    const shell = new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI, 0, Math.PI / 2).rotateY(-Math.PI * 0.75);
+    b.transformed(shell, new THREE.Matrix4().makeTranslation(bs.x, 0.07, bs.z), 0xf4f1ea, 'smooth');
+    const cons = LANDMARKS.conservatory;
+    const n = Math.round(62 * big.blocks.length);
+    for (let i = 0; i < n; i++) {
+      const x = x0 + 0.5 + r() * (x1 - x0 - 1);
+      const z = z0 + 0.5 + r() * (z1 - z0 - 1);
+      if (Math.hypot((x - lake.x) / (lake.rx + 1.0), (z - lake.z) / (lake.rz + 0.95)) < 1) continue; // lake and its path
+      if (Math.abs(z - cz - 1.9) < 0.3 || Math.abs(x - cx - 1.2) < 0.3) continue; // paths
+      if (HAS.conservatory && Math.abs(x - cons.x) < 1.8 && Math.abs(z - cons.z) < 1.0) continue;
+      if (Math.hypot(x - bs.x, z - bs.z - 0.9) < 1.5) continue; // the meadow in front of the bandshell
+      if (Math.hypot(x - bh.x, z - bh.z) < 0.7) continue;
+      // Woods round the edges, open lawn in the middle.
+      const edge = Math.min(x - x0, x1 - x, z - z0, z1 - z);
+      if (edge > 2.2 && r() < 0.55) continue;
+      tree(b, r, x, z, 0.8 + r() * 0.6, 0.01, kinds[Math.floor(r() * kinds.length)]!);
     }
-    // Marina Green
-    b.box(7, 0.012, 1.3, -20.5, 0.005, 9.6, 0x7fc252);
-    return this.add(b);
+  }
+
+  /** A square: one block of lawn with paths, trees round the edge and something to do in the middle. */
+  private square(park: Park) {
+    const blk: BlockCoord = park.blocks[0]!;
+    const r = rng(hash(this.seed, 'square', blk.bx, blk.bz));
+    const b = new GeoBuilder();
+    const { x, z } = blockCentre(blk);
+    const kinds = WORLD_SPEC.look.parkTrees as readonly TreeKind[];
+    b.box(BLOCK_SIZE, 0.02, BLOCK_SIZE, x, 0, z, PALETTE.sidewalk);
+    b.box(BLOCK_SIZE - 0.3, 0.03, BLOCK_SIZE - 0.3, x, 0, z, 0x7cbc52);
+    const path = 0xe0d6c2;
+    const style = hash(WORLD_SPEC.seed, 'square-style', blk.bx, blk.bz) % 4;
+    if (style === 0) {
+      // Diagonal walks to a fountain.
+      for (const s of [-1, 1]) ribbon(b, [[x - 1.75, z - 1.75 * s], [x + 1.75, z + 1.75 * s]], 0.16, path, 0.034);
+      b.cylinder(0.42, 0.46, 0.08, x, 0.03, z, 0xd8d2c4, 18);
+      b.cylinder(0.36, 0.36, 0.01, x, 0.1, z, 0x5fc7d6, 18, 'glass');
+      b.cylinder(0.05, 0.08, 0.3, x, 0.1, z, 0xd8d2c4, 8);
+    } else if (style === 1) {
+      // A cross of walks and a bandstand.
+      ribbon(b, [[x - 1.8, z], [x + 1.8, z]], 0.16, path, 0.034);
+      ribbon(b, [[x, z - 1.8], [x, z + 1.8]], 0.16, path, 0.034);
+      b.cylinder(0.4, 0.42, 0.08, x, 0.03, z, 0xd8d2c4, 10);
+      for (let k = 0; k < 8; k++) b.cylinder(0.012, 0.012, 0.26, x + Math.cos((k / 8) * Math.PI * 2) * 0.34, 0.11, z + Math.sin((k / 8) * Math.PI * 2) * 0.34, 0xf4f1ea, 4);
+      b.cylinder(0, 0.46, 0.16, x, 0.37, z, 0x3f6a5a, 10);
+    } else if (style === 2) {
+      // Tennis courts on one half, a lawn on the other.
+      for (const dx of [-0.75, 0.75]) {
+        b.box(1.3, 0.008, 2.2, x + dx, 0.03, z - 0.5, 0x4f8a6a);
+        b.box(1.1, 0.004, 1.9, x + dx, 0.038, z - 0.5, 0x3f6f9a);
+        b.box(1.12, 0.06, 0.012, x + dx, 0.04, z - 0.5, 0xf2efe8);
+      }
+      ribbon(b, [[x - 1.8, z + 1.2], [x + 1.8, z + 1.2]], 0.14, path, 0.034);
+    } else {
+      // A playground under the trees, a meandering path.
+      ribbon(b, [[x - 1.8, z - 0.9], [x - 0.6, z + 0.3], [x + 0.6, z - 0.2], [x + 1.8, z + 1.0]], 0.16, path, 0.034);
+      b.box(1.2, 0.01, 0.9, x + 0.4, 0.03, z + 1.0, 0xd9b47a);
+      b.box(0.5, 0.26, 0.12, x + 0.2, 0.04, z + 1.0, 0xe85a4a);
+      b.box(0.08, 0.3, 0.08, x + 0.65, 0.04, z + 1.15, 0x2a6db8);
+      b.box(0.36, 0.03, 0.06, x + 0.65, 0.3, z + 0.95, 0xf2c84b, false, 0.6);
+    }
+    // Trees round the edge, evenly spaced, and a few on the lawn.
+    for (let k = 0; k < 16; k++) {
+      const side = k % 4;
+      const t = -1.5 + Math.floor(k / 4);
+      const [tx, tz] = side === 0 ? [x + t, z - 1.62] : side === 1 ? [x + t + 1, z + 1.62] : side === 2 ? [x - 1.62, z + t + 1] : [x + 1.62, z + t];
+      if (r() < 0.15) continue;
+      tree(b, r, tx, tz, 0.8 + r() * 0.3, 0.03, kinds[Math.floor(r() * kinds.length)]!);
+    }
+    for (let k = 0; k < 4; k++) {
+      const tx = x + (r() - 0.5) * 2.4;
+      const tz = z + (r() - 0.5) * 2.4;
+      if (Math.hypot(tx - x, tz - z) < 0.9) continue;
+      tree(b, r, tx, tz, 0.9, 0.03, kinds[Math.floor(r() * kinds.length)]!);
+    }
+    const group = this.add(b, { title: park.name, detail: 'A neighbourhood park. Every city has a few, in different places.' });
+    this.fix(group);
   }
 
   // ─── Waterfront: piers, wharf, sea lions, rides ─────────────────────────
@@ -431,8 +616,9 @@ export class Scenery {
     // Sea lion docks beside the pier
     for (let k = 0; k < 4; k++) b.box(1.0, 0.06, 0.6, x0 - 1.0, SEA + 0.08, z0 + 4 + k * 0.85, 0x9c8f78);
     // Crab wheel sign at the foot of the wharf
-    const sx = -12.6;
-    const sz = 10.2;
+    // On the shore at the foot of the wharf, west of the pier.
+    const sx = x0 - 2.2;
+    const sz = WORLD_SPEC.classic ? 10.2 : shoreZ(sx) - 0.4;
     b.cylinder(0.02, 0.02, 0.9, sx, 0, sz, 0x2a2a2a, 6);
     const ring = new THREE.TorusGeometry(0.35, 0.045, 6, 24);
     ring.rotateY(Math.PI / 4);
@@ -585,13 +771,14 @@ export class Scenery {
     const b = new GeoBuilder();
     const r = rng(hash(this.seed, 'marina'));
     // Breakwater and floating docks in front of the Marina Green
+    const { x: mx, z: mz } = MARINA;
     const bw = new THREE.TorusGeometry(3.2, 0.18, 4, 24, Math.PI * 0.7).rotateX(Math.PI / 2).rotateY(Math.PI * 0.15);
-    b.transformed(bw, new THREE.Matrix4().makeTranslation(-21.4, SEA + 0.1, 12.2), 0xb4ab9c);
+    b.transformed(bw, new THREE.Matrix4().makeTranslation(mx, SEA + 0.1, mz), 0xb4ab9c);
     for (let k = 0; k < 5; k++) {
-      const x = -24 + k * 1.2;
-      b.box(0.14, 0.05, 2.6, x, SEA + 0.12, 13.4, PALETTE.wood);
-      for (let j = 0; j < 3; j++) b.box(0.6, 0.05, 0.1, x + 0.36, SEA + 0.12, 12.6 + j * 0.8, PALETTE.wood);
-      for (let j = 0; j < 3; j++) if (r() < 0.75) moored(b, r, x + 0.35, 12.95 + j * 0.8);
+      const x = mx - 2.6 + k * 1.2;
+      b.box(0.14, 0.05, 2.6, x, SEA + 0.12, mz + 1.2, PALETTE.wood);
+      for (let j = 0; j < 3; j++) b.box(0.6, 0.05, 0.1, x + 0.36, SEA + 0.12, mz + 0.4 + j * 0.8, PALETTE.wood);
+      for (let j = 0; j < 3; j++) if (r() < 0.75) moored(b, r, x + 0.35, mz + 0.75 + j * 0.8);
     }
     for (const s of MARINA_SLOTS) b.box(0.1, 0.05, 1.4, s.x - 0.55, SEA + 0.12, s.z, PALETTE.wood);
     return this.add(b, { title: 'The Marina', detail: 'Yacht berths open at $10k MRR.' });
@@ -815,9 +1002,14 @@ export class Scenery {
     const b = new Kit();
     const isl = ISLANDS.founder;
     const stone = 0xe2d9c6;
-    // Lighthouse on the rocky north-west point: a white tower, a gallery, the lantern, a keeper's cottage.
-    const lx = 9.0;
-    const lz = 41.9;
+    // The island's own frame: offsets from its centre, mirrored east-west when its cove faces east.
+    const f = WORLD_SPEC.estate.flip;
+    const X = (dx: number) => isl.x + dx * f;
+    const Z = (dz: number) => isl.z + dz;
+    const local = (x: number) => (x - isl.x) * f;
+    // Lighthouse on the rocky north point: a white tower, a gallery, the lantern, a keeper's cottage.
+    const lx = X(-3.0);
+    const lz = Z(2.9);
     const ly = terrainHeight(lx, lz);
     b.cylinder(0.3, 0.34, 0.08, lx, ly - 0.04, lz, 0xbdb4a2, 12);
     b.cylinder(0.15, 0.21, 1.3, lx, ly, lz, PALETTE.trim, 12);
@@ -827,39 +1019,39 @@ export class Scenery {
     b.blob(0.11, lx, ly + 1.46, lz, [3, 2.6, 1.6], true);
     b.cylinder(0.02, 0.15, 0.16, lx, ly + 1.57, lz, 0xc84a3a, 12);
     this.beamCentre.set(lx, ly + 1.46, lz);
-    const kx = 9.7;
-    const kz = 41.3;
+    const kx = X(-2.3);
+    const kz = Z(2.3);
     const ky = terrainHeight(kx, kz);
-    b.box(0.5, 0.22, 0.36, kx, ky - 0.03, kz, 0xf6f2ea, false, -0.6);
-    b.gable(0.5, 0.11, 0.36, kx, ky + 0.19, kz, 0xc84a3a, 0.03, -0.6);
+    b.box(0.5, 0.22, 0.36, kx, ky - 0.03, kz, 0xf6f2ea, false, -0.6 * f);
+    b.gable(0.5, 0.11, 0.36, kx, ky + 0.19, kz, 0xc84a3a, 0.03, -0.6 * f);
     // The jetty: a boardwalk out across the cove's beach to a quay alongside the superyacht.
-    const qx = SUPERYACHT.x + 0.48;
+    const qx = SUPERYACHT.x + 0.48 * f;
     const deck = SEA + 0.32;
     b.box(0.22, 0.05, 2.5, qx, deck, SUPERYACHT.z, PALETTE.wood);
     for (let k = 0; k < 6; k++) for (const sx of [-0.09, 0.09]) b.cylinder(0.025, 0.025, 0.42, qx + sx, SEA - 0.12, SUPERYACHT.z - 1.15 + k * 0.46, 0x6b5340, 5);
-    for (const bz of [SUPERYACHT.z - 0.9, SUPERYACHT.z + 0.9]) b.cylinder(0.025, 0.03, 0.05, qx - 0.08, deck + 0.05, bz, 0x2a2f38, 6);
-    const walkTo = 9.1;
-    b.box(walkTo - qx, 0.05, 0.2, (qx + walkTo) / 2, deck, ISLAND_COVE.z, PALETTE.wood);
-    for (let x = qx + 0.4; x < walkTo; x += 0.45) for (const sz of [-0.08, 0.08]) b.cylinder(0.022, 0.022, 0.4, x, SEA - 0.1, ISLAND_COVE.z + sz, 0x6b5340, 5);
-    for (let x = qx + 0.3; x < walkTo; x += 0.6) {
-      b.cylinder(0.006, 0.008, 0.2, x, deck + 0.05, ISLAND_COVE.z + 0.11, 0x2a2f38, 4);
-      b.blob(0.016, x, deck + 0.26, ISLAND_COVE.z + 0.11, [2.4, 1.8, 1.0], true);
+    for (const bz of [SUPERYACHT.z - 0.9, SUPERYACHT.z + 0.9]) b.cylinder(0.025, 0.03, 0.05, qx - 0.08 * f, deck + 0.05, bz, 0x2a2f38, 6);
+    const walkTo = X(-2.9);
+    b.box(Math.abs(walkTo - qx), 0.05, 0.2, (qx + walkTo) / 2, deck, ISLAND_COVE.z, PALETTE.wood);
+    for (let d = 0.4; d < Math.abs(walkTo - qx); d += 0.45) for (const sz of [-0.08, 0.08]) b.cylinder(0.022, 0.022, 0.4, qx + d * f, SEA - 0.1, ISLAND_COVE.z + sz, 0x6b5340, 5);
+    for (let d = 0.3; d < Math.abs(walkTo - qx); d += 0.6) {
+      b.cylinder(0.006, 0.008, 0.2, qx + d * f, deck + 0.05, ISLAND_COVE.z + 0.11, 0x2a2f38, 4);
+      b.blob(0.016, qx + d * f, deck + 0.26, ISLAND_COVE.z + 0.11, [2.4, 1.8, 1.0], true);
     }
     // The beach in the cove: a cabana, loungers and umbrellas, a kayak.
-    const by = Math.max(SEA + 0.25, terrainHeight(9.2, 37.0));
-    b.box(0.36, 0.2, 0.3, 9.25, by, 36.8, 0xf6f2ea);
-    b.box(0.44, 0.03, 0.38, 9.25, by + 0.2, 36.8, 0xc9a77a);
+    const by = Math.max(SEA + 0.25, terrainHeight(X(-2.8), Z(-2.0)));
+    b.box(0.36, 0.2, 0.3, X(-2.75), by, Z(-2.2), 0xf6f2ea);
+    b.box(0.44, 0.03, 0.38, X(-2.75), by + 0.2, Z(-2.2), 0xc9a77a);
     for (let k = 0; k < 3; k++) {
-      const ux = 8.7 + k * 0.32;
-      const uz = 38.8 + k * 0.12;
+      const ux = X(-3.3 + k * 0.32);
+      const uz = Z(-0.2 + k * 0.12);
       const uy = Math.max(SEA + 0.22, terrainHeight(ux, uz));
       b.cylinder(0.004, 0.004, 0.16, ux, uy, uz, 0xdddddd, 4);
       b.cylinder(0, 0.1, 0.035, ux, uy + 0.15, uz, pick(r, [0xf2efe8, 0x2a6db8, 0xe8c25a] as const), 8);
-      b.box(0.05, 0.014, 0.12, ux + 0.08, uy, uz - 0.08, 0xf6f2ea);
+      b.box(0.05, 0.014, 0.12, ux + 0.08 * f, uy, uz - 0.08, 0xf6f2ea);
     }
-    b.rbox(0.32, 0.04, 0.07, 8.9, SEA + 0.24, 37.25, 0xe85a2a, 0.02, 'smooth', 0.4);
+    b.rbox(0.32, 0.04, 0.07, X(-3.1), SEA + 0.24, Z(-1.75), 0xe85a2a, 0.02, 'smooth', 0.4 * f);
     // Paths from the estate: down to the jetty and up to the lighthouse.
-    for (const path of [[[10.2, 38.6], [9.6, 38.2], [walkTo, ISLAND_COVE.z]], [[10.8, 40.5], [10.2, 41.2], [kx, kz - 0.25]]] as Pt[][]) {
+    for (const path of [[[X(-1.8), Z(-0.4)], [X(-2.4), Z(-0.8)], [walkTo, ISLAND_COVE.z]], [[X(-1.2), Z(1.5)], [X(-1.8), Z(2.2)], [kx, kz - 0.25]]] as Pt[][]) {
       ribbon(b, path, 0.16, stone, 0.03);
     }
     // Planting: palms on the beaches, pines and cypress on the rocks, a hedge of oleander round the estate.
@@ -871,10 +1063,10 @@ export class Scenery {
       const x = isl.x + Math.cos(a) * d;
       const z = isl.z + Math.sin(a) * d;
       if (coastDistance(x, z) > -0.15 || !clearOf(x, z)) continue;
-      if (Math.abs(z - ISLAND_COVE.z) < 0.3 && x < walkTo + 0.5) continue;
+      if (Math.abs(z - ISLAND_COVE.z) < 0.3 && local(x) < -2.4) continue;
       const y = terrainHeight(x, z);
       const beach = isBeach(x, z);
-      const north = z > isl.z + 1.4 || x < isl.x - 2.6;
+      const north = z > isl.z + 1.4 || local(x) < -2.6;
       if (beach) {
         if (r() < 0.3) palm(b, r, x, z, 0.95, y - 0.02);
       } else if (north && r() < 0.35) {
@@ -1000,11 +1192,15 @@ export class Scenery {
    */
   private wildBackdrop(chunks: Chunks, r: () => number) {
     const step = 1.0;
+    const classic = WORLD_SPEC.classic;
+    const F = ISLANDS.founder;
+    // Twin Peaks' own builder covers the hills behind the city, wherever this world put them.
+    const hz0 = Math.min(-50, WORLD_SPEC.peaks.centre.z - 14);
     for (let gx = -80; gx < 86; gx += step) {
       for (let gz = -92; gz < 66; gz += step) {
         // The city, Twin Peaks (done in detail) and the islands are left to their own builders.
-        if (gx > -36 && gx < 12 && gz > -50 && gz < 14) continue;
-        if (gx > 4 && gx < 42 && gz > -14 && gz < 48) continue;
+        if (gx > -36 && gx < 12 && gz > hz0 && gz < 14) continue;
+        if (classic ? gx > 4 && gx < 42 && gz > -14 && gz < 48 : (gx > 28 && gx < 41 && gz > -12 && gz < 4) || Math.hypot(gx - F.x, gz - F.z) < F.r + 2.5) continue;
         if (gx > 12 && gx < 31 && gz > -56 && gz < -31) continue;
         const x = gx + (r() - 0.5) * step;
         const z = gz + (r() - 0.5) * step;
@@ -1105,23 +1301,27 @@ export class Scenery {
       if (!g) chunks.set(key, (g = new GeoBuilder()));
       return g;
     };
-    const north = TWIN_PEAKS_SUMMITS[0]!;
-    const south = TWIN_PEAKS_SUMMITS[1]!;
+    const summits = TWIN_PEAKS_SUMMITS;
     const step = 0.42;
-    for (let gx = -33; gx < 10; gx += step) {
-      for (let gz = -49; gz < -21; gz += step) {
+    // The classic hills' extent, moved with this world's peaks.
+    const ox = WORLD_SPEC.peaks.centre.x + 14;
+    const oz = WORLD_SPEC.peaks.centre.z + 36;
+    const sutroAt = WORLD_SPEC.peaks.sutro ? { x: WORLD_SPEC.peaks.sutro[0], z: WORLD_SPEC.peaks.sutro[1] } : null;
+    for (let gx = -33 + Math.min(0, ox); gx < 10 + Math.max(0, ox); gx += step) {
+      for (let gz = -49 + Math.min(0, oz); gz < -21; gz += step) {
         const x = gx + (r() - 0.5) * step * 0.9;
         const z = gz + (r() - 0.5) * step * 0.9;
         const y = terrainHeight(x, z);
         if (y < 0.12 || coastDistance(x, z) > -0.6) continue;
         if (gradeWeight(x, z) > 0) continue;
         if (Math.hypot(x - HILLS_HOME.x, z - HILLS_HOME.z) < 2.8) continue;
-        if (Math.hypot(x - LANDMARKS.sutroTower.x, z - LANDMARKS.sutroTower.z) < 1.3) continue;
+        if (HAS.sutro && Math.hypot(x - LANDMARKS.sutroTower.x, z - LANDMARKS.sutroTower.z) < 1.3) continue;
         const e = 0.3;
         const slope = Math.hypot(terrainHeight(x + e, z) - terrainHeight(x - e, z), terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e);
         const sign = inSignZone(x, z, 0.6);
         const g = at(x, z);
-        const summit = Math.min(Math.hypot(x - north.x, z - north.z), Math.hypot(x - south.x, z - south.z));
+        let summit = Infinity;
+        for (const p of summits) summit = Math.min(summit, Math.hypot(x - p.x, z - p.z));
         // Rock: the crowns of the peaks, the steepest faces, scattered on the sign's slope.
         const rocky = Math.max(0, 1 - summit / 3) * 0.45 + Math.max(0, slope - 1.2) * 0.3 + (sign ? 0.04 : 0.015);
         if (r() < rocky) {
@@ -1140,7 +1340,7 @@ export class Scenery {
           continue;
         }
         // Forest where the noise says so, densest on Mount Sutro; oaks in the ravines.
-        const sutro = Math.max(0, 1 - Math.hypot(x - LANDMARKS.sutroTower.x, z - LANDMARKS.sutroTower.z) / 6.5);
+        const sutro = sutroAt ? Math.max(0, 1 - Math.hypot(x - sutroAt.x, z - sutroAt.z) / 6.5) : 0;
         const grove = 0.5 + 0.5 * fbm(x * 0.21 + 40, z * 0.21 - 7, 3);
         const forest = Math.max(sutro * 1.4, (grove - 0.56) * 2.6) * (summit < 2.5 ? 0.2 : 1);
         if (r() < forest * 0.55) {
@@ -1357,7 +1557,7 @@ export class Scenery {
       if (this.wheelFrame) this.wheelFrame.rotation.z = turn;
       this.placeGondolas(turn);
     }
-    this.mill.sails.rotation.z -= dt * 0.6;
+    if (this.mill) this.mill.sails.rotation.z -= dt * 0.6;
     this.rockLions(time);
     void this.flags;
 
@@ -1687,8 +1887,9 @@ function nearPath(path: readonly Pt[], x: number, z: number, d: number): boolean
 
 /** Ground the Cliff House stands on, and the view of it: no trees on the rise between it and the camera (north-east). */
 function hidesCliffHouse(x: number, z: number): boolean {
-  const dx = x + 46.8;
-  const dz = z + 1.6;
+  if (!HAS.cliffHouse) return false;
+  const dx = x - LANDMARKS.cliffHouse.x;
+  const dz = z - LANDMARKS.cliffHouse.z;
   const along = (dx + dz) / Math.SQRT2;
   const across = (dx - dz) / Math.SQRT2;
   return Math.hypot(dx, dz) < 1.8 || (along > 0 && along < 4.5 && Math.abs(across) < 1.6);

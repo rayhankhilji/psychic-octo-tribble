@@ -5,11 +5,20 @@
  * the map, and never change it while a city is on screen.
  */
 let current = 0;
+const listeners: ((seed: number) => void)[] = [];
 
 export function setWorldSeed(seed: number) {
-  current = Number.isFinite(seed) ? Math.abs(Math.trunc(seed)) % 2 ** 31 : 0;
+  const next = Number.isFinite(seed) ? Math.abs(Math.trunc(seed)) % 2 ** 31 : 0;
+  if (next === current) return;
+  current = next;
+  for (const fn of listeners) fn(current);
 }
 
 export function worldSeed(): number {
   return current;
+}
+
+/** Called whenever the seed changes: the map regenerates its geometry here. */
+export function onWorldSeed(fn: (seed: number) => void) {
+  listeners.push(fn);
 }

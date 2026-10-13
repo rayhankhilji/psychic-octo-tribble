@@ -16,9 +16,20 @@ import {
   blockCentre,
   coastDistance,
   terrainHeight,
+  PIER,
+  WORLD_SPEC,
 } from '../src/world/map.ts';
 
 describe('the Bay map', () => {
+  it('is the classic, hand-made map for seed 0 (the demo)', () => {
+    expect(WORLD_SPEC.classic).toBe(true);
+    expect(LANDMARKS.goldenGate.x).toBe(-34.6);
+    expect(PIER).toEqual({ x0: -10.4, x1: -6.4, z0: 10.6, z1: 22 });
+    expect([ISLANDS.founder.x, ISLANDS.founder.z]).toEqual([12, 39]);
+    // Every block's use, column by column from the west: the classic plan, unchanged.
+    expect(BLOCKS.map((b) => b.use[0]).join('')).toBe('cccpchpphccpccpphhcpcccphhcpcccchhcpcccchhmccccchhcmccchhcccmchccccccmcc');
+  });
+
   it('has room for downtown, HQ and plenty of neighbourhoods', () => {
     expect(BLOCKS.filter((b) => b.use === 'hq')).toHaveLength(1);
     expect(NEIGHBOURHOOD_BLOCKS.length).toBeGreaterThanOrEqual(34);

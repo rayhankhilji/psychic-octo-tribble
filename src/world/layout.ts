@@ -6,6 +6,7 @@ import {
   BUILD_BLOCK_COORDS,
   HQ_BLOCK,
   NEIGHBOURHOOD_BLOCKS,
+  NEIGHBOURHOOD_COUNT,
   PITCH,
   blockCentre,
   type BlockCoord,
@@ -90,7 +91,8 @@ const NEIGHBOURHOOD_NAMES = [
   'Midtown Terrace', 'Diamond Heights', 'Twin Lakes', 'Ocean View', 'Visitacion'
 ];
 
-export const HOME_CAPACITY = NEIGHBOURHOOD_BLOCKS.length * HOMES_PER_NEIGHBOURHOOD;
+/** The same in every world: each seed lays out exactly NEIGHBOURHOOD_COUNT blocks of homes. */
+export const HOME_CAPACITY = NEIGHBOURHOOD_COUNT * HOMES_PER_NEIGHBOURHOOD;
 
 export interface Lot {
   i: number;

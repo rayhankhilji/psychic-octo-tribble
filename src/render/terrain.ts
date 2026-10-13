@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { AIRPORT_FILL, ISLANDS, SEA, TOWN_GROUND, TREASURE_COAST, coastDistance, fbm, gradeWeight, hillsPlan, isBeach, naturalHeight, polygonDistance, terrainHeight } from '../world/map.ts';
+import { AIRPORT_FILL, ISLANDS, LANDMARKS, SEA, TOWN_GROUND, TREASURE_COAST, WORLD_SPEC, coastDistance, fbm, gradeWeight, hillsPlan, isBeach, naturalHeight, polygonDistance, terrainHeight } from '../world/map.ts';
 import type { Atmosphere } from '../world/daylight.ts';
 
 /** Area the terrain mesh covers; beyond it, open water. */
@@ -33,10 +33,15 @@ function tileCells(x0: number, z0: number): number {
   const x1 = x0 + TILE;
   const z1 = z0 + TILE;
   const overlaps = (ax0: number, ax1: number, az0: number, az1: number) => x1 > ax0 && x0 < ax1 && z1 > az0 && z0 < az1;
-  // Twin Peaks and TinyTown Hills: the closest look anyone takes at bare ground.
-  if (overlaps(-30, 10, -48, -21.5)) return 16;
+  // Twin Peaks and TinyTown Hills: the closest look anyone takes at bare ground (wherever this world put them).
+  const { x: px, z: pz } = WORLD_SPEC.peaks.centre;
+  if (overlaps(-30 + Math.min(0, px + 14), 10 + Math.max(0, px + 14), -48 + Math.min(0, pz + 36), -21.5)) return 16;
   // Islands, the Presidio and Lands End, the airport, Sausalito and the Golden Gate headlands.
-  if (overlaps(4, 42, -12, 48) || overlaps(-50, -18, -6, 34) || overlaps(12, 31, -56, -31) || overlaps(-24, -8, 30, 46)) return 8;
+  const F = ISLANDS.founder;
+  const A = ISLANDS.angel;
+  const dg = LANDMARKS.goldenGate.x + 34.6;
+  if (overlaps(4, 42, -12, 48) || overlaps(-50, -18 + Math.max(0, dg), -6, 34) || overlaps(12, 31, -56, -31) || overlaps(-24, -8, 30, 46)) return 8;
+  if (overlaps(F.x - 6.5, F.x + 6.5, F.z - 6.5, F.z + 6.5) || overlaps(A.x - A.r - 2, A.x + A.r + 2, A.z - A.r - 2, A.z + A.r + 2)) return 8;
   // The towns, whose streets are graded into the ground.
   if (TOWN_GROUND.some(([ax0, ax1, az0, az1]) => overlaps(ax0, ax1, az0, az1))) return 8;
   // Wherever the coast runs inside the playable world: beaches need a fine edge.
@@ -58,6 +63,11 @@ export class Terrain {
   private water: THREE.ShaderMaterial;
 
   constructor() {
+    // This world's greens: a touch warmer or cooler, lighter or deeper, and its hills more or less golden.
+    const look = WORLD_SPEC.look;
+    grass = WORLD_SPEC.classic ? GRASS : GRASS.clone().offsetHSL(look.grassHue, 0, look.grassLight);
+    park = WORLD_SPEC.classic ? PARK : PARK.clone().offsetHSL(look.grassHue, 0, look.grassLight);
+    dryness = look.dryness;
     this.object.add(this.ground());
     this.water = waterMaterial(depthTexture());
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 900, 1, 1).rotateX(-Math.PI / 2), this.water);
@@ -173,6 +183,11 @@ export class Terrain {
   }
 }
 
+/** This world's lawn, park green and how dry its hills are: set when the terrain is built. */
+let grass = GRASS;
+let park = PARK;
+let dryness = 1;
+
 /** How much of a watered garden there is at (x, z): set while the ground is built. */
 let garden: (x: number, z: number) => number = () => 0;
 
@@ -200,14 +215,14 @@ function groundColour(c: THREE.Color, x: number, h: number, z: number, slope: nu
     return;
   }
   if (Math.abs(h) < 0.05) {
-    c.copy(PARK);
+    c.copy(park);
     return;
   }
   // Green near the city and low down; golden dry grass higher up, with sage scrub in patches.
-  c.copy(GRASS);
+  c.copy(grass);
   // Your island is watered: lawns and gardens, not dry grass.
   const lush = Math.hypot(x - ISLANDS.founder.x, z - ISLANDS.founder.z) < 5.6 || Math.hypot(x - ISLANDS.launch.x, z - ISLANDS.launch.z) < 3.4 ? 0.25 : 1;
-  const dry = Math.min(1, Math.max(0, (h - 0.25) / 1.5 + (noise - 0.5) * 0.9)) * lush;
+  const dry = Math.min(1, Math.max(0, (h - 0.25) / 1.5 + (noise - 0.5) * 0.9) * dryness) * lush;
   c.lerp(fine > 0.55 ? GOLD : STRAW, dry);
   c.lerp(SAGE, Math.max(0, Math.min(0.6, (noise - 0.55) * 2.4)) * dry);
   if (h > 6) c.lerp(DRY, 0.3);
@@ -221,7 +236,7 @@ function groundColour(c: THREE.Color, x: number, h: number, z: number, slope: nu
     c.lerp(EARTH, Math.min(0.85, graded * 0.5 + cut * 1.5));
   }
   // Wooded islands (Yerba Buena, Angel Island): a forest floor under the trees, rock only on the cliffs.
-  const wooded = Math.hypot(x - 33.2, z + 6.8) < 4.6 || Math.hypot(x + 16, z - 38) < 7.4;
+  const wooded = Math.hypot(x - 33.2, z + 6.8) < 4.6 || Math.hypot(x - ISLANDS.angel.x, z - ISLANDS.angel.z) < ISLANDS.angel.r + 0.9;
   if (wooded) c.lerp(FOREST, 0.75);
   // Rock on the steepest faces and the crests of the peaks.
   const rock = Math.min(1, Math.max(0, (slope - (wooded ? 2.6 : lush < 1 ? 1.8 : 0.85)) * 1.5) + Math.max(0, -curve - 1.2) * 0.25 * Math.min(1, (h - 4) / 2));

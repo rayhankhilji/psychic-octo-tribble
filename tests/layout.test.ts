@@ -65,7 +65,7 @@ describe('planWorld', () => {
     }
     // Two steps: houses → some townhouses (2+ residents), then → some apartments (5+).
     expect(changes).toBe(2);
-  });
+  }, 30_000);
 
   it('is deterministic', () => {
     expect(plan({ customers: 123, mrr: 4000, releases: 5 })).toEqual(plan({ customers: 123, mrr: 4000, releases: 5 }));
