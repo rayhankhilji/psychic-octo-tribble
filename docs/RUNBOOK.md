@@ -267,7 +267,7 @@ TinyTown's policy is **no refunds; cancel any time and keep access to the end of
    - **A billing bug** charged the wrong amount or plan.
    - **We failed to deliver** for a long stretch (e.g. their city couldn't load for days because of us).
    - **The law requires it** ⚖ (e.g. an EU/UK consumer withdrawing within 14 days, depending on your terms).
-   - **It's cheaper and kinder than a fight:** someone who says they'll dispute a $12 charge. A dispute costs $15 that you never get back, plus another $15 to contest, and counts against your dispute rate. Stripe's own analysis: refunding is the better bet on charges at or below the dispute fee.
+   - **It's cheaper and kinder than a fight:** someone who says they'll dispute a $29 charge. A dispute costs $15 that you never get back, plus another $15 to contest (together more than the charge), and counts against your dispute rate. Refunding $29 is almost always the better bet.
 3. **Otherwise, decline kindly and cancel for them** so they're never charged again. Use the "Refund request" macro.
 4. **Refunding** (Stripe → payment → Refund): full or partial; it takes 5–10 business days to reach them. **Refunding doesn't cancel the subscription**: cancel it too (immediately, or at period end) if that's what they want.
 

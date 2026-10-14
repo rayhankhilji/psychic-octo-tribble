@@ -45,7 +45,7 @@ export async function signIn(stack, email) {
 }
 
 /** Pays through the fake Checkout. Returns the success URL. */
-export async function pay(c, interval = 'month') {
+export async function pay(c, interval = 'year') {
   const r = await c.api('POST', '/api/billing/checkout', { body: { interval } });
   assert(r.status === 200 && r.body?.url, `checkout answered ${r.status} ${JSON.stringify(r.body)}`);
   const page = await c.raw('GET', r.body.url);
@@ -121,8 +121,8 @@ export const API_JOURNEYS = [
       assert(r.status === 200, `config answered ${r.status}`);
       assert(r.body.hosted === true, 'hosted should be true with Supabase configured');
       assert(r.body.supabase?.anonKey === t.stack.fakes.anonKey, 'config should carry the anon key');
-      const plans = Object.fromEntries((r.body.plans ?? []).map((p) => [p.interval, p.amount]));
-      assert(plans.month === 1200 && plans.year === 9900, `plans should be $12/$99, got ${JSON.stringify(r.body.plans)}`);
+      // One plan on sale: $29 a year, no monthly.
+      assert(JSON.stringify(r.body.plans) === JSON.stringify([{ interval: 'year', amount: 2900, currency: 'usd' }]), `plans should be $29 a year only, got ${JSON.stringify(r.body.plans)}`);
       assert(r.body.connect?.stripe && r.body.connect?.github, `connect flags off: ${JSON.stringify(r.body.connect)}`);
       const text = JSON.stringify(r.body);
       for (const [k, v] of Object.entries(t.stack.env)) {
@@ -162,13 +162,16 @@ export const API_JOURNEYS = [
     async run(t) {
       const fakes = t.stack.fakes;
       const before = fakes.state.stripe.deliveries.length;
-      const success = await pay(t.c, 'month');
+      // There's no monthly plan to buy.
+      const monthly = await t.c.api('POST', '/api/billing/checkout', { body: { interval: 'month' } });
+      assert(monthly.status === 400 && /no monthly plan/.test(monthly.body?.error ?? ''), `a monthly checkout should be refused, got ${monthly.status} ${JSON.stringify(monthly.body)}`);
+      const success = await pay(t.c, 'year');
       assert(new URL(success).searchParams.get('checkout') === 'success', `checkout returned to ${success}`);
       const deliveries = fakes.state.stripe.deliveries.slice(before);
       assert(deliveries.length >= 2, `expected two webhook deliveries, got ${deliveries.length}`);
       for (const d of deliveries) assert(d.status === 200, `webhook ${d.type} answered ${d.status}: ${d.body ?? d.error}`);
       const me = await t.c.api('GET', '/api/me');
-      assert(me.body.plan.status === 'active' && me.body.plan.interval === 'month', `plan after paying: ${JSON.stringify(me.body.plan)}`);
+      assert(me.body.plan.status === 'active' && me.body.plan.interval === 'year', `plan after paying: ${JSON.stringify(me.body.plan)}`);
       assert(me.body.plan.renewsAt > Date.now(), 'renewsAt should be in the future');
       // Paying again goes to the portal instead of a second subscription.
       const again = await t.c.api('POST', '/api/billing/checkout', { body: { interval: 'year' } });

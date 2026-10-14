@@ -913,7 +913,7 @@ export class Hud {
         </div>
         <label class="field"><span>Name on the HQ sign <small>(this browser only)</small></span><input name="name" maxlength="22" autocomplete="off" spellcheck="false" value="${escape(t?.name ?? '')}"></label>
         <div class="dialog-actions">
-          <span class="plan">${ICON.sparkle}<span><b>TinyTown Pro</b> · live worlds for $12/month or $99/year</span></span>
+          <span class="plan">${ICON.sparkle}<span><b>TinyTown Pro</b> · live worlds for $29 a year</span></span>
           <button class="btn ghost" value="cancel">Close</button>
           <button class="btn primary" value="save">Save name</button>
         </div>

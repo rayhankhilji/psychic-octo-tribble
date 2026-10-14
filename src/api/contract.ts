@@ -149,7 +149,7 @@ export interface RedirectResponse {
   url: string;
 }
 
-/** `POST /api/billing/portal` → RedirectResponse (Stripe customer portal: change plan, cancel, invoices). */
+/** `POST /api/billing/portal` → RedirectResponse (Stripe customer portal: card, cancel, invoices). */
 /** `POST /api/billing/webhook`: Stripe only, signature-checked. */
 
 /** `POST /api/connect/stripe` → RedirectResponse (Stripe App install link). Callback: `GET /api/connect/stripe/callback`. */

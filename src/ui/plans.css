@@ -1,0 +1,173 @@
+/*
+ * The plan dialog's one plan, as a ticket: the price big, what it comes to
+ * a month, a perforation, and a stub that says exactly what happens to the
+ * card (the same stub as the invite email's "Admit one"). The dialog's frame,
+ * pitch, terms and button live in hosted.css; this file is only what the
+ * single yearly plan added.
+ */
+
+.plan-offer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 24px;
+  margin-bottom: 10px;
+}
+
+.plan-offer-head .plans-label {
+  margin: 0;
+}
+
+/* Only on a server that still sells a monthly plan too. */
+.plan-switch span {
+  padding: 4px 10px;
+}
+
+/* At the top of the column, the switch keeps clear of the close button. */
+.plans-choice > .plan-offer:first-child .plan-switch {
+  margin-right: 34px;
+}
+
+.plan-ticket {
+  --perf-inset: 18px;
+  --notch: 10px;
+  position: relative;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  /* Paper with a little sun on it, so the ticket reads as a thing you hold rather than another panel. */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--sun) 10%, var(--surface-solid)) 0%, var(--surface-solid) 72%);
+  box-shadow: var(--shadow-1);
+}
+
+.ticket-main {
+  padding: 16px 20px 16px;
+}
+
+.ticket-eyebrow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  font: 500 10.5px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.ticket-eyebrow span:first-child {
+  color: var(--bay-text);
+}
+
+.ticket-price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 14px 0 6px;
+  color: var(--ink);
+}
+
+.ticket-price b {
+  font: 800 56px/0.86 var(--font-display);
+  font-stretch: 92%;
+  letter-spacing: -0.045em;
+}
+
+.ticket-price span {
+  font-size: var(--t-xl);
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  color: var(--ink-2);
+}
+
+.ticket-sub {
+  margin: 0;
+  font-size: var(--t-lg);
+  color: var(--ink-2);
+}
+
+/* The perforation, with a notch bitten out of each edge. */
+.ticket-perf {
+  position: relative;
+  height: 1.5px;
+  margin: 0 var(--perf-inset);
+  background: linear-gradient(90deg, var(--line-strong) 55%, transparent 0) 0 0 / 7px 1.5px repeat-x;
+}
+
+.ticket-perf::before,
+.ticket-perf::after {
+  content: '';
+  position: absolute;
+  top: calc(0.75px - var(--notch));
+  width: calc(var(--notch) * 2);
+  height: calc(var(--notch) * 2);
+  box-sizing: border-box;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+  /* The dialog's own paper, so the notch looks cut through. */
+  background: var(--surface-solid);
+}
+
+/* Centred on the ticket's border; only the half inside the ticket shows. */
+.ticket-perf::before {
+  left: calc(-1 * var(--perf-inset) - 0.75px - var(--notch));
+  clip-path: inset(-2px -2px -2px 50%);
+}
+
+.ticket-perf::after {
+  right: calc(-1 * var(--perf-inset) - 0.75px - var(--notch));
+  clip-path: inset(-2px 50% -2px -2px);
+}
+
+.ticket-stub {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 28px;
+  margin: 0;
+  padding: 13px 20px 15px;
+}
+
+.ticket-stub dt {
+  font: 500 10.5px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.ticket-stub dd {
+  margin: 6px 0 0;
+  font-size: var(--t-md);
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* The house ladder has as many rungs as the game's constants give it. */
+.plan-includes .climb {
+  grid-template-columns: repeat(var(--rungs, 4), minmax(0, 1fr));
+}
+
+@media (max-width: 760px) {
+  /* The ticket follows the headline on a phone, before what you get (hosted.css orders the rest). */
+  .plan-offer {
+    order: 3;
+  }
+
+  .ticket-main {
+    padding: 14px 16px 14px;
+  }
+
+  .ticket-price b {
+    font-size: 48px;
+  }
+
+  .ticket-stub {
+    gap: 22px;
+    padding: 12px 16px 14px;
+  }
+
+  .plan-ticket {
+    --perf-inset: 14px;
+  }
+}

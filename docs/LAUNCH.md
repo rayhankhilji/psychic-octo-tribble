@@ -54,15 +54,19 @@ Prices and limits below were checked on 2026-10-13 against each provider's own p
 
 US card pricing: **2.9% + 30¢** per successful charge, **+1.5%** for international cards, **+1%** if currency conversion is needed, plus **Stripe Billing at 0.7%** of subscription volume.
 
-| | $12 monthly | $99 yearly |
-|---|---|---|
-| Card fee (2.9% + 30¢) | $0.65 | $3.17 |
-| Billing (0.7%) | $0.08 | $0.69 |
-| **Total, US card** | **$0.73 (6.1%)** | **$3.86 (3.9%)** |
-| International card (+1.5%) | $0.91 | $5.35 |
-| + Stripe Tax, if used (0.5%) | +$0.06 | +$0.50 |
+TinyTown is **$29 a year**, one charge a year:
 
-A dispute costs **$15** when it arrives (never refunded) and another **$15** if you contest it (refunded if you win). On a $12 charge, a dispute costs more than the charge. That shapes the refund exceptions in `docs/RUNBOOK.md`.
+| | $29 yearly |
+|---|---|
+| Card fee (2.9% + 30¢) | $1.14 |
+| Billing (0.7%) | $0.20 |
+| **Total, US card** | **$1.34 (4.6%)** |
+| International card (+1.5%) | $1.78 |
+| + Stripe Tax, if used (0.5%) | +$0.15 |
+
+Local currencies come from **Adaptive Pricing**, which costs you nothing: the buyer pays Stripe's 2–4% conversion inside the exchange rate (and can choose to pay in USD instead). You're paid in USD either way.
+
+A dispute costs **$15** when it arrives (never refunded) and another **$15** if you contest it (refunded if you win). On a $29 charge, fighting a dispute costs more than the charge. That shapes the refund exceptions in `docs/RUNBOOK.md`.
 
 ---
 
@@ -118,7 +122,7 @@ Changing an environment variable doesn't change the running site: **redeploy** a
 | Read allocation | Average 500 reads per transaction over 30 days, minimum 10,000 a month | Founders' timelines list subscriptions (100 per request) on refresh | Keep timeline refreshes cached (15 minutes today). |
 | Founders' OAuth tokens | Access token 1 hour; refresh token 1 year, rolled on every use | The server refreshes as needed | A founder idle for a year must reconnect. |
 
-Also in the Stripe Dashboard: turn on **Smart Retries** and the failed-payment emails, and **upcoming-renewal reminder emails** (Settings → Billing → Subscriptions and emails) so yearly customers hear before a $99 charge. That reduces "I didn't know it renewed" disputes. ⚖
+Also in the Stripe Dashboard: turn on **Smart Retries** and the failed-payment emails, and **upcoming-renewal reminder emails** (Settings → Billing → Subscriptions and emails) so every customer hears before their $29 renewal. That reduces "I didn't know it renewed" disputes. ⚖
 
 ### GitHub App
 
@@ -162,12 +166,12 @@ Free plan: unlimited challenges, up to 20 widgets, 10 hostnames per widget. Toke
 - [ ] Production environment variables set in Vercel with **live** keys, marked Sensitive (SETUP.md table plus `ACCESS_MODE=waitlist`, `STRIPE_TERMS_CONSENT=1`, `ADMIN_EMAILS`, `CRON_SECRET`, `HEALTH_SECRET`, `SUPPORT_EMAIL`, `TURNSTILE_SITE_KEY` and the email, Sentry and PostHog keys from `.env.example`). `ALLOW_TEST_MODE` and `STRIPE_APP_INSTALL_URL` **unset** (unless you're on the external test, below).
 - [ ] All migrations run on the production database, in order (`supabase/migrations/0001…`). Check every table has RLS on (Database → Tables).
 - [ ] Supabase: custom SMTP via Resend on `auth.YOUR-DOMAIN`; auth email limit raised; Turnstile secret set; Site URL and redirects on the real domain.
-- [ ] Stripe live: product with the $12 and $99 prices, **no trial**; webhook endpoint on the real domain with the four events; customer portal (cancel at period end, switch plans, invoices); branding; Checkout settings (below).
+- [ ] Stripe live: `node tools/stripe-setup.mjs --live` (product, the **$29 yearly** price, **no trial**, no monthly price; webhook endpoint on the real domain with all nine events; customer portal with cancel at period end, card and invoices, no plan switching); `STRIPE_PRICE_YEARLY` set and **`STRIPE_PRICE_MONTHLY` unset**; Adaptive Pricing on; renewal reminder emails on; branding; Checkout settings (below).
 - [ ] Email warm-up started. Announcement batch 1 sent.
 - [ ] Stripe App: approved, or in review with a fallback chosen.
 
 **T-5**
-- [ ] **A real end-to-end run in live mode with your own card**: sign in (magic link, Google, GitHub), pay monthly, connect Stripe and GitHub, buy something, open the portal, switch to yearly, cancel, export, delete. Then refund yourself from the Dashboard.
+- [ ] **A real end-to-end run in live mode with your own card**: sign in (magic link, Google, GitHub), pay $29 for the year (in a second currency too, with a `+location_FR` test email in test mode), connect Stripe and GitHub, buy something, open the portal, cancel, export, delete. Then refund yourself from the Dashboard.
 - [ ] `GET /api/config` shows `"hosted": true`, both plans, `"access": "waitlist"`, and no secrets.
 - [ ] `GET /api/health` and the deep check (`/api/health?deep=1` with the health secret as a bearer token) are all `ok`.
 - [ ] Sentry receives a test error from the browser and from the API.
@@ -287,7 +291,7 @@ The plan sheet (`src/ui/plans.ts`) already says it well. It shows, before the bu
 
 and links Terms, Privacy and the Refund policy. Keep all of that. Two small asks:
 
-1. **Put the yearly total next to the yearly option**, not only "$8.25 a month, billed once a year": "**$99 today**, then every year until you cancel." People dispute charges they didn't expect.
+1. **Put the yearly total next to the price**, not only "$2.42 a month": "**$29 today**, then every year until you cancel." People dispute charges they didn't expect. (Done: the plan ticket's stub says "Today $29 · Then $29 every year, until you cancel".)
 2. **Say "non-refundable" next to the button as well as in the fine print**, e.g. under the button: "Renews automatically. Cancel any time. No refunds." ⚖
 
 **Stripe Checkout.** The billing module already has switches: `STRIPE_TERMS_CONSENT=1` adds the required terms checkbox (`consent_collection[terms_of_service]=required`), and `STRIPE_AUTOMATIC_TAX=1` turns on Stripe Tax ⚖. **Set `STRIPE_TERMS_CONSENT=1` for launch.** The custom wording below isn't in the code yet (a small change in the billing module's `checkoutParams`); until it is, Stripe shows its default checkbox text, which links your terms but doesn't mention refunds.
@@ -299,7 +303,7 @@ and links Terms, Privacy and the Refund policy. Keep all of that. Two small asks
 - In Stripe → Settings → Checkout: turn on **Legal policies** and **Return and refund policies**, and set the refund policy to "no refunds" with the link. Public details must have the terms and privacy URLs first.
 - Statement descriptor `TINYTOWN` (Settings → Business → Public details) so the bank line is recognisable. Unrecognised descriptors are a common reason for "fraud" disputes.
 
-**Customer portal:** cancellation at period end, a cancellation reason survey (it's free feedback), invoices on, switching between monthly and yearly on.
+**Customer portal:** cancellation at period end, a cancellation reason survey (it's free feedback), invoices on, plan switching off (there's one plan).
 
 ---
 
@@ -335,7 +339,7 @@ These need you (and, where it matters, a lawyer or accountant). The docs and cop
 
 1. **⚖ No refunds and consumer law.** In the EU and UK, consumers normally get a 14-day right to withdraw from online contracts. For digital services the rules on losing that right are narrower than for digital content, and courts have read them strictly. A blanket "no refunds" may not hold for EU/UK consumers. Options: (a) state that TinyTown is for business use (founders buying for their company), (b) collect express consent to start immediately and the acknowledgement Checkout allows, (c) honour withdrawal requests within 14 days for consumers anyway. Decide before launch; the refund page and macros should match.
 2. **⚖ Auto-renewal laws (US states, California especially).** Clear renewal terms before purchase, affirmative consent, an acknowledgement email that says how to cancel, easy online cancellation (the Stripe portal does this), and possibly reminders before yearly renewals. Turn on Stripe's renewal reminders regardless.
-3. **⚖ Sales tax and VAT.** Whether to turn on Stripe Tax (0.5% per transaction where registered) and whether $12 and $99 include tax. Non-EU businesses selling digital services to EU consumers generally have no threshold: VAT is due from the first sale (the Non-Union OSS scheme handles the filing). The UK is similar for non-UK sellers. US states each set their own rules on SaaS and their own thresholds. Stripe Tax's threshold monitoring shows where you're getting close.
+3. **⚖ Sales tax and VAT.** Whether to turn on Stripe Tax (0.5% per transaction where registered) and whether $29 includes tax. Non-EU businesses selling digital services to EU consumers generally have no threshold: VAT is due from the first sale (the Non-Union OSS scheme handles the filing). The UK is similar for non-UK sellers. US states each set their own rules on SaaS and their own thresholds. Stripe Tax's threshold monitoring shows where you're getting close.
 4. **⚖ Privacy.** The privacy policy has to name what's collected and who processes it (Vercel, Supabase, Stripe, Resend, Sentry, Cloudflare, PostHog if used, Google and GitHub for sign-in), where data is stored, how long it's kept after cancelling, and how to export and delete. Sign each provider's DPA. Breach notification duties (GDPR's 72 hours, US state laws) are in RUNBOOK.
 5. **⚖ Marketing email.** That the waitlist sign-up covers the announcement; a physical postal address in the announcement footer (CAN-SPAM); one-click unsubscribe.
 6. **⚖ Who the merchant is.** The legal entity on the Stripe account, the Stripe App's "Built by" line, and the terms should all name the same one.

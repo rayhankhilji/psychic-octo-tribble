@@ -203,7 +203,7 @@ export const UI_JOURNEYS = [
       await tap(plans.getByRole('button', { name: /Continue to checkout/ }), 'Continue to checkout');
       await page.waitForURL(/\/stripe-pages\/checkout\//, { timeout: 60_000, waitUntil: 'commit' });
       const before = stack.fakes.state.stripe.deliveries.length;
-      await providerClick(page, /^Pay \$12\.00/, stack.appUrl);
+      await providerClick(page, /^Pay \$29\.00/, stack.appUrl);
       const deliveries = stack.fakes.state.stripe.deliveries.slice(before);
       assert(deliveries.length >= 2 && deliveries.every((d) => d.status === 200), `webhooks: ${JSON.stringify(deliveries)}`);
       await shellUp(page);

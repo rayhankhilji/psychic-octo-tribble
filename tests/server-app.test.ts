@@ -157,6 +157,7 @@ describe('billing', () => {
       cancel_url: 'https://tinytown.test/?checkout=cancel',
       'metadata[user_id]': USER.id,
       'subscription_data[metadata][user_id]': USER.id,
+        'adaptive_pricing[enabled]': 'true',
     });
     expect(form(session.body)).not.toHaveProperty('subscription_data[trial_period_days]');
     expect(db.row('subscriptions', { user_id: USER.id })).toMatchObject({ stripe_customer_id: 'cus_new', status: 'none' });

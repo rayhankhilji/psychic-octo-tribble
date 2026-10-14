@@ -142,10 +142,12 @@ async function deep(ctx: Ctx): Promise<Response> {
   if (s.billing) {
     const billing = s.billing;
     pending.stripe_billing = timed(true, async () => {
-      const [month, year] = await Promise.all([stripePrice(billing.secretKey, billing.prices.month, 'month'), stripePrice(billing.secretKey, billing.prices.year, 'year')]);
-      if (month !== year) throw new Failed("the two prices aren't in the same mode");
-      if (month !== keyIsLive(billing.secretKey)) throw new Failed("the prices aren't in the key's mode");
-      return month ? 'live mode' : 'test mode';
+      // The yearly price always; a monthly one only if it's configured (TinyTown is sold by the year).
+      const { month: monthRef, year: yearRef } = billing.prices;
+      const [year, month] = await Promise.all([stripePrice(billing.secretKey, yearRef, 'year'), monthRef ? stripePrice(billing.secretKey, monthRef, 'month') : null]);
+      if (month !== null && month !== year) throw new Failed("the two prices aren't in the same mode");
+      if (year !== keyIsLive(billing.secretKey)) throw new Failed(`the price${month === null ? " isn't" : "s aren't"} in the key's mode`);
+      return year ? 'live mode' : 'test mode';
     });
   }
   if (s.stripeApp) {

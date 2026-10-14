@@ -19,6 +19,7 @@ export interface SetupResult {
 
 export const PRODUCT: { id: string; name: string; description: string };
 export const PRICES: { interval: 'month' | 'year'; lookupKey: string; amount: number; currency: string; nickname: string; env: string }[];
+export const RETIRED_PRICES: { interval: 'month' | 'year'; lookupKey: string; env: string }[];
 export const WEBHOOK_EVENTS: string[];
 export const API_VERSION: string;
 export const WEBHOOK_PATH: string;

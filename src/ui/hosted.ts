@@ -9,7 +9,7 @@ import type { AuthProvider } from '../api/auth.ts';
 import type { Opening, BootScreen } from '../api/boot.ts';
 import type { Api, ApiRequestError } from '../api/client.ts';
 import { isPaid, type ConfigResponse, type Connections, type MeResponse, type PlanInterval, type WorldInfo } from '../api/contract.ts';
-import { formatPrice, priceSheet } from '../api/pricing.ts';
+import { ctaPrice, inWords, priceLine } from '../api/pricing.ts';
 import { AccountDialog, initialOf } from './account.ts';
 import { busy } from './dialogs.ts';
 import { el, escape } from './dom.ts';
@@ -118,8 +118,9 @@ export class HostedShell {
   }
 
   private makeCta(kind: 'signin' | 'plan' | 'onboard' | 'world' | 'waitlist'): HTMLElement {
-    const sheet = priceSheet(this.deps.config.plans);
-    const price = sheet.month ? `${formatPrice(sheet.month.amount, sheet.month.currency)}/mo` : sheet.year ? `${formatPrice(sheet.year.amount, sheet.year.currency)}/yr` : '';
+    // The price on sale, as the server has it ("$29/yr"), and in words for the tip ("$29 a year").
+    const price = ctaPrice(this.deps.config.plans) ?? '';
+    const words = priceLine(this.deps.config.plans);
     const wrap = el('div', { class: 'cta card', 'data-cta': kind, role: 'group', 'aria-label': 'Your own city' });
     const c = this.me?.connections;
     const doneSteps = c ? [!!c.stripe, !!c.github?.repo, c.users.source !== 'customers'].filter(Boolean).length : 0;
@@ -133,8 +134,8 @@ export class HostedShell {
           : kind === 'waitlist'
             ? { label: "You're on the list", aside: '', icon: ICON.check, tip: "We'll email you the moment your spot opens." }
           : this.me?.plan.status === 'canceled'
-            ? { label: 'Bring your city back', aside: price, icon: ICON.sparkle, tip: 'Your city and its saves are kept. Pick a plan and it runs on your real numbers again.' }
-          : { label: 'Make it yours', aside: price, icon: ICON.sparkle, tip: `Your startup's real numbers, your own city. ${price ? `${price.replace('/mo', ' a month')} or ${sheet.year ? formatPrice(sheet.year.amount, sheet.year.currency) : ''} a year. ` : ''}No free trial; the demo stays free.` };
+            ? { label: 'Bring your city back', aside: price, icon: ICON.sparkle, tip: `Your city and its saves are kept. Renew${words ? ` for ${words}` : ''} and it runs on your real numbers again.` }
+          : { label: 'Make it yours', aside: price, icon: ICON.sparkle, tip: `Your startup's real numbers, your own city. ${words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}. ` : ''}No free trial; the demo stays free.` };
     if (kind === 'signin') {
       const signIn = el('button', { class: 'btn ghost cta-signin', type: 'button' }, '<span class="label">Sign in</span>');
       signIn.addEventListener('click', () => this.openSignIn());
@@ -212,8 +213,7 @@ export class HostedShell {
       signIn: (interval) => {
         setPlanIntent(interval);
         const plan = this.deps.config.plans.find((p) => p.interval === interval);
-        const price = plan ? `${formatPrice(plan.amount, plan.currency)} a ${interval}` : '';
-        this.openSignIn({ context: `Next: checkout for the ${interval === 'year' ? 'yearly' : 'monthly'} plan${price ? `, ${price}` : ''}.` });
+        this.openSignIn({ context: `Next: checkout${plan ? `, ${inWords(plan)}` : ''}.` });
       },
       go: (url) => location.assign(url),
     });

@@ -5,7 +5,7 @@ How the paid, hosted product works: accounts, billing, the paywall, connecting a
 ## Decisions (agreed with the owner)
 
 - **Hosting:** Vercel (static front end + one serverless function for the API) and Supabase (auth + Postgres). No domain bought without asking.
-- **Price:** $12 a month or $99 a year, through Stripe Checkout. **No free trial.** The demo stays free to look at.
+- **Price:** $29 a year, through Stripe Checkout (local currencies via Stripe Adaptive Pricing). **No monthly plan, no free trial, no refunds.** The demo stays free to look at.
 - **The paywall comes before connecting real data.** Order: demo → sign in → pick a plan → Checkout → connect Stripe → connect GitHub (optional) → choose where active users come from → your city.
 - **No pasted keys for Stripe.** Founders install the TinyTown Stripe App (OAuth 2.0, read-only permissions) and approve it on Stripe.
 - **The one rule holds:** nothing earns or sells in-game money. Billing buys access to the hosted game, never money, land or speed.

@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Api, ApiRequestError, filenameFrom, toApiError } from '../src/api/client.ts';
 import { describeRedirectError, describeSignInError } from '../src/api/auth.ts';
-import { defaultInterval, formatPrice, perInterval, priceSheet } from '../src/api/pricing.ts';
+import { HOME_TIERS } from '../src/game/catalog.ts';
+import { MRR_PER_USER, RATE } from '../src/game/economy.ts';
+import { shortMrr } from '../src/ui/dom.ts';
+import { frontDoorBeats } from '../src/ui/frontdoor.ts';
+import { climb } from '../src/ui/plans.ts';
+import { ctaPrice, defaultInterval, formatPrice, inWords, perInterval, priceLine, priceSheet } from '../src/api/pricing.ts';
 import type { Plan } from '../src/api/contract.ts';
 
 describe('toApiError', () => {
@@ -112,33 +117,66 @@ describe('sign-in messages', () => {
 });
 
 describe('pricing', () => {
-  const plans: Plan[] = [
-    { interval: 'month', amount: 1200, currency: 'usd' },
-    { interval: 'year', amount: 9900, currency: 'usd' },
-  ];
+  // What's on sale: $29 a year, nothing else.
+  const yearly: Plan = { interval: 'year', amount: 2900, currency: 'usd' };
+  // A server that still has a monthly price configured (the old pricing), to show nothing breaks.
+  const both: Plan[] = [{ interval: 'month', amount: 1200, currency: 'usd' }, { interval: 'year', amount: 9900, currency: 'usd' }];
 
-  it('quotes the real prices', () => {
-    expect(formatPrice(1200, 'usd')).toBe('$12');
-    expect(formatPrice(9900, 'usd')).toBe('$99');
-    expect(formatPrice(825, 'usd')).toBe('$8.25');
-    expect(perInterval(plans[0]!)).toBe('$12/month');
+  it('quotes the real price', () => {
+    expect(formatPrice(2900, 'usd')).toBe('$29');
+    expect(formatPrice(242, 'usd')).toBe('$2.42');
+    expect(perInterval(yearly)).toBe('$29/year');
+    expect(inWords(yearly)).toBe('$29 a year');
+    expect(ctaPrice([yearly])).toBe('$29/yr');
+    expect(priceLine([yearly])).toBe('$29 a year');
   });
 
-  it('works out the yearly saving from the plans on sale: $45', () => {
-    const s = priceSheet(plans);
-    expect(s.yearlySaving).toBe(4500);
-    expect(s.yearlyPerMonth).toBe(825);
+  it('spreads the year over twelve months without understating it: $2.42', () => {
+    const s = priceSheet([yearly]);
+    expect(s.month).toBeNull();
+    expect(s.yearlyPerMonth).toBe(242);
+    expect(s.yearlyPerMonth! * 12).toBeGreaterThanOrEqual(2900);
+    expect(priceSheet(both).yearlyPerMonth).toBe(825);
   });
 
   it('never invents a saving', () => {
-    expect(priceSheet([plans[1]!]).yearlySaving).toBe(0);
+    expect(priceSheet([yearly]).yearlySaving).toBe(0);
+    expect(priceSheet(both).yearlySaving).toBe(4500);
     expect(priceSheet([{ interval: 'month', amount: 500, currency: 'usd' }, { interval: 'year', amount: 9900, currency: 'usd' }]).yearlySaving).toBe(0);
     expect(priceSheet([{ interval: 'month', amount: 1200, currency: 'usd' }, { interval: 'year', amount: 9900, currency: 'eur' }]).yearlySaving).toBe(0);
   });
 
-  it('selects monthly first, the price the call to action quotes', () => {
-    expect(defaultInterval(priceSheet(plans))).toBe('month');
-    expect(defaultInterval(priceSheet([plans[1]!]))).toBe('year');
+  it('quotes and selects the plan on sale', () => {
+    expect(defaultInterval(priceSheet([yearly]))).toBe('year');
+    // With a monthly price configured too, the smaller charge leads.
+    expect(defaultInterval(priceSheet(both))).toBe('month');
+    expect(ctaPrice(both)).toBe('$12/mo');
+    expect(priceLine(both)).toBe('$12 a month or $99 a year');
+  });
+
+  it('says nothing when nothing is on sale', () => {
+    expect(ctaPrice([])).toBeNull();
+    expect(priceLine([])).toBeNull();
+  });
+});
+
+describe('the paywall quotes the game, not a copy of it', () => {
+  it("climbs the founder's house from HOME_TIERS: the start, the Hills, the island, the moon", () => {
+    const first = (where: string) => HOME_TIERS.find((t) => t.where === where)!;
+    expect(climb()).toEqual([
+      [shortMrr(HOME_TIERS[0]!.mrr), 'Hacker house'],
+      [shortMrr(first('hills').mrr), 'The Hills'],
+      [shortMrr(first('island').mrr), 'An island'],
+      [shortMrr(first('moon').mrr), 'The moon'],
+    ]);
+  });
+
+  it("the front door's three rules come from the economy's constants", () => {
+    const [money, housing, moon] = frontDoorBeats();
+    expect(money!.fig).toBe(`$${RATE.toLocaleString('en-US')}`);
+    expect(housing!.fig).toBe(`${Math.round(MRR_PER_USER * 100)}¢`);
+    expect(moon!.fig).toBe(shortMrr(HOME_TIERS.find((t) => t.where === 'moon')!.mrr));
+    expect(moon!.text).toMatch(/^MRR takes you from a hacker house to a house on the moon/);
   });
 });
 

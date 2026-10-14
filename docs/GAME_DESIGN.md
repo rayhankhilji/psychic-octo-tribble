@@ -195,7 +195,7 @@ Each item unlocks at an MRR tier and costs roughly 1–4 months of that tier's i
 
 **Paid only, as a subscription.** We never sell in-game currency, speed-ups or unlocks, because that would break the one rule.
 
-- **$12/month or $99/year. No free trial.**
+- **$29 a year, annual only. No free trial, no refunds.** Checkout shows local currencies (Stripe Adaptive Pricing).
 - Open question: a 14-day money-back guarantee would keep "paid only" while removing the risk of paying before seeing your city.
 - Later, possibly: cosmetic-only extras such as plane liveries, house paint and seasonal decorations. Never anything that touches money, land, housing or unlocks.
 

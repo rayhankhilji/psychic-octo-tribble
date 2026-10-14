@@ -22,7 +22,7 @@ The best asset is a clip, not copy: 15–30 seconds of a real city (yours, if yo
 
 > The one rule: the only way to grow your city is to grow your startup. You can't buy in-game money, ever. If you're not converting your users, they end up without homes and the TINYTOWN sign on Twin Peaks goes dark.
 
-> $12/month or $99/year. No free trial, because the demo is the whole game on a sample startup. [link]
+> $29 a year. No free trial, because the demo is the whole game on a sample startup. [link]
 
 > [Only if true and you're comfortable: "Here's mine at $[real MRR]:" + screenshot]
 
@@ -38,7 +38,7 @@ The best asset is a clip, not copy: 15–30 seconds of a real city (yours, if yo
 >
 > Why build this? Founders already have charts. I wanted something that makes the grind feel like building something you can see, and that shows the bad weeks as honestly as the good ones.
 >
-> It's $12 a month or $99 a year, with a free demo you can play without signing up: [link]
+> It's $29 a year, with a free demo you can play without signing up: [link]
 >
 > We're letting people in in waves this week. If you're on the list, your invite is coming.
 
@@ -72,7 +72,7 @@ The best asset is a clip, not copy: 15–30 seconds of a real city (yours, if yo
 >
 > **The one rule:** the only way to grow your city is to grow your startup. There's nothing to buy inside the game, ever.
 >
-> **Pricing:** $12/month or $99/year. No free trial, because the demo is the whole game running on a sample startup, no sign-up needed: [link]
+> **Pricing:** $29 a year, one plan. No free trial, because the demo is the whole game running on a sample startup, no sign-up needed: [link]
 >
 > I'd love to hear what you'd want your city to do next. And if you connect yours, tell me which house you're in.
 

@@ -15,6 +15,7 @@ Every task follows the visual bar in `CLAUDE.md`: screenshot it, day and night, 
 Built and committed (2026-10-13): accounts, billing, the paywall, onboarding, the account menu, server-checked saves, export and deletion, email, scheduled pipelines, the waitlist and admin console, security, observability, CI/CD, legal pages, and the launch docs. What's left is mostly the owner's: accounts, keys, money, a domain and a lawyer. **Follow `docs/LAUNCH.md`.**
 
 - [ ] **Owner: long-lead items, 14+ days out.** Submit the Stripe App for review (4 business days a round; until it's published only 25 accounts can connect, so no paid wave before then). Activate live Stripe. Buy the domain. Start warming the Resend sending domain.
+- [ ] **Owner: the $29-a-year price in Stripe.** Run `node tools/stripe-setup.mjs --dry-run`, then for real, in test and with `--live`; set `STRIPE_PRICE_YEARLY` to the new price id, remove `STRIPE_PRICE_MONTHLY` from Vercel, turn on Adaptive Pricing and Stripe's renewal reminder emails. Lawyer: bump the terms' date, drop "switch between monthly and yearly" in §3, add a local-currency clause.
 - [ ] **Owner: accounts and settings** (`docs/SETUP.md`): Supabase Pro (migrations 0001–0006, auth providers, custom SMTP and raised email limits, the six templates), Stripe (`tools/stripe-setup.mjs`, then dashboard settings), the Stripe App, the GitHub App, Resend, Vercel Pro and every env var, Turnstile, Sentry, an uptime monitor, `docs/SECURITY.md` settings, `docs/RELEASE.md` repo settings (default branch `main`, ruleset, environments and secrets).
 - [ ] **Owner and lawyer:** fill the placeholders in `public/legal/*.html` and `public/.well-known/security.txt`; decide governing law and the entity; the EU/UK 14-day withdrawal right against "no refunds" (if waived, add the consent text to Checkout); retention periods; US auto-renewal reminders; whether the repository should stay public.
 - [ ] **Owner decisions:** void unpaid invoices when a past-due founder deletes their account? Do cancelled cities expire?
@@ -30,7 +31,7 @@ Built and committed (2026-10-13): accounts, billing, the paywall, onboarding, th
 ## P1: Design pass follow-ups (2026-10-13)
 
 - [x] **Re-render the launch images after the fog change** (done; rerun after big visual changes): `node tools/brand-assets.mjs social --base=<dev url>` (the social kit) and `node tools/email-assets.mjs` (the invite's city picture) still show the old cloud look.
-- [x] **Owner confirmed (2026-10-14):** the invite email keeps the price ("$12 a month or $99 a year"), matching the terms page.
+- [x] **Owner confirmed (2026-10-14):** the invite email keeps the price ("$29 a year"), matching the terms page.
 - [ ] **Lawyer:** privacy §2 says no marketing email unless asked, but the weekly digest is on by default; and the legal pages use British spelling while the product uses US.
 - [ ] **Front door on phones:** the camera stops at `minZoom` 0.32, so the top half shows downtown cropped; let attract mode zoom out further on portrait screens (check shadows and the far plane).
 - [ ] **Mobile help button:** the floating "?" under the mini card is heavy; consider a small icon in the top bar.
@@ -102,7 +103,7 @@ The order agreed with the owner: the game loop first (done), then hosting.
 - [ ] **Connect with Stripe:** OAuth / Stripe Apps, read-only, no pasted keys. Reject test-mode data for the economy.
 - [ ] **PostHog** for monthly active users (the housing population), with a manual entry fallback. **GitHub** as an app/OAuth instead of a token.
 - [ ] **Brand import:** sign up with the startup name and URL, pull the logo and brand colour, and show them on HQ's rooftop sign and street plaque.
-- [ ] **Billing:** $12/month or $99/year with Stripe Checkout, **no free trial**. Ask the owner about a 14-day money-back guarantee. The paywall goes before connecting real data; the demo stays free to view.
+- [ ] **Billing:** $29 a year (annual only) with Stripe Checkout, **no free trial**. Ask the owner about a 14-day money-back guarantee. The paywall goes before connecting real data; the demo stays free to view.
 - [ ] **Deploy:** Vercel (front end + API routes) + Supabase. Don't buy a domain without asking.
 
 ## P5: Social and growth

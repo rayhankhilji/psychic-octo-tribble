@@ -246,6 +246,85 @@ describe('checkout', () => {
   });
 });
 
+// ─── Sold by the year ─────────────────────────────────────────────────────
+
+describe('sold by the year', () => {
+  // The owner's setup: one yearly price, no STRIPE_PRICE_MONTHLY.
+  const { STRIPE_PRICE_MONTHLY: _, ...YEARLY_ONLY } = ENV;
+  const sessions = (calls: Call[]) => calls.filter((c) => c.url.pathname === '/v1/checkout/sessions');
+  const yearPrice = { id: 'price_year', object: 'price', product: 'prod_tinytown', unit_amount: 2900, currency: 'usd', recurring: { interval: 'year' } };
+  const prices = (url: URL) => (url.pathname === '/v1/prices/price_year' ? json(yearPrice) : undefined);
+  const sendTo = (e: unknown) => {
+    const payload = JSON.stringify(e);
+    const sig = stripeSignatureHeader(payload, ENV.STRIPE_WEBHOOK_SECRET, Math.floor(Date.now() / 1000));
+    return call('POST', '/api/billing/webhook', { token: null, body: payload, headers: { 'Stripe-Signature': sig }, env: YEARLY_ONLY });
+  };
+
+  it('puts one plan on sale: $29 a year, read from Stripe', async () => {
+    const calls = stubFetch(db, prices, fakeStripe());
+    const config = await (await call('GET', '/api/config', { token: null, env: YEARLY_ONLY })).json();
+    expect(config.plans).toEqual([{ interval: 'year', amount: 2900, currency: 'usd' }]);
+    // Only the configured price was asked for.
+    expect(calls.filter((c) => c.url.pathname.startsWith('/v1/prices')).map((c) => c.url.pathname)).toEqual(['/v1/prices/price_year']);
+  });
+
+  it("falls back to the owner's yearly price alone when Stripe can't be reached", async () => {
+    stubFetch(db, (url) => (url.pathname.startsWith('/v1/prices') ? json({ error: { message: 'down', type: 'api_error' } }, 500) : undefined), fakeStripe());
+    const config = await (await call('GET', '/api/config', { token: null, env: YEARLY_ONLY })).json();
+    expect(config.plans).toEqual([{ interval: 'year', amount: 2900, currency: 'usd' }]);
+  });
+
+  it('turns a monthly checkout away plainly, before touching Stripe', async () => {
+    const calls = stubFetch(db, prices, fakeStripe());
+    const res = await call('POST', '/api/billing/checkout', { body: { interval: 'month' }, env: YEARLY_ONLY });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "There's no monthly plan: TinyTown is paid for by the year.", code: 'bad_request' });
+    expect(calls.filter((c) => c.url.host === 'api.stripe.com')).toEqual([]);
+    expect(funnel()).toEqual([]);
+  });
+
+  it('sells the year, with Checkout in local currencies unless the owner turns that off', async () => {
+    const calls = stubFetch(db, prices, fakeStripe());
+    expect(await (await call('POST', '/api/billing/checkout', { body: { interval: 'year' }, env: YEARLY_ONLY })).json()).toEqual({ url: 'https://checkout.stripe.com/c/pay/cs_1' });
+    const on = form(sessions(calls)[0]!.body);
+    expect(on['line_items[0][price]']).toBe('price_year');
+    expect(on['adaptive_pricing[enabled]']).toBe('true');
+    expect(Object.keys(on).some((k) => k.includes('trial') || k.startsWith('currency'))).toBe(false);
+
+    await call('POST', '/api/billing/checkout', { body: { interval: 'year' }, env: { ...YEARLY_ONLY, STRIPE_ADAPTIVE_PRICING: '0' } });
+    expect(form(sessions(calls)[1]!.body)['adaptive_pricing[enabled]']).toBe('false');
+  });
+
+  it('still looks after a founder on the old monthly price: renewals, failures and cancellation', async () => {
+    // A price no longer on sale, on the same product as the yearly one.
+    const legacy = { id: 'price_old_month', product: 'prod_tinytown', lookup_key: null, recurring: { interval: 'month' } };
+    const subs = new Map([['sub_9', subscription({ items: { data: [{ current_period_end: PERIOD_END, price: legacy }] } })]]);
+    stubFetch(db, prices, fakeStripe(subs));
+    expect((await sendTo(subEvent('customer.subscription.created'))).status).toBe(200);
+    expect(row()).toMatchObject({ status: 'active', plan_interval: 'month', price_id: 'price_old_month' });
+    subs.set('sub_9', subscription({ status: 'past_due', latest_invoice: 'in_2', items: { data: [{ current_period_end: PERIOD_END, price: legacy }] } }));
+    await sendTo(event('invoice.payment_failed', { id: 'in_2', subscription: 'sub_9' }));
+    subs.set('sub_9', subscription({ status: 'canceled', items: { data: [{ current_period_end: PERIOD_END, price: legacy }] } }));
+    await sendTo(subEvent('customer.subscription.deleted'));
+    expect(row()!.status).toBe('canceled');
+    expect(kinds()).toEqual(['plan.started', 'plan.payment_failed', 'plan.ended']);
+  });
+
+  it('recognises a price tools/stripe-setup.mjs made even without its product in hand, and ignores anything else sold on the account', async () => {
+    const tagged = { id: 'price_old_year', product: 'prod_elsewhere', metadata: { tinytown: '1' }, recurring: { interval: 'year' } };
+    const other = { id: 'price_mug', product: 'prod_mugs', recurring: { interval: 'year' } };
+    const subs = new Map([
+      ['sub_9', subscription({ items: { data: [{ current_period_end: PERIOD_END, price: tagged }] } })],
+      ['sub_8', subscription({ id: 'sub_8', items: { data: [{ current_period_end: PERIOD_END, price: other }] } })],
+    ]);
+    stubFetch(db, prices, fakeStripe(subs));
+    expect((await sendTo(subEvent('customer.subscription.created', 'sub_8'))).status).toBe(200);
+    expect(row()).toBeUndefined();
+    expect((await sendTo(subEvent('customer.subscription.created'))).status).toBe(200);
+    expect(row()).toMatchObject({ status: 'active', plan_interval: 'year', price_id: 'price_old_year' });
+  });
+});
+
 describe('portal', () => {
   it('uses the portal configuration from stripe-setup when set, with an idempotency key', async () => {
     const calls = stubFetch(db, fakeStripe());

@@ -12,17 +12,22 @@ import { STRIPE_API_VERSION, StripeError, stripe, stripeFailure } from './stripe
 import type { AuthUser } from './supabase.ts';
 
 /**
- * Our own Stripe account: TinyTown's price ($12 a month or $99 a year, no
+ * Our own Stripe account: TinyTown's price ($29 a year, no monthly plan, no
  * trial, no refunds), Checkout, the customer portal, and the webhook that
  * records who has paid. Billing buys access to the hosted game, never game
- * money.
+ * money. Checkout shows the price in the customer's own currency where
+ * Stripe can (Adaptive Pricing); we still charge and record it in USD.
  *
- * Optional switches, each `1` to turn on (all off by default):
+ * Optional switches, each `1` to turn on (all off by default, except where
+ * noted):
  * - STRIPE_AUTOMATIC_TAX: Stripe Tax works out sales tax and VAT from the
  *   billing address, and business customers can add a tax ID.
  * - STRIPE_TERMS_CONSENT: Checkout asks people to accept the Terms (the URL
  *   is set in the Stripe Dashboard's public details).
  * - STRIPE_PROMO_CODES: Checkout has a promotion code box.
+ * - STRIPE_ADAPTIVE_PRICING: on unless set to `0`. Checkout offers the
+ *   customer's local currency at Stripe's exchange rate (they pay Stripe's
+ *   2–4% conversion; paying in USD stays an option on the page).
  * - STRIPE_PORTAL_CONFIGURATION (bpc_…): the portal settings made by
  *   tools/stripe-setup.mjs; without it the Dashboard's default portal is used.
  */
@@ -55,30 +60,40 @@ interface StripePrice {
   unit_amount: number | null;
   currency: string;
   lookup_key?: string | null;
+  product?: string | { id: string } | null;
+  metadata?: Record<string, string> | null;
   recurring: { interval: string } | null;
 }
 
 /**
- * STRIPE_PRICE_MONTHLY and STRIPE_PRICE_YEARLY take either a price id
- * (`price_…`) or a lookup key (`tinytown_monthly`). Lookup keys are the same
- * in test and live mode, so one pair of values works for both.
+ * STRIPE_PRICE_YEARLY (and, only if the owner ever sells monthly again,
+ * STRIPE_PRICE_MONTHLY) take either a price id (`price_…`) or a lookup key
+ * (`tinytown_yearly`). Lookup keys are the same in test and live mode, so one
+ * value works for both.
  */
 const isPriceId = (ref: string) => /^(price|plan)_/.test(ref);
 
-/** The owner's prices, used only if Stripe can't be reached for the real ones. */
-const FALLBACK: Plan[] = [
-  { interval: 'month', amount: 1200, currency: 'usd' },
-  { interval: 'year', amount: 9900, currency: 'usd' },
-];
+/** The intervals on sale: whatever prices are configured, and nothing else (normally just the year). */
+function onSale(billing: Billing): PlanInterval[] {
+  return (['month', 'year'] as const).filter((i) => !!billing.prices[i]);
+}
+
+/** The owner's prices, used only if Stripe can't be reached for the real ones (and only for the plans configured). */
+const FALLBACK: Record<PlanInterval, Plan> = {
+  year: { interval: 'year', amount: 2900, currency: 'usd' },
+  // No longer sold; kept so a server still configured with the old monthly price quotes it.
+  month: { interval: 'month', amount: 1200, currency: 'usd' },
+};
 const PRICE_TTL_MS = 10 * 60_000;
-let priceCache: { key: string; until: number; prices: Record<PlanInterval, StripePrice> } | null = null;
+type Prices = Partial<Record<PlanInterval, StripePrice>>;
+let priceCache: { key: string; until: number; prices: Prices } | null = null;
 
-/** Both prices as Stripe has them, checked to be what they say they are, and cached for ten minutes. */
 /** A price lookup already on its way: requests that arrive meanwhile share it instead of each asking Stripe. */
-let pricesInFlight: { key: string; prices: Promise<Record<PlanInterval, StripePrice>> } | null = null;
+let pricesInFlight: { key: string; prices: Promise<Prices> } | null = null;
 
-async function resolvePrices(ctx: Ctx, billing: Billing): Promise<Record<PlanInterval, StripePrice>> {
-  const key = `${billing.prices.month}|${billing.prices.year}`;
+/** The configured prices as Stripe has them, checked to be what they say they are, and cached for ten minutes. */
+async function resolvePrices(ctx: Ctx, billing: Billing): Promise<Prices> {
+  const key = `${billing.prices.month ?? ''}|${billing.prices.year}`;
   if (priceCache && priceCache.key === key && priceCache.until > ctx.now) return priceCache.prices;
   if (pricesInFlight?.key === key) return pricesInFlight.prices;
   const prices = fetchPrices(ctx, billing, key);
@@ -88,15 +103,16 @@ async function resolvePrices(ctx: Ctx, billing: Billing): Promise<Record<PlanInt
   });
 }
 
-async function fetchPrices(ctx: Ctx, billing: Billing, key: string): Promise<Record<PlanInterval, StripePrice>> {
-  const found: Partial<Record<PlanInterval, StripePrice>> = {};
-  const byLookup = (['month', 'year'] as const).filter((i) => !isPriceId(billing.prices[i]));
+async function fetchPrices(ctx: Ctx, billing: Billing, key: string): Promise<Prices> {
+  const found: Prices = {};
+  const intervals = onSale(billing);
+  const byLookup = intervals.filter((i) => !isPriceId(billing.prices[i]!));
   if (byLookup.length) {
     const list = await stripe<{ data: StripePrice[] }>(
       billing.secretKey,
       'GET',
       '/v1/prices',
-      { lookup_keys: byLookup.map((i) => billing.prices[i]), active: true, limit: 10 },
+      { lookup_keys: byLookup.map((i) => billing.prices[i]!), active: true, limit: 10 },
       { apiVersion: apiVersion(ctx) },
     );
     for (const i of byLookup) {
@@ -105,41 +121,54 @@ async function fetchPrices(ctx: Ctx, billing: Billing, key: string): Promise<Rec
       found[i] = p;
     }
   }
-  for (const i of ['month', 'year'] as const) {
-    if (!found[i]) found[i] = await stripe<StripePrice>(billing.secretKey, 'GET', `/v1/prices/${encodeURIComponent(billing.prices[i])}`, undefined, { apiVersion: apiVersion(ctx) });
+  for (const i of intervals) {
+    if (!found[i]) found[i] = await stripe<StripePrice>(billing.secretKey, 'GET', `/v1/prices/${encodeURIComponent(billing.prices[i]!)}`, undefined, { apiVersion: apiVersion(ctx) });
     const p = found[i]!;
     if (p.unit_amount == null || p.recurring?.interval !== i) throw new Error(`Price for ${i} isn't a ${i}ly recurring price`);
   }
-  const prices = found as Record<PlanInterval, StripePrice>;
-  priceCache = { key, until: ctx.now + PRICE_TTL_MS, prices };
-  return prices;
+  priceCache = { key, until: ctx.now + PRICE_TTL_MS, prices: found };
+  return found;
 }
 
 /** The price id to sell: as configured, or looked up from its lookup key. */
 async function priceId(ctx: Ctx, billing: Billing, interval: PlanInterval): Promise<string> {
   const ref = billing.prices[interval];
-  return isPriceId(ref) ? ref : (await resolvePrices(ctx, billing))[interval].id;
+  if (!ref) throw new Error(`No ${interval}ly price is configured`);
+  return isPriceId(ref) ? ref : (await resolvePrices(ctx, billing))[interval]!.id;
 }
 
-/** For /api/config. */
+/** For /api/config: the plans on sale, which is exactly the prices configured (normally one, yearly). */
 export async function plans(ctx: Ctx): Promise<Plan[]> {
   const billing = ctx.s.billing;
   if (!billing) return [];
+  const intervals = onSale(billing);
   try {
     const prices = await resolvePrices(ctx, billing);
-    return (['month', 'year'] as const).map((interval) => ({ interval, amount: prices[interval].unit_amount!, currency: prices[interval].currency }));
+    return intervals.map((interval) => ({ interval, amount: prices[interval]!.unit_amount!, currency: prices[interval]!.currency }));
   } catch (err) {
     console.error(`Couldn't read prices from Stripe: ${err instanceof Error ? err.message : 'unknown error'}`);
-    return FALLBACK;
+    return intervals.map((i) => FALLBACK[i]);
   }
 }
 
-/** One of our two prices, whichever way it was configured. */
-function isOurPrice(billing: Billing, price: { id: string; lookup_key?: string | null }): boolean {
-  const refs = [billing.prices.month, billing.prices.year];
+const productOf = (p: { product?: string | { id: string } | null }) => (typeof p.product === 'string' ? p.product : (p.product?.id ?? null));
+
+/**
+ * A TinyTown plan, whichever way it was configured. Beyond the prices on
+ * sale, this also recognises plans bought on a price we've stopped selling
+ * (the old monthly and yearly prices), so their renewals, cancellations and
+ * card failures still reach the right founder: any price on the same
+ * product as ours, or one tools/stripe-setup.mjs made (`tinytown: 1`).
+ */
+function isOurPrice(billing: Billing, price: { id: string; lookup_key?: string | null; product?: string | { id: string } | null; metadata?: Record<string, string> | null }): boolean {
+  const refs = onSale(billing).map((i) => billing.prices[i]!);
   if (refs.includes(price.id) || (!!price.lookup_key && refs.includes(price.lookup_key))) return true;
+  if (price.metadata?.tinytown === '1') return true;
+  const cached = Object.values(priceCache?.prices ?? {});
   // A lookup key moved to a newer price still leaves earlier subscribers on the old id.
-  return !!priceCache && (priceCache.prices.month.id === price.id || priceCache.prices.year.id === price.id);
+  if (cached.some((p) => p.id === price.id)) return true;
+  const product = productOf(price);
+  return !!product && cached.some((p) => productOf(p) === product);
 }
 
 export function resetBillingCaches() {
@@ -261,6 +290,8 @@ export function checkoutParams(ctx: Ctx, opts: { customer: string; userId: strin
     cancel_url: `${opts.base}/?checkout=cancel`,
     metadata: { user_id: opts.userId },
     subscription_data: { metadata: { user_id: opts.userId } },
+    // The price in the customer's own currency where Stripe can, renewals included (we still record USD).
+    adaptive_pricing: { enabled: ctx.env.STRIPE_ADAPTIVE_PRICING?.trim() !== '0' },
     ...(flag(ctx, 'STRIPE_PROMO_CODES') ? { allow_promotion_codes: true } : {}),
     // Tax needs an address, and a tax ID needs a name, saved back to our existing customer.
     ...(tax ? { automatic_tax: { enabled: true }, tax_id_collection: { enabled: true }, customer_update: { address: 'auto', name: 'auto' } } : {}),
@@ -285,7 +316,9 @@ const CHECKOUT_KEY_WINDOW_MS = 10 * 60_000;
 export async function checkout(ctx: Hosted, user: AuthUser, body: Record<string, unknown>): Promise<RedirectResponse> {
   const billing = requireBilling(ctx);
   const interval = body.interval;
-  if (interval !== 'month' && interval !== 'year') throw badRequest('Choose "month" or "year".');
+  if (interval !== 'month' && interval !== 'year') throw badRequest('Choose "year".');
+  // Only the plans configured are on sale: normally just the yearly one.
+  if (!billing.prices[interval]) throw badRequest(interval === 'month' ? "There's no monthly plan: TinyTown is paid for by the year." : 'There\'s no yearly plan on sale right now.');
   const base = appUrl(ctx);
   const row = await ctx.db.one<SubscriptionRow>('subscriptions', { user_id: user.id });
   if (row?.comp && hasAccess(row, ctx.now)) throw new HttpError(409, "Your plan is on the house, so there's nothing to pay for.", 'rejected');
@@ -364,7 +397,12 @@ interface StripeSubscriptionObject {
   cancellation_details?: { reason?: string | null; feedback?: string | null; comment?: string | null } | null;
   latest_invoice?: string | { id: string } | null;
   metadata?: Record<string, string>;
-  items: { data: { current_period_end?: number; price: { id: string; lookup_key?: string | null; recurring: { interval: string } | null } }[] };
+  items: {
+    data: {
+      current_period_end?: number;
+      price: { id: string; lookup_key?: string | null; product?: string | { id: string } | null; metadata?: Record<string, string> | null; recurring: { interval: string } | null };
+    }[];
+  };
 }
 
 type IdOrObject = string | { id: string } | null | undefined;
@@ -494,7 +532,13 @@ export async function syncSubscription(ctx: Hosted, billing: Billing, subscripti
     }
     throw err;
   }
-  const ours = sub.items?.data?.find((i) => isOurPrice(billing, i.price));
+  const ourItem = () => sub.items?.data?.find((i) => isOurPrice(billing, i.price));
+  let ours = ourItem();
+  if (!ours) {
+    // A plan on a price we no longer sell is recognised by its product, which needs our prices in hand.
+    await resolvePrices(ctx, billing).catch(() => null);
+    ours = ourItem();
+  }
   // Something else sold on the same Stripe account: not a TinyTown plan.
   if (!ours) return;
 

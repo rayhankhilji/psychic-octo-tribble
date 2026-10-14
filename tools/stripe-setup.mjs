@@ -6,12 +6,15 @@
  *
  * It creates, or finds and reuses, everything server/billing.ts needs:
  * - the "TinyTown" product (id `tinytown`);
- * - the $12 monthly and $99 yearly prices, found by their lookup keys
- *   `tinytown_monthly` and `tinytown_yearly`;
+ * - the price: $29 a year (TinyTown is sold by the year only), found by its
+ *   lookup key `tinytown_yearly`. An older yearly price holding that key (the
+ *   $99 one) hands it over to the new price and is otherwise left alone, as
+ *   is any old $12 monthly price (`tinytown_monthly`): neither is sold any
+ *   more, but anyone already on one keeps it;
  * - the webhook endpoint <app-url>/api/billing/webhook, subscribed to exactly
  *   the events the server handles;
- * - a customer portal configuration: cancel at period end, switch between
- *   the two prices, update the card, see invoices. No refunds.
+ * - a customer portal configuration: cancel at period end, update the card,
+ *   see invoices. No refunds, and no plan switching (there's one plan).
  *
  * Then it prints the environment variables to set. Running it again changes
  * nothing that's already right, so it's safe to re-run after a mistake.
@@ -28,10 +31,11 @@ import { pathToFileURL } from 'node:url';
 
 export const PRODUCT = { id: 'tinytown', name: 'TinyTown', description: 'Your startup as a living city, driven by your real metrics.' };
 
-export const PRICES = [
-  { interval: 'month', lookupKey: 'tinytown_monthly', amount: 1200, currency: 'usd', nickname: 'TinyTown monthly', env: 'STRIPE_PRICE_MONTHLY' },
-  { interval: 'year', lookupKey: 'tinytown_yearly', amount: 9900, currency: 'usd', nickname: 'TinyTown yearly', env: 'STRIPE_PRICE_YEARLY' },
-];
+/** What's on sale: one yearly price. Checkout shows it in local currencies itself (Adaptive Pricing, server/billing.ts). */
+export const PRICES = [{ interval: 'year', lookupKey: 'tinytown_yearly', amount: 2900, currency: 'usd', nickname: 'TinyTown yearly', env: 'STRIPE_PRICE_YEARLY' }];
+
+/** Prices TinyTown used to sell. Found and reported, never changed: anyone on one keeps it until they cancel. */
+export const RETIRED_PRICES = [{ interval: 'month', lookupKey: 'tinytown_monthly', env: 'STRIPE_PRICE_MONTHLY' }];
 
 /** Must match WEBHOOK_EVENTS in server/billing.ts (tests/server-billing-setup.test.ts checks). */
 export const WEBHOOK_EVENTS = [
@@ -179,14 +183,18 @@ export function portalParams(appUrl, productId, priceIds, { scheduleDowngrades =
         mode: 'at_period_end',
         cancellation_reason: { enabled: true, options: ['too_expensive', 'missing_features', 'switched_service', 'unused', 'other'] },
       },
-      // Monthly → yearly happens now and charges the difference; yearly → monthly waits for the year to end.
-      subscription_update: {
-        enabled: true,
-        default_allowed_updates: ['price'],
-        products: [{ product: productId, prices: priceIds }],
-        proration_behavior: 'always_invoice',
-        ...(scheduleDowngrades ? { schedule_at_period_end: { conditions: [{ type: 'shortening_interval' }, { type: 'decreasing_item_amount' }] } } : {}),
-      },
+      // One plan, so nothing to switch to. With two prices on sale, an upgrade happens now and charges
+      // the difference, and a downgrade waits for the period to end.
+      subscription_update:
+        priceIds.length > 1
+          ? {
+              enabled: true,
+              default_allowed_updates: ['price'],
+              products: [{ product: productId, prices: priceIds }],
+              proration_behavior: 'always_invoice',
+              ...(scheduleDowngrades ? { schedule_at_period_end: { conditions: [{ type: 'shortening_interval' }, { type: 'decreasing_item_amount' }] } } : {}),
+            }
+          : { enabled: false },
     },
     metadata: { tinytown: '1' },
   };
@@ -215,19 +223,14 @@ export async function setupStripe({ key, appUrl: rawAppUrl, dryRun = false, live
   }
 
   // Prices first: if they exist, their product is the one to use.
-  const found = (await api('GET', '/v1/prices', { lookup_keys: PRICES.map((p) => p.lookupKey), limit: 10 })).data;
+  const found = (await api('GET', '/v1/prices', { lookup_keys: [...PRICES, ...RETIRED_PRICES].map((p) => p.lookupKey), limit: 10 })).data;
   const byKey = new Map(found.map((p) => [p.lookup_key, p]));
-  for (const want of PRICES) {
-    const p = byKey.get(want.lookupKey);
-    if (p && (p.unit_amount !== want.amount || p.currency !== want.currency || p.recurring?.interval !== want.interval)) {
-      throw new Error(
-        `The price with lookup key ${want.lookupKey} (${p.id}) is ${p.unit_amount} ${p.currency} per ${p.recurring?.interval ?? 'one-off'}, not ${want.amount} ${want.currency} per ${want.interval}. ` +
-          'Stripe prices can’t be edited: remove that lookup key from it in the Dashboard (or archive it) and run this again.',
-      );
-    }
-  }
-  const productOfPrices = [...new Set(found.map((p) => (typeof p.product === 'string' ? p.product : p.product?.id)))];
-  if (productOfPrices.length > 1) throw new Error(`The two TinyTown prices belong to different products (${productOfPrices.join(', ')}). Move their lookup keys onto one product and run again.`);
+  const productOf = (p) => (typeof p.product === 'string' ? p.product : (p.product?.id ?? null));
+  // A price can't be edited, so one holding our lookup key at another amount (the old $99 a year) is replaced, not changed.
+  const matches = (p, want) => p.unit_amount === want.amount && p.currency === want.currency && p.recurring?.interval === want.interval;
+  const ours = [...PRICES, ...RETIRED_PRICES].map((w) => byKey.get(w.lookupKey)).filter(Boolean);
+  const productOfPrices = [...new Set(ours.map(productOf).filter(Boolean))];
+  if (productOfPrices.length > 1) notes.push(`TinyTown's prices belong to different products (${productOfPrices.join(', ')}); the new price goes on ${productOfPrices[0]}.`);
 
   // The product.
   let productId = productOfPrices[0] ?? null;
@@ -255,34 +258,47 @@ export async function setupStripe({ key, appUrl: rawAppUrl, dryRun = false, live
     }
   }
 
-  // The two prices.
+  // The price on sale.
   const priceIds = {};
+  const usd = (cents, currency) => `${currency === 'usd' ? '$' : `${currency.toUpperCase()} `}${cents / 100}`;
   for (const want of PRICES) {
     const p = byKey.get(want.lookupKey);
-    if (p) {
+    if (p && matches(p, want)) {
       if (!p.active) {
         if (!dryRun) await api('POST', `/v1/prices/${p.id}`, { active: true });
         step(`Price, ${want.interval}ly`, would('reactivate'), p.id);
       } else step(`Price, ${want.interval}ly`, 'reused', p.id);
       priceIds[want.interval] = p.id;
-    } else if (dryRun) {
-      priceIds[want.interval] = `(new ${want.lookupKey} price)`;
-      step(`Price, ${want.interval}ly`, 'would create', `${want.lookupKey}: $${want.amount / 100} a ${want.interval}`);
     } else {
-      const created = await api('POST', '/v1/prices', {
-        product: productId,
-        currency: want.currency,
-        unit_amount: want.amount,
-        recurring: { interval: want.interval },
-        lookup_key: want.lookupKey,
-        nickname: want.nickname,
-        metadata: { tinytown: '1' },
-      });
-      priceIds[want.interval] = created.id;
-      step(`Price, ${want.interval}ly`, 'created', created.id);
+      const was = p ? `${usd(p.unit_amount ?? 0, p.currency)} a ${p.recurring?.interval ?? 'one-off'}` : null;
+      const taking = p ? `, taking ${want.lookupKey} from ${p.id} (${was}, kept for anyone already on it)` : '';
+      if (dryRun) {
+        priceIds[want.interval] = `(new ${want.lookupKey} price)`;
+        step(`Price, ${want.interval}ly`, 'would create', `${want.lookupKey}: ${usd(want.amount, want.currency)} a ${want.interval}${taking}`);
+      } else {
+        const created = await api('POST', '/v1/prices', {
+          product: productId,
+          currency: want.currency,
+          unit_amount: want.amount,
+          recurring: { interval: want.interval },
+          lookup_key: want.lookupKey,
+          // Moves the lookup key off an older price in the same step, so there's never a moment without one.
+          ...(p ? { transfer_lookup_key: true } : {}),
+          nickname: want.nickname,
+          metadata: { tinytown: '1' },
+        });
+        priceIds[want.interval] = created.id;
+        step(`Price, ${want.interval}ly`, 'created', `${created.id}${taking}`);
+      }
     }
     env[want.env] = priceIds[want.interval];
   }
+  // Retired prices: reported so the owner knows they're there, never changed or sold.
+  for (const old of RETIRED_PRICES) {
+    const p = byKey.get(old.lookupKey);
+    if (p) step(`Price, ${old.interval}ly`, 'left alone', `${p.id} (${usd(p.unit_amount ?? 0, p.currency)} a ${old.interval}, no longer sold)`);
+  }
+  notes.push(`TinyTown is sold by the year only: remove ${RETIRED_PRICES.map((p) => p.env).join(', ')} from the server if it's set, or that plan goes on sale too.`);
 
   // The webhook endpoint.
   const webhookUrl = `${appUrl}${WEBHOOK_PATH}`;
@@ -321,9 +337,9 @@ export async function setupStripe({ key, appUrl: rawAppUrl, dryRun = false, live
   // The customer portal.
   const configs = await listAll(api, '/v1/billing_portal/configurations');
   const config = configs.find((c) => c.metadata?.tinytown === '1');
-  const priceList = [priceIds.month, priceIds.year];
+  const priceList = PRICES.map((p) => priceIds[p.interval]);
   if (dryRun) {
-    step('Customer portal', config ? 'would update' : 'would create', config?.id ?? 'cancel at period end, switch plans, card, invoices');
+    step('Customer portal', config ? 'would update' : 'would create', config?.id ?? 'cancel at period end, card, invoices');
     env.STRIPE_PORTAL_CONFIGURATION = config?.id ?? '(new bpc_ id)';
   } else {
     const save = (params) => (config ? api('POST', `/v1/billing_portal/configurations/${config.id}`, { ...params, active: true }) : api('POST', '/v1/billing_portal/configurations', params));
@@ -334,7 +350,7 @@ export async function setupStripe({ key, appUrl: rawAppUrl, dryRun = false, live
       // Older accounts may not offer scheduled downgrades; then a switch to monthly happens straight away.
       if (!(err instanceof StripeSetupError && err.status === 400 && /schedule_at_period_end/.test(`${err.param ?? ''} ${err.message}`))) throw err;
       saved = await save(portalParams(appUrl, productId, priceList, { scheduleDowngrades: false }));
-      notes.push('This account can’t schedule plan switches for period end, so yearly → monthly switches happen immediately (with a prorated credit, not a refund).');
+      notes.push('This account can’t schedule plan switches for period end, so downgrades happen immediately (with a prorated credit, not a refund).');
     }
     step('Customer portal', config ? 'updated' : 'created', saved.id);
     env.STRIPE_PORTAL_CONFIGURATION = saved.id;
@@ -354,11 +370,6 @@ export function report(r) {
   lines.push('', `Set these on the server (Vercel → Settings → Environment Variables${r.mode === 'test' ? ', Preview or Development' : ', Production'}):`, '');
   lines.push(`  STRIPE_BILLING_SECRET_KEY=<the ${r.mode} secret key you ran this with>`);
   for (const [k, v] of Object.entries(r.env)) lines.push(v === null ? `  ${k}=<unchanged: keep the one you saved>` : `  ${k}=${v}`);
-  lines.push(
-    '',
-    '  Instead of the price ids you can set STRIPE_PRICE_MONTHLY=tinytown_monthly and',
-    '  STRIPE_PRICE_YEARLY=tinytown_yearly: lookup keys are the same in test and live mode.',
-  );
   if (r.notes.length) lines.push('', 'Notes:', ...r.notes.map((n) => `  - ${n}`));
   lines.push(
     '',
@@ -372,6 +383,8 @@ export function report(r) {
     '  - If you charge tax: Settings → Tax: add your origin address and registrations, set the default',
     '    product tax code to a SaaS code and the default tax behaviour, then set STRIPE_AUTOMATIC_TAX=1.',
     '  - Settings → Branding: logo, icon and colours for Checkout, the portal, receipts and invoices.',
+    '  - Settings → Payments → Adaptive Pricing: on, so Checkout shows the price in local currencies (the server',
+    '    also asks for it on each Checkout unless STRIPE_ADAPTIVE_PRICING=0). USD must be a settlement currency.',
   );
   return lines.join('\n');
 }

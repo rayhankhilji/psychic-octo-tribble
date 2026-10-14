@@ -22,7 +22,10 @@ No, and you never will be able to. The only way to grow your city is to grow you
 ## Price and billing
 
 ### How much is it?
-**$12 a month, or $99 a year** (that's $8.25 a month, and $45 less than twelve monthly payments). Payment is handled by Stripe.
+**$29 a year.** That's $2.42 a month, paid once a year. There's one plan, with everything in it, and no monthly option. Payment is handled by Stripe.
+
+### Can I pay in my own currency?
+Usually, yes. The price is set in US dollars, and Stripe's checkout shows it in your local currency where it can, at Stripe's exchange rate (it includes a small conversion fee, and you can choose to pay in dollars instead). Your renewals are charged in the same currency.
 
 ### Is there a free trial?
 No. **The demo is free**, for as long as you like, with no account: it's the full game running on a sample startup's 540 days, so you can see exactly what you'd be paying for. The only thing behind the paywall is your own data.
@@ -38,11 +41,11 @@ We do refund when we got it wrong: if you were charged twice, charged after canc
 ### How do I cancel?
 In TinyTown, open **Manage billing** (in the account menu). It takes you to Stripe's billing page, where you can cancel in one click. You won't be charged again, and your city stays open until the end of the period you've paid for.
 
-### Can I switch between monthly and yearly?
-Yes, in **Manage billing**. Stripe shows you what changes, and what you'll pay, before you confirm.
+### Is there a monthly plan?
+No. TinyTown is $29 a year and that's the only plan. If you subscribed when there was a monthly plan, you keep it until you cancel.
 
-### Will I be reminded before a yearly renewal?
-Yes. Stripe emails you before your yearly plan renews.
+### Will I be reminded before my plan renews?
+Yes. Stripe emails you before your plan renews each year, so it never comes as a surprise.
 
 ### Where are my invoices?
 In **Manage billing**, under invoice history. Stripe also emails a receipt for each payment.

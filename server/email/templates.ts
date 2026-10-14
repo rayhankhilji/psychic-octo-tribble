@@ -593,7 +593,7 @@ export function accessInvited(brand: Brand, x: { email: string }): Email {
         kind: 'stub',
         items: [
           { label: 'Admit one', value: x.email },
-          { label: 'Plan', value: '$12 a month or $99 a year' },
+          { label: 'Plan', value: '$29 a year' },
         ],
       },
       button('Claim your spot', brand.appUrl),

@@ -48,29 +48,31 @@ openssl rand -base64 32
 
 ## 2. Stripe: getting paid
 
-> **Shortcut:** `STRIPE_SECRET_KEY=sk_test_… node tools/stripe-setup.mjs --app-url https://YOUR-DOMAIN` creates the product, both prices (lookup keys `tinytown_monthly`/`tinytown_yearly`), the webhook endpoint with exactly the events we handle, and the customer portal, then prints the env vars to set. Run it with `--dry-run` first; add `--live` (and a live key) for production. **Copy the webhook secret straight away: it's shown once.** The manual steps below do the same thing by hand.
+> **Shortcut:** `STRIPE_SECRET_KEY=sk_test_… node tools/stripe-setup.mjs --app-url https://YOUR-DOMAIN` creates the product, the price (**$29 a year**, lookup key `tinytown_yearly`), the webhook endpoint with exactly the events we handle, and the customer portal, then prints the env vars to set. Run it with `--dry-run` first; add `--live` (and a live key) for production. **Copy the webhook secret straight away: it's shown once.** The manual steps below do the same thing by hand.
 >
-> **Then, in the Stripe Dashboard:** Settings → Billing → Subscriptions and emails → Manage failed payments: Smart Retries on, and after the last retry **cancel the subscription**; turn on emails for failed payments, expiring cards and payments that need 3D Secure. Settings → Customer emails: receipts on. Settings → Business → Public details: Terms of service URL (`https://YOUR-DOMAIN/legal/terms.html`), support email, statement descriptor `TINYTOWN`. Optional: Settings → Tax (then `STRIPE_AUTOMATIC_TAX=1`). Branding: logo, icon, colours.
+> **Then, in the Stripe Dashboard:** Settings → Billing → Subscriptions and emails → Manage failed payments: Smart Retries on, and after the last retry **cancel the subscription**; turn on emails for failed payments, expiring cards and payments that need 3D Secure. Settings → Customer emails: receipts on. Settings → Business → Public details: Terms of service URL (`https://YOUR-DOMAIN/legal/terms.html`), support email, statement descriptor `TINYTOWN`. Settings → Payments → **Adaptive Pricing**: on, so Checkout shows the price in each buyer's own currency. Optional: Settings → Tax (then `STRIPE_AUTOMATIC_TAX=1`). Branding: logo, icon, colours.
+>
+> **Moving from the old $12/$99 pricing:** run the same command. It makes the $29 yearly price and moves the `tinytown_yearly` lookup key onto it; the old $99 yearly and $12 monthly prices are left exactly as they are, so anyone already on one keeps it (the server still recognises their renewals and cancellations). Then set `STRIPE_PRICE_YEARLY` to the new price id and **remove `STRIPE_PRICE_MONTHLY`** from Vercel: whatever prices are configured are on sale.
 
 Do this in **test mode** first (the toggle in the Dashboard), check the whole flow, then repeat it in live mode and swap the keys in Vercel.
 
 1. **The product.** [Product catalogue](https://dashboard.stripe.com/products) → **Add product**:
    - Name: `TinyTown`. Description: something like "Your startup, as a living city".
-   - Add a **recurring** price: **$12.00 USD, monthly**.
-   - Add a second **recurring** price on the same product: **$99.00 USD, yearly**.
-   - No free trial on either. Open each price and copy its id (`price_…`).
+   - Add one **recurring** price: **$29.00 USD, yearly**. TinyTown is sold by the year only: no monthly price.
+   - No free trial. Open the price and copy its id (`price_…`).
+   - **Local currencies:** turn on [Adaptive Pricing](https://dashboard.stripe.com/settings/adaptive-pricing). Checkout then shows the price in the buyer's currency at Stripe's exchange rate (the buyer pays Stripe's 2–4% conversion; you're paid in USD), and renewals follow in the same currency. The server asks for it on every Checkout unless `STRIPE_ADAPTIVE_PRICING=0`. If you'd rather set round local prices yourself (say €29), add them to the price as extra currencies (`currency_options`); Adaptive Pricing leaves those currencies alone and converts the rest.
 2. **API key.** [Developers → API keys](https://dashboard.stripe.com/apikeys): copy the **Secret key** (`sk_test_…` now, `sk_live_…` later). The simplest setup uses it for both `STRIPE_BILLING_SECRET_KEY` and the Stripe App (section 3). If you'd rather use a restricted key for billing, give it write access to Customers, Checkout Sessions and Customer portal, and read access to Subscriptions and Prices; the Stripe App still needs the full secret key.
 3. **Webhook.** [Developers → Webhooks](https://dashboard.stripe.com/webhooks) → **Add endpoint** (or **Add destination** → Webhook endpoint):
    - Endpoint URL: `https://YOUR-DOMAIN/api/billing/webhook`
-   - Events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`
+   - Events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, `customer.subscription.resumed`, `invoice.paid`, `invoice.payment_failed`, `invoice.payment_action_required`
    - Open the endpoint and reveal its **Signing secret** (`whsec_…`).
-4. **Customer portal** (where founders change plan, update their card, cancel and get invoices): [Settings → Billing → Customer portal](https://dashboard.stripe.com/settings/billing/portal):
+4. **Customer portal** (where founders update their card, cancel and get invoices): [Settings → Billing → Customer portal](https://dashboard.stripe.com/settings/billing/portal):
    - Turn on: update payment method, view invoice history, cancel subscriptions (at the end of the period).
-   - **Switch plans:** allow switching, and add the TinyTown product with both prices so people can move between monthly and yearly.
+   - **Switch plans:** off. There's one plan, so there's nothing to switch to.
    - Fill in your business name, privacy policy and terms links.
 5. **Branding:** [Settings → Branding](https://dashboard.stripe.com/settings/branding): logo, icon and colours (Checkout and the portal use them).
 
-**You now have:** `STRIPE_BILLING_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`.
+**You now have:** `STRIPE_BILLING_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_YEARLY`.
 
 ## 3. The Stripe App (founders connect their Stripe)
 
@@ -152,8 +154,8 @@ Public values can be seen by anyone; secret ones must only ever live in Vercel a
 | `STATE_SECRET` | `openssl rand -base64 32` (section 0) | **Secret** |
 | `STRIPE_BILLING_SECRET_KEY` | Stripe → Developers → API keys → Secret key | **Secret** |
 | `STRIPE_WEBHOOK_SECRET` | Stripe → Developers → Webhooks → your endpoint → Signing secret | **Secret** |
-| `STRIPE_PRICE_MONTHLY` | Stripe → Product catalogue → TinyTown → the $12 monthly price id | Public |
-| `STRIPE_PRICE_YEARLY` | Stripe → Product catalogue → TinyTown → the $99 yearly price id | Public |
+| `STRIPE_PRICE_YEARLY` | Stripe → Product catalogue → TinyTown → the $29 yearly price id | Public |
+| `STRIPE_PRICE_MONTHLY` | **Leave unset.** Only for selling a monthly plan as well; none is sold now. Old monthly subscribers are recognised without it | Public |
 | `STRIPE_APP_CLIENT_ID` | Stripe → your app → Settings → client ID (`ca_…`) | Public |
 | `STRIPE_APP_SECRET_KEY` | The full secret key of the account that owns the app. Optional: defaults to `STRIPE_BILLING_SECRET_KEY` | **Secret** |
 | `STRIPE_APP_INSTALL_URL` | Testing only: the External test authorize link, without its query string | Public |
@@ -167,6 +169,7 @@ Public values can be seen by anyone; secret ones must only ever live in Vercel a
 | `TOKEN_ENCRYPTION_KEY_OLD` | Only while rotating the encryption key (docs/SECURITY.md) | **Secret** |
 | `STRIPE_PORTAL_CONFIGURATION` | Printed by `tools/stripe-setup.mjs` (`bpc_…`) | Public |
 | `STRIPE_AUTOMATIC_TAX`, `STRIPE_TERMS_CONSENT`, `STRIPE_PROMO_CODES` | `1` to switch on Stripe Tax, the Terms checkbox (with the no-refund line), promo codes | Public |
+| `STRIPE_ADAPTIVE_PRICING` | `0` to always charge in USD; otherwise Checkout shows local currencies (Adaptive Pricing) | Public |
 | `STRIPE_API_VERSION` | Optional override of the pinned version | Public |
 | `ACCESS_MODE` | `waitlist` for launch, `open` after the last wave; unset locally | Public |
 | `ADMIN_EMAILS` | Your email (comma-separated list) for `/admin.html` | Keep server-side |

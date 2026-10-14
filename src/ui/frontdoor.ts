@@ -8,8 +8,10 @@
  * doesn't reveal it when the boot screen lifts); leaving reveals it.
  */
 import './frontdoor.css';
+import { HOME_TIERS } from '../game/catalog.ts';
+import { MRR_PER_USER, RATE } from '../game/economy.ts';
 import { markSvg } from './brand.ts';
-import { el, escape } from './dom.ts';
+import { el, escape, shortMrr } from './dom.ts';
 import { ICON } from './icons.ts';
 import { revealHud, whenBooted } from './loader.ts';
 
@@ -85,9 +87,9 @@ export function frontDoorInset(w: number, h: number): { left: number; bottom: nu
 export interface FrontDoorOptions {
   /** The real numbers behind the city on screen. */
   caption: { name: string; day: number; mrr: string; people: number; of: string };
-  /** "$12/mo", or null when no plans are on sale. */
+  /** The button's price, "$29/yr", or null when no plans are on sale. */
   price: string | null;
-  /** "$99 a year", for the small print, when there's a yearly plan. */
+  /** Another plan on sale, in words, for the small print ("or $99 a year"). Normally null: TinyTown is sold by the year. */
   yearly: string | null;
   /** Hosted accounts are on: "Make it yours" and "Sign in" lead somewhere. */
   accounts: boolean;
@@ -98,6 +100,26 @@ export interface FrontDoorOptions {
 }
 
 type Exit = 'watch' | 'make' | 'signin';
+
+/** "$29/yr" → "$29 a year", for a sentence. */
+const spoken = (price: string) => price.replace('/mo', ' a month').replace('/yr', ' a year');
+
+/**
+ * The three rules on the card, from the game's own constants, so retuning
+ * the economy can't leave the front door quoting an old number: the money
+ * per $1 of MRR, the housing cost per user, and the MRR that reaches the
+ * moon (one rung per digit while every rung is ten times the last).
+ */
+export function frontDoorBeats(): { fig: string; text: string }[] {
+  const moon = HOME_TIERS.find((t) => t.where === 'moon') ?? HOME_TIERS.at(-1)!;
+  const paid = HOME_TIERS.filter((t) => t.mrr > 0);
+  const perDigit = paid.every((t, i) => i === 0 || t.mrr === paid[i - 1]!.mrr * 10);
+  return [
+    { fig: `$${RATE.toLocaleString('en-US')}`, text: 'to build with for every $1 of MRR. Parks, towers, a stadium, a jet.' },
+    { fig: `${Math.round(MRR_PER_USER * 100)}¢`, text: 'of MRR houses each active user. Fall short and the sign goes dark, then the bridge rusts.' },
+    { fig: shortMrr(moon.mrr), text: `MRR takes you from a hacker house to a house on the moon${perDigit ? ', one rung per digit' : ''}.` },
+  ];
+}
 
 export class FrontDoor {
   private root: HTMLElement;
@@ -110,7 +132,7 @@ export class FrontDoor {
     this.opts = opts;
     const { caption: c, price, accounts } = opts;
     const nf = (n: number) => n.toLocaleString('en-US');
-    const small = accounts && price ? `Watching is free. Your own city is ${escape(price.replace('/mo', ' a month'))}${opts.yearly ? ` or ${escape(opts.yearly)}` : ''}, with no free trial.` : '';
+    const small = accounts && price ? `Watching is free. Your own city is ${escape(spoken(price))}${opts.yearly ? ` or ${escape(opts.yearly)}` : ''}, with no free trial.` : '';
     this.root = el(
       'section',
       { class: 'frontdoor', 'aria-labelledby': 'fd-title' },
@@ -126,11 +148,9 @@ export class FrontDoor {
           <span class="fd-line"><span class="fd-in fd-accent" style="--i:3">as a city.</span></span>
         </h1>
         <p class="fd-lede fd-in" style="--i:4">Connect Stripe and your real revenue builds a tiny San&nbsp;Francisco by the bay. There's one way to grow it: grow the startup.</p>
-        <ol class="fd-beats">
-          <li class="fd-in" style="--i:5"><b class="fd-fig">$10,000</b><span>to build with for every $1 of MRR. Parks, towers, a stadium, a jet.</span></li>
-          <li class="fd-in" style="--i:6"><b class="fd-fig">20¢</b><span>of MRR houses each active user. Fall short and the sign goes dark, then the bridge rusts.</span></li>
-          <li class="fd-in" style="--i:7"><b class="fd-fig">$1M</b><span>MRR takes you from a hacker house to a house on the moon, one rung per digit.</span></li>
-        </ol>
+        <ol class="fd-beats">${frontDoorBeats()
+          .map((b, i) => `<li class="fd-in" style="--i:${5 + i}"><b class="fd-fig">${b.fig}</b><span>${b.text}</span></li>`)
+          .join('')}</ol>
         <div class="fd-actions fd-in" style="--i:8">
           <button class="fd-btn fd-primary" type="button" data-go="watch"><span class="fd-play" aria-hidden="true">${ICON.play}</span>Watch a startup grow</button>
           ${accounts ? `<button class="fd-btn fd-secondary" type="button" data-go="make">Make it yours${price ? `<span class="fd-price num">${escape(price)}</span>` : ''}</button>` : ''}

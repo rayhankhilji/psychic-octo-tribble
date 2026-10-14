@@ -24,7 +24,11 @@ export interface Settings {
    * still opens secrets sealed under the previous one (see docs/SECURITY.md).
    */
   secrets: { encryptionKey: string; oldEncryptionKey: string | null; stateSecret: string } | null;
-  billing: { secretKey: string; webhookSecret: string | null; prices: { month: string; year: string } } | null;
+  /**
+   * TinyTown is sold by the year (STRIPE_PRICE_YEARLY). STRIPE_PRICE_MONTHLY is
+   * optional and normally unset: when it is set, a monthly plan is on sale too.
+   */
+  billing: { secretKey: string; webhookSecret: string | null; prices: { month: string | null; year: string } } | null;
   stripeApp: { clientId: string; secretKey: string; installUrl: string; livemode: boolean } | null;
   githubApp: { appId: string | null; slug: string; clientId: string; clientSecret: string; privateKey: string } | null;
   posthog: { hosts: string[] };
@@ -81,7 +85,7 @@ export function settings(env: Env): Settings {
     appUrl,
     supabase: supabaseUrl && anonKey && serviceKey ? { url: supabaseUrl, anonKey, serviceKey } : null,
     secrets,
-    billing: billingKey && monthly && yearly ? { secretKey: billingKey, webhookSecret: get(env, 'STRIPE_WEBHOOK_SECRET') ?? null, prices: { month: monthly, year: yearly } } : null,
+    billing: billingKey && yearly ? { secretKey: billingKey, webhookSecret: get(env, 'STRIPE_WEBHOOK_SECRET') ?? null, prices: { month: monthly ?? null, year: yearly } } : null,
     stripeApp:
       appClientId && appKey && secrets
         ? {
@@ -122,7 +126,8 @@ export interface EnvProblem {
 const GROUPS: { name: string; vars: string[] }[] = [
   { name: 'Supabase (accounts)', vars: ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'] },
   { name: 'Secrets for connections', vars: ['TOKEN_ENCRYPTION_KEY', 'STATE_SECRET'] },
-  { name: 'Billing', vars: ['STRIPE_BILLING_SECRET_KEY', 'STRIPE_PRICE_MONTHLY', 'STRIPE_PRICE_YEARLY', 'STRIPE_WEBHOOK_SECRET'] },
+  // STRIPE_PRICE_MONTHLY isn't in the group: TinyTown is sold by the year, and a monthly price is optional.
+  { name: 'Billing', vars: ['STRIPE_BILLING_SECRET_KEY', 'STRIPE_PRICE_YEARLY', 'STRIPE_WEBHOOK_SECRET'] },
   { name: 'The GitHub App', vars: ['GITHUB_APP_SLUG', 'GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET', 'GITHUB_APP_PRIVATE_KEY'] },
 ];
 
@@ -211,6 +216,7 @@ export function checkEnv(env: Env): EnvProblem[] {
     const v = get(env, name);
     if (v && !v.startsWith('price_')) error(`${name} should be a price id (price_…), not a product id or an amount.`);
   }
+  if (s.billing?.prices.month) warn('STRIPE_PRICE_MONTHLY is set, so a monthly plan is on sale next to the yearly one. TinyTown is sold by the year: unset it unless you mean to sell monthly.');
   if (has('STRIPE_APP_CLIENT_ID') && !s.stripeApp) error('STRIPE_APP_CLIENT_ID is set, but connecting Stripe also needs TOKEN_ENCRYPTION_KEY, STATE_SECRET and a secret key.');
   const appKey = get(env, 'STRIPE_APP_SECRET_KEY');
   if (appKey && !/^sk_(live|test)_/.test(appKey)) error('STRIPE_APP_SECRET_KEY must be a full secret key (sk_…): Stripe refuses restricted keys for the OAuth code exchange.');

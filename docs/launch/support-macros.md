@@ -63,7 +63,7 @@ Longer playbooks (webhooks, disputes, breaches) are in `docs/RUNBOOK.md`. Custom
 >
 > If something didn't work, I'd really like to know what. If it's something we got wrong, I'll do my best to make it right.
 
-[Judgement call: someone threatening a chargeback on a $12 charge. A dispute costs $15 you never get back, more than the charge. Refunding is usually the better outcome for both of you. Use macro 5's wording.]
+[Judgement call: someone threatening a chargeback on a $29 charge. A dispute costs $15 you never get back, and another $15 to contest it: more than the charge. Refunding is usually the better outcome for both of you. Use macro 5's wording.]
 
 ---
 

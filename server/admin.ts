@@ -374,7 +374,9 @@ async function overview(ctx: Hosted): Promise<Overview> {
   const yearly = real.filter((r) => r.plan_interval === 'year').length;
   const month = prices.find((p) => p.interval === 'month');
   const year = prices.find((p) => p.interval === 'year');
-  const mrr = month && year ? { amount: Math.round(monthly * month.amount + (yearly * year.amount) / 12), currency: month.currency } : null;
+  // One plan on sale (the year): estimate whenever every interval people actually pay on has a price.
+  const currency = (year ?? month)?.currency;
+  const mrr = currency && (!monthly || month) && (!yearly || year) ? { amount: Math.round(monthly * (month?.amount ?? 0) + (yearly * (year?.amount ?? 0)) / 12), currency } : null;
 
   const window = (days: number): Movement => {
     const from = ctx.now - days * DAY;

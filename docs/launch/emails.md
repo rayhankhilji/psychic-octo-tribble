@@ -25,7 +25,7 @@ Before sending:
 >
 > **How getting in works.** We're letting people in in waves over a few days, oldest sign-ups first, so everyone gets a city that works properly. You'll get an email when it's your turn. Sign in with this email address.
 >
-> **What it costs.** $12 a month, or $99 a year. There's no free trial, and payments aren't refundable; you can cancel any time and keep your city until the end of what you've paid for. We'd rather you decide with the full picture, which is why:
+> **What it costs.** $29 a year (that's $2.42 a month), and that's the only plan. There's no free trial, and payments aren't refundable; you can cancel any time and keep your city until the end of the year you've paid for. We'd rather you decide with the full picture, which is why:
 >
 > **The demo is free, right now.** It's the whole game running on a sample startup's first 540 days: [YOUR-DOMAIN/?demo]
 >
@@ -56,7 +56,7 @@ Before sending:
 > Sign in with **this email address** ([email]). The quickest way is "Continue with Google" or "Continue with GitHub", if they use the same address; otherwise we'll email you a sign-in link.
 >
 > Then:
-> 1. **Pick a plan:** $12 a month or $99 a year. No trial and no refunds, but you can cancel any time and keep your city until the end of what you've paid for.
+> 1. **Pay for the year:** $29, in your own currency where Stripe offers it. No trial and no refunds, but you can cancel any time and keep your city until the end of the year you've paid for.
 > 2. **Connect Stripe.** You'll install the TinyTown app on Stripe and approve two read-only permissions. Use your **live** account: test-mode data doesn't count.
 > 3. **Connect GitHub (optional).** Releases add floors to your HQ; commits speed up the train.
 >
@@ -83,7 +83,7 @@ Before sending:
 >
 > **[Open TinyTown →]** (YOUR-DOMAIN)
 >
-> Sign in with this email address ([email]), pick a plan ($12 a month or $99 a year), connect Stripe with the read-only TinyTown app, and your city is built from your real numbers. GitHub is optional.
+> Sign in with this email address ([email]), pay for the year ($29), connect Stripe with the read-only TinyTown app, and your city is built from your real numbers. GitHub is optional.
 >
 > Two things worth knowing before you pay: there's no free trial and no refunds, and you can cancel any time and keep your city until the end of what you've paid for. If you'd like another look first, the demo is still free: [YOUR-DOMAIN/?demo]
 >
