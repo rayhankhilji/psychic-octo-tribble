@@ -332,13 +332,13 @@ export function beam(b: GeoBuilder, ax: number, ay: number, az: number, cx: numb
   obox(b, (ax + cx) / 2, (ay + cy) / 2, (az + cz) / 2, dx, dy, dz, vertical ? 0 : -dz, 0, vertical ? 1 : dx, w, len, d, color, bucket);
 }
 
-/** A round rod from a to c. */
-export function rod(b: GeoBuilder, ax: number, ay: number, az: number, cx: number, cy: number, cz: number, r: number, color: ColorLike, segments = 5, bucket: Bucket = 'solid', r2 = r) {
+/** A round rod from a to c. `open` leaves off the end caps: right for thin struts, chains and wires whose ends meet something. */
+export function rod(b: GeoBuilder, ax: number, ay: number, az: number, cx: number, cy: number, cz: number, r: number, color: ColorLike, segments = 5, bucket: Bucket = 'solid', r2 = r, open = false) {
   va.set(cx - ax, cy - ay, cz - az);
   const len = va.length();
   if (len < 1e-6) return;
   qt.setFromUnitVectors(UP, va.normalize());
-  const g = new THREE.CylinderGeometry(r2, r, len, segments, 1);
+  const g = new THREE.CylinderGeometry(r2, r, len, segments, 1, open);
   m4.compose(vb.set((ax + cx) / 2, (ay + cy) / 2, (az + cz) / 2), qt, vs.set(1, 1, 1));
   b.transformed(g, m4.clone(), color, bucket);
 }
@@ -727,7 +727,42 @@ export function planter(b: GeoBuilder, r: () => number, x: number, z: number, w:
   }
 }
 
-/** A small crowd: little figures in bright clothes. */
+/**
+ * A box standing on y without its bottom, which nothing can see: 10 triangles
+ * (8 with `top = false`, for a post under a beam or legs under a body).
+ * Batched on a Kit; a plain builder gets an ordinary box.
+ */
+export function post(b: GeoBuilder, w: number, h: number, d: number, x: number, y: number, z: number, color: ColorLike, rotY = 0, top = true) {
+  if (!(b instanceof Kit)) {
+    b.box(w, h, d, x, y, z, color, false, rotY);
+    return;
+  }
+  const c = Math.cos(rotY);
+  const s = Math.sin(rotY);
+  // Local +x turns to (c, 0, −s) and local +z to (s, 0, c), as Object3D.rotateY does.
+  for (const [lx, lz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    const nx = lx * c + lz * s;
+    const nz = -lx * s + lz * c;
+    const off = lx ? w / 2 : d / 2;
+    wall(b, 'solid', x + nx * off, y + h / 2, z + nz * off, nx, nz, lx ? d : w, h, color);
+  }
+  if (top) flat(b, 'solid', x, y + h, z, w, d, color, rotY);
+}
+
+const OCTA = new THREE.OctahedronGeometry(1);
+// Normals straight out from the centre, so eight faces shade like a ball (a stock
+// octahedron, like a stock icosahedron, comes flat-shaded).
+OCTA.setAttribute('normal', OCTA.attributes.position!.clone());
+
+/** A little round head (or ball, bulb, balloon): a smooth-shaded octahedron, 8 triangles. */
+export function ball(b: GeoBuilder, rad: number, x: number, y: number, z: number, color: ColorLike, bucket: Bucket = 'smooth', sy = 1) {
+  const g = OCTA.clone();
+  g.scale(rad, rad * sy, rad);
+  g.translate(x, y, z);
+  b.transformed(g, new THREE.Matrix4(), color, bucket);
+}
+
+/** A small crowd: little figures in bright clothes. 26 triangles each. */
 export function people(b: GeoBuilder, r: () => number, x: number, z: number, n: number, sx: number, sz: number, y = 0) {
   const clothes = [0xe85a4a, 0x2f6fa8, 0xf2c84b, 0x3aa36a, 0xf4f1ea, 0x2a2f38, 0xd86aa8, 0x7a5ac8] as const;
   const skin = [0xf1c6a0, 0xd9a07a, 0xa8714f, 0x6e4a32, 0xf5d5b5] as const;
@@ -735,9 +770,9 @@ export function people(b: GeoBuilder, r: () => number, x: number, z: number, n: 
     const px = x + (r() - 0.5) * sx;
     const pz = z + (r() - 0.5) * sz;
     const h = 0.05 + r() * 0.012;
-    b.box(0.022, h * 0.45, 0.016, px, y, pz, 0x3a3f4a, false, r() * 3);
-    b.box(0.026, h * 0.38, 0.018, px, y + h * 0.45, pz, pick(r, clothes), false, r() * 3);
-    b.blob(0.011, px, y + h * 0.9, pz, pick(r, skin), 'smooth');
+    post(b, 0.022, h * 0.45, 0.016, px, y, pz, 0x3a3f4a, r() * 3, false);
+    post(b, 0.026, h * 0.38, 0.018, px, y + h * 0.45, pz, pick(r, clothes), r() * 3);
+    ball(b, 0.011, px, y + h * 0.9, pz, pick(r, skin));
   }
 }
 
@@ -856,11 +891,19 @@ export function vent(b: GeoBuilder, x: number, y: number, z: number, s = 1) {
 
 /** A wooden water tank on a steel stand, like on every old SoMa roof. */
 export function waterTank(b: GeoBuilder, x: number, y: number, z: number, s = 1) {
-  for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) b.box(0.012 * s, 0.16 * s, 0.012 * s, x + dx * 0.07 * s, y, z + dz * 0.07 * s, 0x2b3038);
+  for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) post(b, 0.012 * s, 0.16 * s, 0.012 * s, x + dx * 0.07 * s, y, z + dz * 0.07 * s, 0x2b3038, 0, false);
   b.box(0.18 * s, 0.01 * s, 0.18 * s, x, y + 0.16 * s, z, 0x2b3038);
-  b.cylinder(0.1 * s, 0.1 * s, 0.18 * s, x, y + 0.17 * s, z, 0x8a6446, 10);
-  for (let k = 0; k < 3; k++) b.cylinder(0.103 * s, 0.103 * s, 0.006 * s, x, y + (0.2 + k * 0.05) * s, z, 0x2b3038, 10);
-  b.cylinder(0.005, 0.11 * s, 0.08 * s, x, y + 0.35 * s, z, 0x6a4a34, 10);
+  // The staves, the hoops and the cap are open tubes: their ends sit on the deck or under the cap
+  tube(b, 0.1 * s, 0.1 * s, 0.18 * s, x, y + 0.17 * s, z, 0x8a6446, 10);
+  for (let k = 0; k < 3; k++) tube(b, 0.103 * s, 0.103 * s, 0.006 * s, x, y + (0.2 + k * 0.05) * s, z, 0x2b3038, 10);
+  tube(b, 0.005, 0.11 * s, 0.08 * s, x, y + 0.35 * s, z, 0x6a4a34, 10);
+}
+
+/** A cylinder resting on y without its end caps, for parts whose ends are hidden (2 triangles a segment). */
+export function tube(b: GeoBuilder, rTop: number, rBottom: number, h: number, x: number, y: number, z: number, color: ColorLike, segments = 8, bucket: Bucket = 'solid') {
+  const g = new THREE.CylinderGeometry(rTop, rBottom, h, segments, 1, true);
+  g.translate(x, y + h / 2, z);
+  b.transformed(g, new THREE.Matrix4(), color, bucket);
 }
 
 /** A stair house (roof access) with its door facing (nx, nz). */
@@ -1793,12 +1836,21 @@ export function spire(b: GeoBuilder, r: () => number, x: number, z: number, neon
   // The little gondola from the street
   rod(b, px0 - 1.75, 0.035, pz0 - 0.78, px0 - 1.75, ry + 0.25, pz0 - 0.78, 0.012, 0xe9e7e1, 5);
   beam(b, px0 - 1.75, ry + 0.25, pz0 - 0.78, px0 - 1.45, ry + 0.25, pz0 - 0.55, 0.008, 0x3a4048);
-  b.rbox(0.09, 0.08, 0.07, px0 - 1.62, ry + 0.12, pz0 - 0.68, 0xd8402e, 0.02);
+  {
+    // The cabin: a red box with a band of windows all round (no draws from r, so the plaza keeps its layout)
+    const gx = px0 - 1.62;
+    const gz = pz0 - 0.68;
+    b.box(0.09, 0.08, 0.07, gx, ry + 0.12, gz, 0xd8402e);
+    b.box(0.1, 0.01, 0.08, gx, ry + 0.2, gz, 0xe9e7e1);
+    for (const [nx, nz, w] of [[1, 0, 0.05], [-1, 0, 0.05], [0, 1, 0.07], [0, -1, 0.07]] as const) {
+      wall(winOf(b), 'glow', gx + nx * 0.0455, ry + 0.17, gz + nz * 0.0355, nx, nz, w, 0.03, [1.35, 0.95, 0.55], TINT.sky * 10 + 0.3 + nx * 0.1 + nz * 0.2);
+    }
+  }
   // Plaza on the Fremont Street side: water steps, sculpture, people
   b.box(0.7, 0.03, 0.5, x + 1.3, 0.035, z - 1.2, 0xcfc8b8);
   b.box(0.62, 0.012, 0.42, x + 1.3, 0.065, z - 1.2, PALETTE.pool);
   b.box(0.06, 0.32, 0.06, x + 1.3, 0.035, z - 0.6, 0xd8402e);
-  put(b, new THREE.TorusGeometry(0.1, 0.018, 6, 16), x + 1.3, 0.42, z - 0.6, 0xd8402e, 'smooth', Math.PI / 4);
+  put(b, new THREE.TorusGeometry(0.1, 0.018, 5, 14), x + 1.3, 0.42, z - 0.6, 0xd8402e, 'smooth', Math.PI / 4);
   for (const [dx, dz] of [[1.75, -1.75], [1.75, -0.2], [0.4, -1.75], [-1.75, -0.4]] as const) {
     planter(b, r, x + dx, z + dz, 0.14, 0.14, 0.035);
     tree(b, r, x + dx, z + dz, 0.55, 0.09, 'round');

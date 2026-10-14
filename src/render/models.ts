@@ -4,7 +4,7 @@ import { hillsHouse } from './hills.ts';
 import { PALETTE } from './palette.ts';
 import { bright, palm, tree, warmth, type Built } from './buildings.ts';
 import {
-  FX, Kit, LAMP, RED_LIGHT, TINT, acUnit, beam, bench, blockText, bush, campus, canopy, cypress, deco, facade, fin, flat, helipad, lamp, loft,
+  FX, Kit, LAMP, ball, post, RED_LIGHT, TINT, acUnit, beam, bench, blockText, bush, campus, canopy, cypress, deco, facade, fin, flat, helipad, lamp, loft,
   lounger, neonOf, neonRing, ngonPts, parasol, people, pingPong, pixelText, planter, prism, profile, put, pyramid, quad4, quadBlob, rectPts, rod,
   roofEdge, roofTerrace, scalePts, shade, signBoard, signText, signWidth, slab, spire, stairHouse, tower, vent, wall, waterTank, winOf, wr,
   type Bucket, type XZ,
@@ -62,7 +62,21 @@ function awning(b: GeoBuilder, x: number, y: number, z: number, nx: number, nz: 
 function punch(b: GeoBuilder, r: () => number, x: number, y: number, z: number, nx: number, nz: number, w: number, h: number, trim: ColorLike, light: ColorLike, tint: number, share = 0.6) {
   wall(b, 'solid', x + nx * 0.003, y, z + nz * 0.003, nx, nz, w + 0.03, h + 0.03, trim);
   wall(winOf(b), 'glow', x + nx * 0.006, y, z + nz * 0.006, nx, nz, w, h, light, wr(r, share, tint));
-  b.box(Math.abs(nz) > 0.5 ? w + 0.04 : 0.025, 0.012, Math.abs(nz) > 0.5 ? 0.025 : w + 0.04, x + nx * 0.012, y - h / 2 - 0.016, z + nz * 0.012, trim);
+  sill(b, x + nx * 0.012, y - h / 2 - 0.016, z + nz * 0.012, nx, nz, w + 0.04, 0.012, 0.025, trim);
+}
+
+/** A flat round of lawn, paving or water lying on y, seen only from above: `segs` triangles. `sz` squashes it along z. */
+function disc(b: GeoBuilder, rad: number, x: number, y: number, z: number, color: ColorLike, segs = 12, sz = 1, bucket: Bucket = 'solid') {
+  const g = new THREE.CircleGeometry(rad, segs).rotateX(-Math.PI / 2);
+  g.scale(1, 1, sz);
+  g.translate(x, y, z);
+  b.transformed(g, new THREE.Matrix4(), color, bucket);
+}
+
+/** A sill or band on a wall facing (nx, nz): its front and top are all anyone sees, 4 triangles. */
+function sill(b: GeoBuilder, x: number, y: number, z: number, nx: number, nz: number, w: number, h: number, d: number, color: ColorLike) {
+  wall(b, 'solid', x + nx * (d / 2), y + h / 2, z + nz * (d / 2), nx, nz, w, h, color);
+  flat(b, 'solid', x, y + h, z, Math.abs(nz) > 0.5 ? w : d, Math.abs(nz) > 0.5 ? d : w, color);
 }
 
 /** A steel factory window: glass with a dark muntin grid. */
@@ -110,12 +124,12 @@ function cornice(b: GeoBuilder, x: number, y: number, z: number, nx: number, nz:
   }
 }
 
-/** Little white figures in a sports field or on a stage. */
+/** Little white figures in a sports field or on a stage. 26 triangles each. */
 function figures(b: GeoBuilder, pts: readonly XZ[], y: number, shirt: ColorLike, legs: ColorLike = 0xf4f1ea) {
   for (const [px, pz] of pts) {
-    b.box(0.018, 0.024, 0.014, px, y, pz, legs);
-    b.box(0.022, 0.022, 0.016, px, y + 0.024, pz, shirt);
-    b.blob(0.01, px, y + 0.054, pz, 0xd9a07a, 'smooth');
+    post(b, 0.018, 0.024, 0.014, px, y, pz, legs, 0, false);
+    post(b, 0.022, 0.022, 0.016, px, y + 0.024, pz, shirt);
+    ball(b, 0.01, px, y + 0.054, pz, 0xd9a07a);
   }
 }
 
@@ -533,26 +547,69 @@ function park(b: GeoBuilder, r: () => number, x: number, z: number) {
     quadBlob(neonOf(b), x + 0.05 + Math.cos(a) * 0.16, 0.1, z + Math.sin(a) * 0.16, 0.012, [0.7, 1.5, 2.2], FX.shimmer + k / 6);
     rod(b, x + 0.05 + Math.cos(a) * 0.17, 0.09, z + Math.sin(a) * 0.17, x + 0.05 + Math.cos(a) * 0.1, 0.17, z + Math.sin(a) * 0.1, 0.004, 0xd8f2fa, 3, 'smooth');
   }
-  // Playground: a slide, swings, a sandbox
+  // Playground on a soft red surface with a timber edge: a play tower with a slide, swings, a sandbox
   const px = x + 0.55;
   const pz = z + 0.55;
-  b.box(0.5, 0.008, 0.45, px, 0.035, pz, 0xc96a4a);
-  b.box(0.18, 0.01, 0.16, px - 0.08, 0.035, pz + 0.08, PALETTE.sand);
-  b.box(0.08, 0.14, 0.08, px + 0.12, 0.035, pz - 0.1, 0xf2c84b);
-  b.cylinder(0, 0.07, 0.06, px + 0.12, 0.175, pz - 0.1, 0xe85a4a, 4, false, Math.PI / 4);
-  put(b, new THREE.BoxGeometry(0.05, 0.008, 0.2), px + 0.12, 0.11, pz + 0.02, 0x3a8fd8, 'solid', 0, -0.62);
-  for (const s of [-1, 1]) rod(b, px - 0.2, 0.035, pz - 0.15 + s * 0.08, px - 0.2, 0.2, pz - 0.15, 0.005, 0x3a8fd8, 3);
-  for (const s of [-1, 1]) rod(b, px - 0.02, 0.035, pz - 0.15 + s * 0.08, px - 0.02, 0.2, pz - 0.15, 0.005, 0x3a8fd8, 3);
-  rod(b, px - 0.2, 0.2, pz - 0.15, px - 0.02, 0.2, pz - 0.15, 0.005, 0x3a8fd8, 3);
-  for (const s of [-1, 1]) b.box(0.03, 0.004, 0.02, px - 0.11 + s * 0.04, 0.09, pz - 0.15, 0xe85a4a);
+  const wood = PALETTE.wood;
+  b.box(0.52, 0.008, 0.47, px, 0.035, pz, 0xc96a4a);
+  for (const s of [-1, 1]) {
+    b.box(0.54, 0.02, 0.014, px, 0.035, pz + s * 0.24, wood);
+    b.box(0.014, 0.02, 0.47, px + s * 0.265, 0.035, pz, wood);
+  }
+  // The tower: four posts, a deck, blue rails, a red roof; the slide runs down towards the street
+  const tx = px + 0.1;
+  const tz = pz - 0.1;
+  for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) post(b, 0.012, 0.2, 0.012, tx + dx * 0.05, 0.043, tz + dz * 0.05, wood, 0, false);
+  b.box(0.12, 0.014, 0.12, tx, 0.11, tz, wood);
+  for (const [nx, nz] of [[-1, 0], [0, -1]] as const) wall(b, 'solid', tx + nx * 0.061, 0.15, tz + nz * 0.061, nx, nz, 0.1, 0.05, 0x3a8fd8);
+  b.cylinder(0, 0.1, 0.06, tx, 0.243, tz, 0xe85a4a, 4, false, Math.PI / 4);
+  put(b, new THREE.BoxGeometry(0.05, 0.008, 0.2), tx, 0.078, tz + 0.14, 0xf2c84b, 'solid', 0, 0.55);
+  for (const s of [-1, 1]) put(b, new THREE.BoxGeometry(0.006, 0.02, 0.2), tx + s * 0.026, 0.085, tz + 0.14, 0xf2c84b, 'solid', 0, 0.55);
+  // A ladder up the far side
+  for (const s of [-1, 1]) rod(b, tx + 0.07, 0.043, tz + s * 0.03, tx + 0.09, 0.11, tz + s * 0.03, 0.004, 0x3a8fd8, 3, 'solid', 0.004, true);
+  for (let k = 0; k < 3; k++) rod(b, tx + 0.075 + k * 0.006, 0.06 + k * 0.02, tz - 0.03, tx + 0.075 + k * 0.006, 0.06 + k * 0.02, tz + 0.03, 0.003, 0x3a8fd8, 3, 'solid', 0.003, true);
+  // Swings: an A-frame, chains, two seats (one with a kid on it)
+  const sx = px - 0.12;
+  const sz = pz - 0.1;
+  for (const ex of [-0.1, 0.1]) {
+    for (const s of [-1, 1]) rod(b, sx + ex, 0.043, sz + s * 0.07, sx + ex, 0.22, sz, 0.005, 0x2f6fa8, 3, 'solid', 0.005, true);
+  }
+  rod(b, sx - 0.11, 0.22, sz, sx + 0.11, 0.22, sz, 0.005, 0x2f6fa8, 4);
+  for (const s of [-1, 1]) {
+    for (const c of [-1, 1]) rod(b, sx + s * 0.045 + c * 0.012, 0.22, sz, sx + s * 0.045 + c * 0.012, 0.1, sz, 0.0012, 0x8a929c, 3, 'solid', 0.0012, true);
+    b.box(0.035, 0.006, 0.02, sx + s * 0.045, 0.094, sz, 0xe85a4a);
+  }
+  figures(b, [[sx + 0.045, sz]], 0.1, 0xf2c84b, 0x2f6fa8);
+  // Sandbox with a timber frame and a bucket
+  b.box(0.18, 0.025, 0.16, px - 0.12, 0.035, pz + 0.12, wood);
+  b.box(0.16, 0.026, 0.14, px - 0.12, 0.036, pz + 0.12, PALETTE.sand);
+  b.cylinder(0.012, 0.009, 0.02, px - 0.08, 0.06, pz + 0.1, 0xe85a4a, 6);
   // Trees, benches, lamps, a picnic blanket, people and a dog
   for (const [dx, dz, k] of [[-0.7, -0.65, 'round'], [-0.25, -0.75, 'cypress'], [0.6, -0.6, 'round'], [-0.75, 0.65, 'round'], [-0.3, 0.75, 'palm'], [0.82, -0.05, 'palm'], [-0.85, -0.05, 'round']] as const) {
     tree(b, r, x + dx, z + dz, 0.75, 0.035, k);
   }
   for (const [dx, dz, a] of [[0.05, 0.3, 0], [-0.35, -0.25, 0], [0.4, -0.2, Math.PI / 2]] as const) bench(b, x + dx, z + dz, a, 0.035);
   for (const [dx, dz] of [[-0.5, 0.15], [0.35, 0.28], [-0.05, -0.5]] as const) lamp(b, x + dx, z + dz, 0.035, 0.28);
+  // A gingham picnic blanket, a basket, two people sitting on it
   b.box(0.16, 0.004, 0.12, x - 0.45, 0.036, z + 0.45, 0xe85a4a, false, 0.3);
-  b.box(0.02, 0.012, 0.02, x - 0.43, 0.04, z + 0.44, 0xa86a3a);
+  for (const u of [-0.04, 0.04]) {
+    flat(b, 'solid', x - 0.45 + Math.cos(0.3) * u, 0.0405, z + 0.45 - Math.sin(0.3) * u, 0.025, 0.12, 0xf4ecdf, 0.3);
+    flat(b, 'solid', x - 0.45 - Math.sin(0.3) * u * 0.8, 0.041, z + 0.45 - Math.cos(0.3) * u * 0.8, 0.16, 0.022, 0xf4ecdf, 0.3);
+  }
+  post(b, 0.04, 0.025, 0.028, x - 0.41, 0.04, z + 0.43, 0xb07a44, 0.3);
+  rod(b, x - 0.425, 0.065, z + 0.435, x - 0.395, 0.065, z + 0.425, 0.003, 0x8a5a34, 3);
+  for (const [dx, dz, c] of [[-0.5, 0.42, 0x2f6fa8], [-0.47, 0.5, 0xf2c84b]] as const) {
+    post(b, 0.024, 0.02, 0.03, x + dx, 0.04, z + dz, 0x3a3f4a, 0.3);
+    post(b, 0.022, 0.024, 0.016, x + dx, 0.06, z + dz, c, 0.3);
+    ball(b, 0.01, x + dx, 0.094, z + dz, 0xd9a07a);
+  }
+  // Flower beds round the fountain
+  for (let k = 0; k < 10; k++) {
+    const a = (k / 10) * Math.PI * 2 + 0.3;
+    if (Math.abs(Math.sin(a)) < 0.3 || Math.abs(Math.cos(a)) < 0.25) continue;
+    ball(b, 0.035, x + 0.05 + Math.cos(a) * 0.34, 0.05, z + Math.sin(a) * 0.34, 0x4f8a3a, 'smooth', 0.6);
+    for (let j = 0; j < 2; j++) ball(b, 0.012, x + 0.05 + Math.cos(a + (j - 0.5) * 0.12) * 0.34, 0.068, z + Math.sin(a + (j - 0.5) * 0.12) * 0.34, pick(r, [0xe86a9a, 0xf2c84b, 0xf4f1ea, 0xd83a8a] as const));
+  }
   people(b, r, x - 0.1, z + 0.1, 6, 1.4, 1.2, 0.035);
   b.box(0.035, 0.018, 0.012, x + 0.25, 0.045, z - 0.35, 0xb08a5a);
   b.blob(0.01, x + 0.27, 0.066, z - 0.35, 0xb08a5a, 'smooth');
@@ -622,8 +679,28 @@ function garden(b: GeoBuilder, r: () => number, x: number, z: number) {
   b.gable(0.3, 0.1, 0.24, x + 0.55, 0.295, z - 0.6, 0x5f6c7c, 0.03);
   b.box(0.08, 0.17, 0.008, x + 0.55, 0.035, z - 0.475, 0xf4f1ea);
   b.cylinder(0.07, 0.07, 0.18, x + 0.82, 0.035, z - 0.75, 0x2f6fa8, 10);
-  for (let k = 0; k < 2; k++) b.box(0.14, 0.12, 0.14, x + 0.78, 0.035, z - 0.3 + k * 0.16, 0x6a5a3a);
-  b.box(0.1, 0.04, 0.07, x + 0.25, 0.06, z - 0.15, 0x3aa36a, false, 0.4);
+  // Two slatted compost bays with a lid, and a wheelbarrow by the beds
+  for (let k = 0; k < 2; k++) {
+    const cz = z - 0.3 + k * 0.16;
+    b.box(0.14, 0.12, 0.14, x + 0.78, 0.035, cz, 0x7a5a3a);
+    for (let j = 0; j < 3; j++) {
+      wall(b, 'solid', x + 0.78, 0.07 + j * 0.035, cz + 0.071, 0, 1, 0.14, 0.006, 0x4a3626);
+      wall(b, 'solid', x + 0.71 - 0.001, 0.07 + j * 0.035, cz, -1, 0, 0.14, 0.006, 0x4a3626);
+    }
+    flat(b, 'solid', x + 0.78, 0.1555, cz, 0.12, 0.12, 0x3a2a1c);
+  }
+  {
+    const wx = x + 0.25;
+    const wz = z - 0.15;
+    const a = 0.4;
+    const c = Math.cos(a);
+    const sn = Math.sin(a);
+    b.cylinder(0.075, 0.05, 0.045, wx, 0.06, wz, 0x3aa36a, 4, false, a + Math.PI / 4);
+    flat(b, 'solid', wx, 0.106, wz, 0.08, 0.08, 0x5a3e28, a);
+    put(b, new THREE.CylinderGeometry(0.022, 0.022, 0.012, 8), wx + c * 0.09, 0.057, wz - sn * 0.09, 0x2a2f38, 'solid', a, Math.PI / 2);
+    for (const sd of [-1, 1]) rod(b, wx - c * 0.02 - sn * sd * 0.03, 0.085, wz + sn * 0.02 - c * sd * 0.03, wx - c * 0.15 - sn * sd * 0.035, 0.1, wz + sn * 0.15 - c * sd * 0.035, 0.004, 0x8a6446, 3);
+    for (const sd of [-1, 1]) rod(b, wx - c * 0.03 - sn * sd * 0.03, 0.04, wz + sn * 0.03 - c * sd * 0.03, wx - c * 0.03 - sn * sd * 0.03, 0.07, wz + sn * 0.03 - c * sd * 0.03, 0.003, 0x2a2f38, 3, 'solid', 0.003, true);
+  }
   // Hand-painted sign at the gate
   b.box(0.3, 0.1, 0.012, x, 0.16, z + 0.93, 0xf4ecd8);
   for (const s of [-1, 1]) b.box(0.012, 0.18, 0.012, x + s * 0.13, 0.035, z + 0.93, PALETTE.wood);
@@ -680,7 +757,16 @@ function courts(b: GeoBuilder, r: () => number, x: number, z: number) {
     b.box(1.86, 0.008, 0.008, x, 0.33, fz, 0x8a929c);
   }
   // Bleachers along the open side
-  for (let k = 0; k < 3; k++) b.box(0.9, 0.03 + k * 0.04, 0.07, x - 0.3, 0.035, z + 0.62 + k * 0.07, 0xb9c2cc);
+  // Aluminium bleachers: a frame, plank seats on each row, a rail at the back
+  for (let k = 0; k < 3; k++) {
+    const bz = z + 0.62 + k * 0.07;
+    const top = 0.035 + 0.03 + k * 0.04;
+    for (const u of [-0.42, 0, 0.42]) post(b, 0.012, top - 0.035, 0.06, x - 0.3 + u, 0.035, bz, 0x7a828c, 0, false);
+    b.box(0.9, 0.012, 0.05, x - 0.3, top - 0.012, bz - 0.005, 0xc9d0d8);
+    wall(b, 'solid', x - 0.3, top - 0.025, bz + 0.0205, 0, 1, 0.9, 0.014, 0x8a929c);
+  }
+  rod(b, x - 0.75, 0.25, z + 0.79, x + 0.15, 0.25, z + 0.79, 0.004, 0x8a929c, 4);
+  for (const u of [-0.45, 0, 0.45]) rod(b, x - 0.3 + u, 0.155, z + 0.79, x - 0.3 + u, 0.25, z + 0.79, 0.004, 0x8a929c, 4, 'solid', 0.004, true);
   people(b, r, x - 0.3, z + 0.72, 6, 0.8, 0.1, 0.12);
   // Floodlights
   for (const [dx, dz] of [[-0.9, fz1 - cz], [0.9, fz1 - cz], [-0.9, fz0 - cz], [0.9, fz0 - cz]] as const) {
@@ -836,14 +922,16 @@ function stadium(b: GeoBuilder, r: () => number, x: number, z: number) {
   const dirt = 0xc7865a;
   // McCovey Cove beyond right field, with kayaks
   b.box(2.6, 0.01, 0.34, x + 0.6, y, z + 1.76, 0x2a7fc0, 'glass');
-  for (let k = 0; k < 5; k++) b.rbox(0.07, 0.015, 0.025, x - 0.4 + k * 0.45 + r() * 0.1, y + 0.01, z + 1.7 + r() * 0.15, pick(r, [0xe85a4a, 0xf2c84b, 0x3aa36a] as const), 0.008, 'smooth', r());
+  for (let k = 0; k < 5; k++) post(b, 0.07, 0.015, 0.025, x - 0.4 + k * 0.45 + r() * 0.1, y + 0.01, z + 1.7 + r() * 0.15, pick(r, [0xe85a4a, 0xf2c84b, 0x3aa36a] as const), r());
   // Field: foul ground, outfield with mowing arcs, warning track
   prism(b, sectorPts(hx, hz, 0, R + 0.05, -0.2, Math.PI / 2 + 0.2, 20), y, 0.008, grass);
+  // Mowing arcs and the warning track are paint on the grass: tops only
   for (let k = 0; k < 6; k++) {
     const r0 = 1.18 + k * 0.24;
-    if (k % 2) prism(b, sectorPts(hx, hz, r0, Math.min(r0 + 0.24, R - 0.1), 0, Math.PI / 2, 16), y + 0.008, 0.002, 0x63b347);
+    const r1 = Math.min(r0 + 0.24, R - 0.1);
+    if (k % 2) arcLine(b, hx, y + 0.01, hz, (r0 + r1) / 2, 0, Math.PI / 2, r1 - r0, 0x63b347, 16);
   }
-  prism(b, sectorPts(hx, hz, R - 0.1, R, -0.02, Math.PI / 2 + 0.02, 20), y + 0.008, 0.003, dirt);
+  arcLine(b, hx, y + 0.011, hz, R - 0.05, -0.02, Math.PI / 2 + 0.02, 0.1, dirt, 20);
   // Infield: the dirt arc, the grass diamond, base paths, the mound
   prism(b, sectorPts(hx, hz, 0, 1.15, 0, Math.PI / 2, 12), y + 0.008, 0.003, dirt);
   const bp = 0.72;
@@ -875,7 +963,24 @@ function stadium(b: GeoBuilder, r: () => number, x: number, z: number) {
   }
   // Left-field bleachers, the giant bottle and the old glove
   // Stepped rows in two soft greens rising away from the field, fans dotted along them, a pale concrete back wall
-  for (let t = 0; t < 3; t++) prism(b, sectorPts(hx, hz, R + 0.06 + t * 0.093, R + 0.34, -0.02, 0.95, 8), y, 0.035 + t * 0.035, t % 2 ? 0x4f8a63 : 0x5f9a72);
+  // (each row is its tread, its riser and its two ends: the back is against the wall)
+  for (let t = 0; t < 3; t++) {
+    const r0 = R + 0.06 + t * 0.093;
+    const r1 = t < 2 ? r0 + 0.093 : R + 0.34;
+    const h0 = t ? y + t * 0.035 : y;
+    const h1 = y + 0.035 + t * 0.035;
+    const c = t % 2 ? 0x4f8a63 : 0x5f9a72;
+    arcLine(b, hx, h1, hz, (r0 + r1) / 2, -0.02, 0.95, r1 - r0, c, 8);
+    const at = (a: number, rr: number, hh: number) => [hx + Math.cos(a) * rr, hh, hz + Math.sin(a) * rr] as const;
+    for (let k = 0; k < 8; k++) {
+      const a0 = -0.02 + (0.97 * k) / 8;
+      const a1 = -0.02 + (0.97 * (k + 1)) / 8;
+      quad4(b, 'solid', [at(a0, r0, h0), at(a1, r0, h0), at(a1, r0, h1), at(a0, r0, h1)], shade(c, 0.92), [hx - (at(a0, r0, 0)[0] + at(a1, r0, 0)[0]) / 2, 0, hz - (at(a0, r0, 0)[2] + at(a1, r0, 0)[2]) / 2]);
+    }
+    for (const [a, side] of [[-0.02, -1], [0.95, 1]] as const) {
+      quad4(b, 'solid', [at(a, r0, y), at(a, r1, y), at(a, r1, h1), at(a, r0, h1)], c, [-Math.sin(a) * side, 0, Math.cos(a) * side]);
+    }
+  }
   prism(b, sectorPts(hx, hz, R + 0.34, R + 0.37, -0.02, 0.95, 8), y, 0.15, 0xc9c2b4);
   const fans: XZ[] = [];
   for (let k = 0; k < 9; k++) {
@@ -889,13 +994,13 @@ function stadium(b: GeoBuilder, r: () => number, x: number, z: number) {
   }
   const bx = x + 1.6;
   const bz = z + 0.12;
-  b.lathe([[0.1, 0], [0.11, 0.2], [0.08, 0.35], [0.11, 0.55], [0.1, 0.7], [0.05, 0.85], [0.035, 1.0], [0.04, 1.05], [0, 1.06]], bx, y + 0.12, bz, 0x5a2a1a, 14, 'glass');
-  b.cylinder(0.112, 0.112, 0.12, bx, y + 0.36, bz, 0xd8402e, 14);
-  put(b, new THREE.TorusGeometry(0.11, 0.012, 4, 14), bx, y + 0.5, bz, 0xf4f1ea, 'solid', 0, Math.PI / 2 - 0.3);
+  b.lathe([[0.1, 0], [0.11, 0.2], [0.08, 0.35], [0.11, 0.55], [0.1, 0.7], [0.05, 0.85], [0.035, 1.0], [0.04, 1.05], [0, 1.06]], bx, y + 0.12, bz, 0x5a2a1a, 12, 'glass');
+  b.cylinder(0.112, 0.112, 0.12, bx, y + 0.36, bz, 0xd8402e, 12);
+  put(b, new THREE.TorusGeometry(0.11, 0.012, 3, 12), bx, y + 0.5, bz, 0xf4f1ea, 'solid', 0, Math.PI / 2 - 0.3);
   const gx = x + 1.52;
   const gz = z + 0.72;
-  put(b, new THREE.SphereGeometry(0.2, 12, 8), gx, y + 0.32, gz, 0xb07a44, 'smooth', -0.8, 0, 0.3, 1, 1.1, 0.45);
-  for (let k = 0; k < 4; k++) put(b, new THREE.CapsuleGeometry(0.035, 0.12, 3, 6), gx - 0.06 + k * 0.045, y + 0.5 + Math.sin(k) * 0.02, gz - 0.02 + k * 0.01, 0xa86e3c, 'smooth', -0.8, 0, 0.25 - k * 0.12);
+  put(b, new THREE.SphereGeometry(0.2, 10, 6), gx, y + 0.32, gz, 0xb07a44, 'smooth', -0.8, 0, 0.3, 1, 1.1, 0.45);
+  for (let k = 0; k < 4; k++) put(b, new THREE.CapsuleGeometry(0.035, 0.12, 2, 5), gx - 0.06 + k * 0.045, y + 0.5 + Math.sin(k) * 0.02, gz - 0.02 + k * 0.01, 0xa86e3c, 'smooth', -0.8, 0, 0.25 - k * 0.12);
   b.blob(0.05, gx + 0.05, y + 0.3, gz + 0.06, 0xf4f1ea, 'smooth', 1);
   // Scoreboard in centre field, facing home
   const sa = Math.PI / 4;
@@ -1009,7 +1114,7 @@ function university(b: GeoBuilder, r: () => number, x: number, z: number) {
   const t = 0.4; // range depth
   b.box(Q, 0.006, Q, qx, y, qz, 0xe8dcc0);
   for (const [dx, dz] of [[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]] as const) {
-    b.cylinder(0.18, 0.18, 0.012, qx + dx, y, qz + dz, PALETTE.lawn, 12);
+    disc(b, 0.18, qx + dx, y + 0.012, qz + dz, PALETTE.lawn, 12);
     tree(b, r, qx + dx, qz + dz, 0.6, y + 0.012, dx < 0 && dz < 0 ? 'palm' : 'round');
   }
   const ranges: [number, number, number, number, number, number][] = [
@@ -1033,7 +1138,7 @@ function university(b: GeoBuilder, r: () => number, x: number, z: number) {
       const az = fz - nx * u;
       archQuad(b, ax + nx * 0.003, y + 0.02, az + nz * 0.003, nx, nz, 0.14, 0.15, 0x5a4636);
       const pu = (k / n - 0.5) * span;
-      b.box(0.025, 0.17, 0.025, fx + nz * pu + nx * 0.01, y, fz - nx * pu + nz * 0.01, sandDark);
+      post(b, 0.025, 0.17, 0.025, fx + nz * pu + nx * 0.01, y, fz - nx * pu + nz * 0.01, sandDark, 0, false);
       punch(b, r, ax, y + 0.26, az, nx, nz, 0.06, 0.08, sandDark, light, TINT.teal, 0.6);
     }
     b.box(Math.abs(nz) > 0.5 ? span : 0.03, 0.02, Math.abs(nz) > 0.5 ? 0.03 : span, fx + nx * 0.015, y + 0.17, fz + nz * 0.015, sandDark);
@@ -1078,7 +1183,7 @@ function university(b: GeoBuilder, r: () => number, x: number, z: number) {
     wall(b, 'solid', tx + nx * 0.163, y + th - 0.43, tz + nz * 0.163, nx, nz, 0.006, 0.04, 0x2a2f38);
   }
   // The Oval and Palm Drive
-  put(b, new THREE.CylinderGeometry(0.62, 0.62, 0.008, 24), x + 0.95, y, z + 0.95, 0x82c757, 'solid', 0, 0, 0, 1, 1, 0.7);
+  disc(b, 0.62, x + 0.95, y + 0.004, z + 0.95, 0x82c757, 24, 0.7);
   for (let k = 0; k < 7; k++) {
     const pz = z + 1.85 - k * 0.32;
     if (pz < qz + Q / 2 + t + 0.1) break;
@@ -1104,7 +1209,7 @@ function university(b: GeoBuilder, r: () => number, x: number, z: number) {
 /** A round-headed arch opening on a wall facing (nx, nz): rectangle plus semicircle. */
 function archQuad(b: GeoBuilder, x: number, y: number, z: number, nx: number, nz: number, w: number, h: number, color: ColorLike) {
   wall(b, b instanceof GeoBuilder && color instanceof Array ? 'glow' : 'solid', x, y + (h - w / 2) / 2, z, nx, nz, w, h - w / 2, color);
-  const g = new THREE.CircleGeometry(w / 2, 8, 0, Math.PI);
+  const g = new THREE.CircleGeometry(w / 2, 6, 0, Math.PI);
   put(b, g, x, y + h - w / 2, z, color, Array.isArray(color) ? 'glow' : 'solid', Math.atan2(nx, nz));
 }
 
@@ -1136,8 +1241,34 @@ function foodtrucks(b: GeoBuilder, r: () => number, x: number, z: number) {
   bulbs(b, x - 0.85, 0.38, z - 0.05, x + 0.35, 0.38, z + 0.75, 14, 0.06);
   bulbs(b, x + 0.35, 0.38, z - 0.05, x - 0.85, 0.38, z + 0.75, 14, 0.06);
   bulbs(b, x - 0.85, 0.38, z - 0.05, x + 0.35, 0.38, z - 0.05, 12, 0.05);
+  // A shipping-container bar along the east side: corrugated steel, a hatch open to the lawn, stools at the counter
+  {
+    const cx = x + 0.72;
+    const cz = z + 0.05;
+    const cc = pick(r, [0x2f6f8a, 0xd8693a, 0x3a7a5a] as const);
+    b.box(0.18, 0.17, 0.46, cx, 0.035, cz, cc);
+    for (let k = 0; k < 12; k++) {
+      wall(b, 'solid', cx + 0.0905, 0.12, cz - 0.21 + k * 0.038, 1, 0, 0.012, 0.16, shade(cc, 0.82));
+      if (k < 4) wall(b, 'solid', cx - 0.07 + k * 0.047, 0.12, cz + 0.2305, 0, 1, 0.012, 0.16, shade(cc, 0.82));
+    }
+    flat(b, 'solid', cx, 0.2055, cz, 0.17, 0.45, shade(cc, 0.9));
+    wall(winOf(b), 'glow', cx - 0.0905, 0.135, cz, -1, 0, 0.32, 0.075, warmth(r), wr(r, 1, TINT.shop));
+    put(b, new THREE.BoxGeometry(0.34, 0.008, 0.07), cx - 0.12, 0.2, cz, shade(cc, 0.85), 'solid', Math.PI / 2, -0.45);
+    b.box(0.05, 0.012, 0.36, cx - 0.115, 0.1, cz, PALETTE.wood);
+    for (let k = 0; k < 4; k++) {
+      b.cylinder(0.004, 0.004, 0.05, cx - 0.17, 0.035, cz - 0.13 + k * 0.085, 0x2a2f38, 3);
+      b.cylinder(0.014, 0.014, 0.008, cx - 0.17, 0.085, cz - 0.13 + k * 0.085, 0xf2c84b, 8);
+    }
+    b.box(0.2, 0.05, 0.012, cx, 0.205, cz + 0.12, 0x1c1f26);
+    pixelText(neonOf(b), 'glow', 'BAR', cx, 0.23, cz + 0.127, 0, 1, 0.009, [2.6, 1.5, 0.5]);
+    // A chalkboard menu on the lawn side
+    put(b, new THREE.BoxGeometry(0.06, 0.08, 0.006), cx - 0.25, 0.075, cz + 0.27, 0x1c1f26, 'solid', -Math.PI / 2, 0, 0.15);
+    put(b, new THREE.BoxGeometry(0.06, 0.08, 0.006), cx - 0.25, 0.075, cz + 0.27, 0x1c1f26, 'solid', -Math.PI / 2, 0, -0.15);
+  }
+  // Planters along the street edge
+  for (let k = 0; k < 3; k++) planter(b, r, x - 0.55 + k * 0.45, z + 0.88, 0.3, 0.08, 0.035, 0x8a6446);
   // Bins, a palm, a crowd in line
-  for (let k = 0; k < 3; k++) b.box(0.05, 0.08, 0.05, x + 0.65 + k * 0.06, 0.035, z + 0.2, [0x2f8a4a, 0x2f6fa8, 0x2a2f38][k]!);
+  for (let k = 0; k < 3; k++) b.box(0.05, 0.08, 0.05, x + 0.55 + k * 0.06, 0.035, z + 0.52, [0x2f8a4a, 0x2f6fa8, 0x2a2f38][k]!);
   palm(b, r, x + 0.75, z + 0.75, 0.75, 0.035);
   palm(b, r, x - 0.88, z + 0.88, 0.6, 0.035);
   people(b, r, x - 0.2, z - 0.25, 7, 1.4, 0.1, 0.035);
@@ -1239,7 +1370,13 @@ function cafe(b: GeoBuilder, r: () => number, x: number, z: number) {
   const px = x + 0.1;
   const pz = z + 0.72;
   b.box(1.0, 0.03, 0.32, px, 0.035, pz, PALETTE.wood);
-  for (const s of [-1, 1]) b.box(0.04, 0.08, 0.3, px + s * 0.5, 0.065, pz, 0x2f8a6a);
+  // Planter ends full of herbs and flowers, and a slatted rail on the traffic side
+  for (const s of [-1, 1]) {
+    planter(b, r, px + s * 0.48, pz, 0.07, 0.3, 0.065, 0x2f8a6a);
+    for (let k = 0; k < 3; k++) ball(b, 0.012, px + s * 0.48 + (r() - 0.5) * 0.04, 0.15, pz - 0.1 + k * 0.1, pick(r, [0xe86a9a, 0xf2c84b, 0xf4f1ea] as const));
+  }
+  b.box(0.9, 0.012, 0.012, px, 0.13, pz + 0.15, 0x2f8a6a);
+  for (let k = 0; k < 7; k++) post(b, 0.01, 0.065, 0.01, px - 0.42 + k * 0.14, 0.065, pz + 0.15, 0x2f8a6a, 0, false);
   for (let k = 0; k < 3; k++) bistro(b, r, px - 0.3 + k * 0.3, pz, 0.065, 0x2f8a6a, false);
   for (const s of [-1, 1]) rod(b, px + s * 0.5, 0.065, pz - 0.15, px + s * 0.5, 0.32, pz - 0.15, 0.004, STEEL_DARK, 3);
   bulbs(b, px - 0.5, 0.32, pz - 0.15, px + 0.5, 0.32, pz - 0.15, 12, 0.04);
@@ -1271,20 +1408,20 @@ function amusement(b: GeoBuilder, r: () => number, x: number, z: number) {
   // Two red rails (a 3-sided tube reads as round at this size), ties as fins, white trestles
   for (const s of [-1, 1]) {
     const railPts: THREE.Vector3[] = [];
-    for (let k = 0; k < 56; k++) {
-      const p = curve.getPointAt(k / 56);
-      const side = new THREE.Vector3().crossVectors(curve.getTangentAt(k / 56), UPV).normalize();
+    for (let k = 0; k < 44; k++) {
+      const p = curve.getPointAt(k / 44);
+      const side = new THREE.Vector3().crossVectors(curve.getTangentAt(k / 44), UPV).normalize();
       railPts.push(p.add(side.multiplyScalar(s * 0.03)));
     }
-    b.transformed(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts, true), 56, 0.008, 3, true), new THREE.Matrix4(), 0xd8402e);
+    b.transformed(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts, true), 44, 0.008, 3, true), new THREE.Matrix4(), 0xd8402e);
   }
-  for (let k = 0; k < 48; k++) {
-    const t = k / 48;
+  for (let k = 0; k < 42; k++) {
+    const t = k / 42;
     const p = curve.getPointAt(t);
     const tan = curve.getTangentAt(t);
     fin(b, p.x, p.y - 0.008, p.z, -tan.z, 0, tan.x, 0, 1, 0, 0.012, 0.08, 0.012, 0x5a4a3a);
     if (k % 2 === 0) {
-      rod(b, p.x, y, p.z, p.x, p.y - 0.01, p.z, 0.008, 0xf4f1ea, 3);
+      rod(b, p.x, y, p.z, p.x, p.y - 0.01, p.z, 0.008, 0xf4f1ea, 3, 'solid', 0.008, true);
       if (p.y > 0.6) beam(b, p.x - 0.06, y, p.z, p.x, p.y * 0.6, p.z, 0.008, 0xf4f1ea);
     }
     if (k % 3 !== 1) quadBlob(neonOf(b), p.x, p.y + 0.012, p.z, 0.007, [2.8, 2.2, 1.2], FX.chase + (k % 3) / 3);
@@ -1309,17 +1446,17 @@ function amusement(b: GeoBuilder, r: () => number, x: number, z: number) {
     put(b, g, cx, y + 0.5, cz, k % 2 ? 0xe85a4a : 0xf4f1ea);
     const hx = cx + Math.cos(a) * 0.3;
     const hz = cz - Math.sin(a) * 0.3;
-    rod(b, hx, y + 0.06, hz, hx, y + 0.41, hz, 0.004, 0xd4af37, 3);
-    b.box(0.07, 0.035, 0.02, hx, y + 0.14 + (k % 3) * 0.03, hz, pick(r, [0xf4f1ea, 0x2a2f38, 0xb07a44] as const), false, a + Math.PI / 2);
+    rod(b, hx, y + 0.06, hz, hx, y + 0.41, hz, 0.004, 0xd4af37, 3, 'solid', 0.004, true);
+    post(b, 0.07, 0.035, 0.02, hx, y + 0.14 + (k % 3) * 0.03, hz, pick(r, [0xf4f1ea, 0x2a2f38, 0xb07a44] as const), a + Math.PI / 2);
     quadBlob(neonOf(b), cx + Math.cos(a) * 0.47, y + 0.41, cz - Math.sin(a) * 0.47, 0.01, [2.8, 2.2, 1.2], FX.chase + (k % 3) / 3);
   }
   b.cylinder(0.46, 0.46, 0.05, cx, y + 0.36, cz, 0xd4af37, 20);
-  b.blob(0.04, cx, y + 0.62, cz, 0xd4af37, 'smooth', 1);
+  ball(b, 0.04, cx, y + 0.63, cz, 0xd4af37, 'smooth', 1.4);
   // Drop tower: a lattice mast with a ring of seats
   const dx = x + 1.35;
   const dz = z + 1.25;
   b.box(0.16, 2.2, 0.16, dx, y, dz, 0x3a8fd8);
-  for (let k = 0; k < 11; k++) b.box(0.17, 0.012, 0.17, dx, y + k * 0.2, dz, 0xf4f1ea);
+  for (let k = 0; k < 11; k++) post(b, 0.17, 0.012, 0.17, dx, y + k * 0.2, dz, 0xf4f1ea);
   b.cylinder(0.16, 0.16, 0.08, dx, y + 1.4, dz, 0xf2c84b, 12);
   b.cylinder(0.1, 0.12, 0.12, dx, y + 2.2, dz, 0xe85a4a, 10);
   for (let k = 0; k < 12; k++) quadBlob(neonOf(b), dx + 0.085, y + 0.15 + k * 0.17, dz + 0.085, 0.012, [2.6, 0.8, 1.8], FX.chase + (k % 3) / 3);
@@ -1332,7 +1469,7 @@ function amusement(b: GeoBuilder, r: () => number, x: number, z: number) {
     const a = (k / 5) * Math.PI * 2;
     const px = ux + Math.cos(a) * 0.26;
     const pz = uz + Math.sin(a) * 0.26;
-    b.lathe([[0.05, 0], [0.075, 0.02], [0.08, 0.07], [0.075, 0.075]], px, y + 0.03, pz, pick(r, [0xf2c84b, 0x3aa3c8, 0xe86a9a, 0x5dd0a0] as const), 9, 'smooth');
+    b.lathe([[0.05, 0], [0.075, 0.02], [0.08, 0.07], [0.075, 0.075]], px, y + 0.03, pz, pick(r, [0xf2c84b, 0x3aa3c8, 0xe86a9a, 0x5dd0a0] as const), 8, 'smooth');
   }
   // Log flume: a trough on timber trestles that climbs from the station, turns, and drops into a splash pool
   const wood = 0x8a6446;
@@ -1354,7 +1491,7 @@ function amusement(b: GeoBuilder, r: () => number, x: number, z: number) {
       const pz = z + az + (cz2 - az) * t;
       const py = y + ay + (cy - ay) * t;
       if (py - y < 0.08) continue;
-      for (const s2 of [-1, 1]) rod(b, px - Math.sin(yaw) * s2 * 0.06, y, pz - Math.cos(yaw) * s2 * 0.06, px - Math.sin(yaw) * s2 * 0.06, py, pz - Math.cos(yaw) * s2 * 0.06, 0.006, 0x6a4a34, 3);
+      for (const s2 of [-1, 1]) rod(b, px - Math.sin(yaw) * s2 * 0.06, y, pz - Math.cos(yaw) * s2 * 0.06, px - Math.sin(yaw) * s2 * 0.06, py, pz - Math.cos(yaw) * s2 * 0.06, 0.006, 0x6a4a34, 3, 'solid', 0.006, true);
     }
   }
   // A log boat at the top of the drop, the splash pool and its spray
@@ -1362,7 +1499,7 @@ function amusement(b: GeoBuilder, r: () => number, x: number, z: number) {
   b.box(0.09, 0.012, 0.05, x - 1.68, y + 0.525, z + 1.42, 0x3a2a20);
   b.cylinder(0.24, 0.26, 0.04, x - 0.75, y, z + 1.68, 0xd8c8a8, 14);
   b.cylinder(0.21, 0.21, 0.01, x - 0.75, y + 0.04, z + 1.68, 0x3aa3c8, 14, 'glass');
-  for (let k = 0; k < 4; k++) b.blob(0.035 + r() * 0.015, x - 0.88 + r() * 0.1, y + 0.08 + r() * 0.04, z + 1.62 + r() * 0.1, 0xe6f6fa, 'smooth');
+  for (let k = 0; k < 4; k++) ball(b, 0.035 + r() * 0.015, x - 0.88 + r() * 0.1, y + 0.08 + r() * 0.04, z + 1.62 + r() * 0.1, 0xe6f6fa);
   // The station: a little timber hut where you board
   b.box(0.24, 0.14, 0.2, x - 0.98, y, z + 0.82, 0xc0503a);
   b.gable(0.24, 0.08, 0.2, x - 0.98, y + 0.14, z + 0.82, 0x5f4a3a, 0.03);
@@ -1379,11 +1516,11 @@ function amusement(b: GeoBuilder, r: () => number, x: number, z: number) {
     const cz2 = sz - Math.sin(a) * 0.25;
     const ex = sx + Math.cos(a) * 0.36;
     const ez = sz - Math.sin(a) * 0.36;
-    rod(b, cx2, y + 0.67, cz2, ex, y + 0.37, ez, 0.0018, 0xd8dce0, 3);
-    b.box(0.03, 0.025, 0.03, ex, y + 0.345, ez, pick(r, [0xe85a4a, 0xf4f1ea, 0x2f6fa8] as const), false, a);
+    rod(b, cx2, y + 0.67, cz2, ex, y + 0.37, ez, 0.0018, 0xd8dce0, 3, 'solid', 0.0018, true);
+    post(b, 0.03, 0.025, 0.03, ex, y + 0.345, ez, pick(r, [0xe85a4a, 0xf4f1ea, 0x2f6fa8] as const), a);
     quadBlob(neonOf(b), sx + Math.cos(a) * 0.26, y + 0.67, sz - Math.sin(a) * 0.26, 0.009, [2.8, 2.2, 1.2], FX.chase + (k % 3) / 3);
   }
-  b.blob(0.035, sx, y + 0.8, sz, 0xf2c84b, 'smooth', 1);
+  ball(b, 0.035, sx, y + 0.81, sz, 0xf2c84b, 'smooth', 1.4);
   // Entrance gate with the sign
   const gx = x + 0.2;
   const gz = z + 1.85;
@@ -1403,8 +1540,8 @@ function amusement(b: GeoBuilder, r: () => number, x: number, z: number) {
   }
   for (let k = 0; k < 6; k++) {
     const bx = x + 0.6 + k * 0.05;
-    rod(b, bx, y + 0.06, z + 0.75, bx + (k - 2.5) * 0.02, y + 0.3, z + 0.75, 0.001, 0xf4f1ea, 3);
-    b.blob(0.025, bx + (k - 2.5) * 0.02, y + 0.32, z + 0.75, pick(r, [0xe85a4a, 0xf2c84b, 0x3aa3c8, 0xe86a9a] as const), 'smooth');
+    rod(b, bx, y + 0.06, z + 0.75, bx + (k - 2.5) * 0.02, y + 0.3, z + 0.75, 0.001, 0xf4f1ea, 3, 'solid', 0.001, true);
+    ball(b, 0.025, bx + (k - 2.5) * 0.02, y + 0.32, z + 0.75, pick(r, [0xe85a4a, 0xf2c84b, 0x3aa3c8, 0xe86a9a] as const), 'smooth', 1.15);
   }
   bulbs(b, x - 1.8, 0.4, z + 0.6, x + 1.8, 0.4, z + 0.6, 22, 0.08);
   for (const [px, pz] of [[-1.8, -1.8], [1.8, -1.8], [-1.8, 0.9], [1.8, 0.75]] as const) palm(b, r, x + px, z + pz, 0.9, y);
@@ -1543,9 +1680,10 @@ function sofa(b: GeoBuilder, x: number, y: number, z: number, color: ColorLike, 
 function littleCar(b: GeoBuilder, x: number, y: number, z: number, color: ColorLike, rot = 0) {
   const c = Math.cos(rot);
   const s = Math.sin(rot);
-  b.rbox(0.3, 0.06, 0.14, x, y + 0.025, z, color, 0.025, 'glass', rot);
-  b.rbox(0.16, 0.05, 0.12, x - c * 0.02, y + 0.075, z + s * 0.02, color, 0.02, 'glass', rot);
-  b.rbox(0.165, 0.035, 0.124, x - c * 0.02, y + 0.082, z + s * 0.02, 0x1c2a3a, 0.012, 'glass', rot);
+  // The side silhouette of a little coupe, extruded: bonnet, windscreen, roof, a sloping back. ~200 triangles, wheels and all.
+  profile(b, [[-0.15, 0.012], [0.15, 0.012], [0.152, 0.045], [0.13, 0.068], [0.055, 0.074], [0.025, 0.112], [-0.075, 0.112], [-0.115, 0.074], [-0.15, 0.066]], 0.14, x, y, z, rot, color, 'glass');
+  profile(b, [[0.05, 0.076], [0.024, 0.106], [-0.072, 0.106], [-0.108, 0.076]], 0.144, x, y, z, rot, 0x1c2a3a, 'glass');
+  profile(b, [[-0.15, 0.012], [0.15, 0.012], [0.15, 0.03], [-0.15, 0.03]], 0.146, x, y, z, rot, 0x2a2f38);
   for (const [dx, dz] of [[0.09, 0.06], [-0.09, 0.06], [0.09, -0.06], [-0.09, -0.06]] as const) {
     put(b, new THREE.CylinderGeometry(0.025, 0.025, 0.02, 8), x + c * dx + s * dz, y + 0.025, z - s * dx + c * dz, 0x1e2026, 'solid', rot, Math.PI / 2);
   }
@@ -2362,45 +2500,175 @@ function islandHelipad(b: Kit) {
   helipad(b, ESTATE_HELIPAD.x, 0.044, ESTATE_HELIPAD.z, 0.4);
 }
 
+/**
+ * The island estate: a Riviera villa. A two-storey palazzo in warm ochre
+ * stucco under a low terracotta roof, green shutters, a loggia of French
+ * doors onto a balustraded terrace, a belvedere tower; below it an infinity
+ * pool, lemon trees in pots, stone pines and cypresses. Local +z faces the
+ * camera (the estate is turned an eighth of a turn in the world).
+ */
 function islandEstate(b: Kit, r: () => number) {
-  const white = 0xf6f4ee;
-  const stone = 0xd8cdb4;
+  const ochre = 0xf0d3a0;
+  const cream = 0xfbf1dc;
+  const stone = 0xdcc9a4;
+  const tile = 0xbc5d3e;
+  const shutter = 0x5d7a58;
+  const iron = 0x2a2f38;
   const light: ColorLike = GLASS_HOME;
-  b.box(2.6, 0.04, 2.2, 0, 0, 0, PALETTE.lawn);
-  b.box(1.9, 0.012, 1.0, 0.0, 0.04, -0.45, 0xe8e2d6);
-  const y0 = 0.052;
-  // Main house: two floors of glass, a stone spine, big cantilevered roof planes
-  const lo = rectPts(1.6, 0.7, -0.1, -0.55);
-  prism(b, lo, y0, 0.3, 0x3a4656, 'glass');
-  facade(b, r, lo, y0, null, y0 + 0.3, { floors: 1, bay: 0.15, winH: 0.94, winW: 0.94, lit: 0.9, light, tint: TINT.sky, fins: { color: 0x2a2f38, depth: 0.01, width: 0.01 } });
-  b.box(1.9, 0.035, 0.95, -0.05, y0 + 0.3, -0.5, white);
-  const up = rectPts(1.0, 0.6, 0.15, -0.6);
-  prism(b, up, y0 + 0.335, 0.27, 0x3a4656, 'glass');
-  facade(b, r, up, y0 + 0.335, null, y0 + 0.605, { floors: 1, bay: 0.15, winH: 0.94, winW: 0.94, lit: 0.9, light, tint: TINT.sky, fins: { color: 0x2a2f38, depth: 0.01, width: 0.01 } });
-  b.box(1.3, 0.035, 0.85, 0.2, y0 + 0.605, -0.55, white);
-  modernRoof(b, 0.2, y0 + 0.64, -0.55, 1.2, 0.75);
-  b.box(0.14, 0.7, 0.8, -0.55, y0, -0.55, stone);
-  for (let k = 0; k < 6; k++) b.box(0.145, 0.005, 0.805, -0.55, y0 + 0.1 + k * 0.1, -0.55, shade(stone, 0.9));
-  // Terrace: infinity pool with a glowing edge, cabanas, loungers
-  b.box(1.8, 0.012, 0.5, -0.05, y0, 0.12, 0xe8e2d6);
-  pool(b, -0.2, y0, 0.18, 1.2, 0.32);
-  neonOf(b).box(1.2, 0.006, 0.01, -0.2, y0 + 0.03, 0.35, [0.6, 1.8, 2.4], true);
-  for (let k = 0; k < 4; k++) put(b, new THREE.BoxGeometry(0.12, 0.012, 0.045), -0.6 + k * 0.22, y0 + 0.03, -0.08, 0xf4f1ea, 'solid', Math.PI / 2, 0, 0.2);
-  for (const cx of [0.6, 0.85]) {
-    for (const [dx, dz] of [[-0.08, -0.08], [0.08, -0.08], [-0.08, 0.08], [0.08, 0.08]] as const) b.box(0.01, 0.18, 0.01, cx + dx, y0, 0.15 + dz, white);
-    b.box(0.2, 0.015, 0.2, cx, y0 + 0.18, 0.15, white);
-    b.box(0.14, 0.03, 0.14, cx, y0, 0.15, 0xe8e2d6);
+  b.box(2.8, 0.04, 2.5, 0, 0, 0, PALETTE.lawn);
+  // The upper terrace the house stands on: a limestone podium with a balustrade along its front
+  const ty = 0.16;
+  prism(b, rectPts(2.5, 1.0, -0.1, -0.7), 0.04, ty - 0.04, stone);
+  for (let k = 0; k < 5; k++) wall(b, 'solid', -0.1, 0.06 + k * 0.022, -0.199, 0, 1, 2.5, 0.003, shade(stone, 0.9));
+  const balustrade = (x0: number, x1: number, z: number) => {
+    const n = Math.round((x1 - x0) / 0.06);
+    for (let k = 0; k <= n; k++) post(b, 0.014, 0.055, 0.014, x0 + ((x1 - x0) * k) / n, ty, z, cream, 0, false);
+    b.box(x1 - x0 + 0.03, 0.014, 0.03, (x0 + x1) / 2, ty + 0.055, z, cream);
+  };
+  balustrade(-1.32, -0.42, -0.215);
+  balustrade(0.02, 1.12, -0.215);
+  // The stair down to the pool terrace, between two urns
+  for (let k = 0; k < 4; k++) post(b, 0.42, ty - 0.04 - k * 0.03, 0.07, -0.2, 0.04, -0.17 + k * 0.07, k % 2 ? stone : shade(stone, 1.04));
+  for (const s of [-1, 1]) {
+    b.box(0.05, 0.04, 0.05, -0.2 + s * 0.25, ty, -0.215, cream);
+    put(b, new THREE.SphereGeometry(0.035, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), -0.2 + s * 0.25, ty + 0.04, -0.215, 0xc0603a, 'smooth', 0, Math.PI, 0, 1, 1.2, 1);
+    bush(b, r, -0.2 + s * 0.25, ty + 0.09, -0.215, 0.035, 0x5a8a3e);
   }
-  // The helipad (the founder's helicopter lands here; see ESTATE_HELIPAD)
+  // The palazzo: two floors, a string course and a deep cornice under a low hip roof
+  const hx = -0.15;
+  const hz = -0.75;
+  const W = 1.3;
+  const D = 0.62;
+  const H = 0.5;
+  const front = hz + D / 2;
+  b.box(W, H, D, hx, ty, hz, ochre);
+  b.box(W + 0.014, 0.014, D + 0.014, hx, ty + 0.23, hz, cream);
+  b.box(W + 0.05, 0.035, D + 0.05, hx, ty + H - 0.01, hz, cream);
+  b.hip(W, 0.17, D, hx, ty + H + 0.025, hz, tile, 0.07, 0.32);
+  for (let k = 0; k < 3; k++) b.box(W + 0.14 - k * 0.002, 0.005, D + 0.14, hx, ty + H + 0.03 + k * 0.004, hz, shade(tile, 0.84));
+  for (const s of [-1, 1]) {
+    b.box(0.1, 0.12, 0.08, hx + s * 0.32, ty + H + 0.1, hz - 0.1, ochre);
+    b.box(0.12, 0.02, 0.1, hx + s * 0.32, ty + H + 0.22, hz - 0.1, cream);
+  }
+  // Ground floor: a loggia of five arched French doors behind slim pilasters
+  for (let k = 0; k < 5; k++) {
+    const ax = hx - 0.48 + k * 0.24;
+    archQuad(winOf(b), ax, ty + 0.012, front + 0.003, 0, 1, 0.13, 0.19, light);
+    if (k < 4) post(b, 0.03, 0.22, 0.02, ax + 0.12, ty, front + 0.01, cream);
+  }
+  // First floor: tall shuttered windows, the middle one a door onto a little iron balcony
+  for (let k = 0; k < 5; k++) {
+    const wx = hx - 0.48 + k * 0.24;
+    const wy = ty + 0.36;
+    wall(b, 'solid', wx, wy, front + 0.003, 0, 1, 0.1, 0.17, cream);
+    wall(winOf(b), 'glow', wx, wy, front + 0.006, 0, 1, 0.07, 0.14, light, wr(r, 0.75, TINT.sky));
+    for (const s of [-1, 1]) wall(b, 'solid', wx + s * 0.06, wy, front + 0.008, 0, 1, 0.034, 0.14, shutter);
+    if (k === 2) {
+      b.box(0.2, 0.014, 0.08, wx, wy - 0.085, front + 0.04, cream);
+      for (let j = 0; j < 7; j++) post(b, 0.004, 0.05, 0.004, wx - 0.09 + j * 0.03, wy - 0.071, front + 0.077, iron, 0, false);
+      b.box(0.2, 0.006, 0.006, wx, wy - 0.021, front + 0.077, iron);
+    } else sill(b, wx, wy - 0.088, front + 0.012, 0, 1, 0.1, 0.012, 0.02, cream);
+  }
+  // The other three sides: shuttered windows on both floors
+  for (const [nx, nz, n, span] of [[1, 0, 2, D], [-1, 0, 2, D], [0, -1, 5, W]] as const) {
+    const cx = hx + nx * (W / 2);
+    const cz = hz + nz * (D / 2);
+    for (let k = 0; k < n; k++) {
+      const u = ((k + 0.5) / n - 0.5) * span * 0.86;
+      for (const fy of [0.12, 0.36]) {
+        const px = cx + nz * u * -1 + nx * 0.003;
+        const pz = cz + nx * u + nz * 0.003;
+        wall(winOf(b), 'glow', px, ty + fy, pz, nx, nz, 0.07, 0.13, light, wr(r, 0.55, TINT.sky));
+        for (const s of [-1, 1]) wall(b, 'solid', px + Math.abs(nz) * s * 0.055 + nx * 0.002, ty + fy, pz + Math.abs(nx) * s * 0.055 + nz * 0.002, nx, nz, 0.03, 0.13, shutter);
+      }
+    }
+  }
+  // The belvedere: a square tower at the east end, an open loggia at the top lit at dusk
+  const bx = hx + W / 2 + 0.13;
+  const bz = hz - 0.08;
+  const bh = 0.86;
+  b.box(0.3, bh, 0.3, bx, ty, bz, ochre);
+  b.box(0.314, 0.014, 0.314, bx, ty + 0.23, bz, cream);
+  b.box(0.33, 0.03, 0.33, bx, ty + bh - 0.01, bz, cream);
+  b.hip(0.3, 0.13, 0.3, bx, ty + bh + 0.02, bz, tile, 0.06, 0.04);
+  for (const [nx, nz] of [[1, 0], [0, 1], [-1, 0], [0, -1]] as const) {
+    for (const s of [-1, 1]) archQuad(winOf(b), bx + nx * 0.152 + nz * s * 0.065, ty + bh - 0.2, bz + nz * 0.152 - nx * s * 0.065, nx, nz, 0.08, 0.15, light);
+    if (nx + nz > 0) {
+      wall(winOf(b), 'glow', bx + nx * 0.152, ty + 0.4, bz + nz * 0.152, nx, nz, 0.06, 0.12, light, wr(r, 0.5, TINT.sky));
+      for (const s of [-1, 1]) wall(b, 'solid', bx + nx * 0.154 + Math.abs(nz) * s * 0.048, ty + 0.4, bz + nz * 0.154 + Math.abs(nx) * s * 0.048, nx, nz, 0.028, 0.12, shutter);
+    }
+  }
+  // The west wing: one floor with a roof terrace under a vine pergola
+  const wx0 = hx - W / 2 - 0.25;
+  b.box(0.5, 0.28, 0.5, wx0, ty, hz + 0.02, ochre);
+  b.box(0.53, 0.025, 0.53, wx0, ty + 0.28, hz + 0.02, cream);
+  for (const s of [-1, 1]) {
+    archQuad(winOf(b), wx0 + s * 0.11, ty + 0.012, hz + 0.273, 0, 1, 0.12, 0.18, light);
+    archQuad(winOf(b), wx0 - 0.253, ty + 0.012, hz + 0.02 + s * 0.11, -1, 0, 0.12, 0.18, light);
+  }
+  const py = ty + 0.305;
+  for (const [dx, dz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]] as const) post(b, 0.016, 0.17, 0.016, wx0 + dx, py, hz + 0.02 + dz, cream, 0, false);
+  for (let k = 0; k < 6; k++) b.box(0.016, 0.014, 0.48, wx0 - 0.2 + k * 0.08, py + 0.17, hz + 0.02, 0x8a6446);
+  // The vine over it: a leafy mat, bougainvillea spilling over the edges
+  flat(b, 'solid', wx0 - 0.03, py + 0.186, hz - 0.02, 0.36, 0.4, 0x4f8a3a);
+  for (let k = 0; k < 9; k++) ball(b, 0.055, wx0 - 0.22 + (k % 3) * 0.2 + r() * 0.04, py + 0.19, hz - 0.19 + Math.floor(k / 3) * 0.2, k % 2 ? 0xd83a8a : 0x5a9a42, 'smooth', 0.5);
+  b.box(0.16, 0.012, 0.08, wx0, py, hz + 0.02, 0xf4f1ea);
+  // Lunch on the upper terrace: a long table under white parasols, lemons in pots
+  for (const tx of [0.62, 0.92]) {
+    b.box(0.2, 0.012, 0.07, tx, ty + 0.05, -0.38, 0xf4f1ea);
+    for (const s of [-1, 1]) b.box(0.012, 0.05, 0.05, tx + s * 0.08, ty, -0.38, 0xd8d0c0);
+    parasol(b, tx, ty, -0.38, 0xf6f1e4, 0.1);
+  }
+  for (const lx of [0.45, 1.08]) {
+    b.cylinder(0.03, 0.022, 0.045, lx, ty, -0.28, 0xc0603a, 8);
+    bush(b, r, lx, ty + 0.08, -0.28, 0.04, 0x4f8a3a);
+  }
+  // The pool terrace: travertine, an infinity pool glowing at night, loungers, white parasols, lemons in pots
+  const pz = 0.2;
+  b.box(1.75, 0.012, 0.66, -0.5, 0.04, 0.12, 0xeee4d0);
+  pool(b, -0.62, 0.052, pz + 0.04, 1.15, 0.3, 0xeee4d0);
+  neonOf(b).box(1.15, 0.006, 0.01, -0.62, 0.082, pz + 0.21, [0.6, 1.8, 2.4], true);
+  b.box(1.2, 0.08, 0.02, -0.62, -0.02, pz + 0.23, 0x7fc8dc, 'glass');
+  for (let k = 0; k < 4; k++) lounger(b, -1.1 + k * 0.2, 0.052, -0.07, Math.PI / 2, k % 2 ? 0xf4f1ea : 0xe8efe6);
+  for (const px of [-0.95, -0.35]) parasol(b, px, 0.052, -0.08, 0xf6f1e4, 0.09);
+  for (const [lx, lz] of [[0.2, -0.05], [0.2, 0.36], [-1.32, -0.05], [-1.32, 0.36]] as const) {
+    b.cylinder(0.03, 0.022, 0.045, lx, 0.052, lz, 0xc0603a, 8);
+    ball(b, 0.045, lx, 0.13, lz, 0x4f8a3a, 'smooth', 0.9);
+    for (let k = 0; k < 3; k++) ball(b, 0.008, lx + (r() - 0.5) * 0.06, 0.12 + r() * 0.04, lz + 0.03, 0xf6d84a);
+  }
+  // A gravel walk from the terrace down through the garden, with path lights
+  b.box(0.14, 0.006, 0.8, -0.2, 0.04, 0.85, 0xe2d6bc);
+  for (let k = 0; k < 4; k++) for (const s of [-1, 1]) {
+    b.box(0.012, 0.04, 0.012, -0.2 + s * 0.11, 0.04, 0.6 + k * 0.18, 0x3a3f4a);
+    quadBlob(neonOf(b), -0.2 + s * 0.11, 0.085, 0.6 + k * 0.18, 0.008, LAMP);
+  }
   islandHelipad(b);
-  // Garden: palms, lawn paths, a beach cabana, lights
-  for (const [px, pz] of [[-1.15, 0.85], [-1.15, -0.95], [1.15, -0.95], [0.2, 0.95], [-0.5, 0.9], [1.15, 0.0]] as const) palm(b, r, px, pz, 0.78, 0.04);
-  b.box(0.1, 0.006, 0.7, -0.85, 0.04, 0.6, 0xe8dcc0);
-  for (let k = 0; k < 5; k++) quadBlob(neonOf(b), -0.92, 0.06, 0.3 + k * 0.14, 0.008, LAMP);
-  for (let k = 0; k < 6; k++) bush(b, r, -1.2 + k * 0.08, 0.08, -0.4 + (k % 2) * 0.1, 0.06);
-  b.box(0.24, 0.012, 0.18, -0.3, 0.04, 0.85, 0xf1dba4);
-  b.cylinder(0.004, 0.004, 0.18, -0.3, 0.052, 0.85, 0xdddddd, 4);
-  b.cylinder(0, 0.12, 0.04, -0.3, 0.2, 0.85, 0xf4f1ea, 8);
+  // Stone pines over the garden, a row of cypresses behind the house, olives and rosemary
+  stonePine(b, r, -1.18, 0.95, 1.0, 0.04);
+  stonePine(b, r, 1.15, -0.35, 0.85, 0.04);
+  stonePine(b, r, -1.25, -1.05, 0.8, ty);
+  for (let k = 0; k < 5; k++) cypress(b, r, -0.95 + k * 0.5, -1.12, 1.15, ty);
+  for (const [ox, oz] of [[0.45, 0.25], [-0.6, 1.05], [0.05, 1.1]] as const) {
+    b.cylinder(0.014, 0.02, 0.1, ox, 0.04, oz, PALETTE.trunk, 5);
+    bush(b, r, ox, 0.17, oz, 0.085, 0x8aa08a);
+  }
+  for (let k = 0; k < 3; k++) bush(b, r, -1.28 + k * 0.13, 0.07, 0.6 + (k % 2) * 0.06, 0.045, 0x6a8a6a);
+}
+
+/** An Italian stone pine: a tall bare trunk leaning a little, and a flat umbrella crown in two lobes. */
+function stonePine(b: GeoBuilder, r: () => number, x: number, z: number, s = 1, y = 0) {
+  const k = s * (0.9 + r() * 0.2);
+  const lean = r() * Math.PI * 2;
+  const tx = x + Math.cos(lean) * 0.08 * k;
+  const tz = z + Math.sin(lean) * 0.08 * k;
+  const top = y + 0.5 * k;
+  rod(b, x, y, z, tx, top, tz, 0.02 * k, 0x7a5a44, 5, 'solid', 0.014 * k, true);
+  const greens = [0x4d6b3a, 0x557544] as const;
+  for (let j = 0; j < 2; j++) {
+    const a = lean + (j ? 2.2 : -0.6);
+    const g = new THREE.SphereGeometry(1, 10, 5);
+    put(b, g, tx + Math.cos(a) * 0.07 * k, top + 0.03 + j * 0.03, tz + Math.sin(a) * 0.07 * k, greens[j]!, 'smooth', a, 0, 0, 0.2 * k, 0.065 * k, 0.16 * k);
+  }
 }
 
 // ─── City state: tents, clouds, plots ──────────────────────────────────────

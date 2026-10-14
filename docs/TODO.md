@@ -51,7 +51,7 @@ The owner sent reference images (the Silicon Valley title slide is the art-direc
 - [ ] Landscape leftovers: parks, waterfront and Marina polish; Hills street lamps have no light pools at night; backdrop town windows barely show at night; the island's cove and jetty face away from the default camera; check the Hills from `az=225`.
 - [x] **Bay.** The Bay Bridge is one continuous structure from Rincon Point through Yerba Buena to Oakland; the Golden Gate has its viaduct, toll plaza and Waldo Tunnel; marquee bulbs on the TINYTOWN sign come on at dusk; new ferry, container ship, sloops, tugs and wakes; landmarks in detail.
 - [ ] Bay leftovers: from the default view the Waldo Tunnel hood reads as a box (its rainbow mouth only shows from the south and west); the Oakland landing is simple; one tree still stands in front of the Cliff House.
-- [ ] **Over-budget plot items** (low priority: each is a one-off, so the cost is a few thousand triangles in all): the stadium (7.9k triangles), the university (6.4k) and the amusement park (6.1k), against a ~5k budget for plot items. The supertall (8.5k) is near the 8k tower budget.
+- [x] **Over-budget plot items** trimmed to budget with no visible change (stadium 7.9k → 4.9k, university 6.4k → 4.9k, amusement park 6.1k → 4.9k, supertall 8.5k → 7.9k, corner shops 5.4k → 5.0k); shared helpers (`post`, `ball`, `tube`, lighter people, sills and the founder's car) cut ~10.8k across every item and home. Follow-ups: the amusement park's paving is empty; the university's Palm Drive crowns overlap the south range's roof.
 - [x] The launch site moved south-east of the estate, so the rocket no longer hides the estate's helipad from the default camera (a map test keeps it off the camera side). The founder's Hills driveway now joins the house pad.
 
 ## P1: Finish the visual overhaul (leftovers from the parallel agents)
@@ -76,7 +76,7 @@ The four agents' work is committed. Items each one reported as unfinished are li
 - [x] **TinyTown Hills redesign** (owner: "really not great quality"): Twin Peaks Boulevard with curbs, walls, lamps and palms; terraced lots; chaparral on golden hills; a family of four house styles in `render/hills.ts`.
 - [x] **Treasure Island** (Building One, hangars, streets, Clipper Cove), the **Bay Bridge east span** (twin decks, four-legged tower, suspension cables), **Oakland** towers, **Daly City and the East Bay** as terraced streets.
 - [ ] Next visual targets the owner will notice: the airport, the Marina and Palace of Fine Arts close up, Golden Gate Park detail, the founder's island estate, and the TINYTOWN sign's hillside.
-- [ ] Apartments average about 1,530 triangles, just over the 1,500 home budget. Trim them if perf needs it.
+- [x] Apartments measure 1,195 triangles on average over real seeds (max 1,610), under the home budget.
 - [ ] `buildings.ts` leaves out the south-west street lamp of each block because `city.ts` puts a junction lamp there. If that lamp moves, add it back.
 - [ ] The camera auto-framing ease feels slow when jumping across the timeline. Check on a real GPU (in SwiftShader it never converges, which is expected).
 - [x] Check that the house-pick **swap fee** (25% of the house's value, in game money) is wired in the home dialog (see GAME_DESIGN). (first pick free, then 25% renovation with a confirm step)
