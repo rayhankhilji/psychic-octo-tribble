@@ -13,7 +13,7 @@ import { Life, SHADOW_ONLY_LAYER } from './life.ts';
 import { Construction } from './construction.ts';
 import { festival, protest, protestBanner } from './mood.ts';
 import { Batch } from './batch.ts';
-import { AIRPORT_SLOTS, DOWNTOWN_HOME, HILLS_HOME, MARINA_SLOTS, SUPERYACHT, Scenery, hillHeight } from './scenery.ts';
+import { AIRPORT_SLOTS, DOWNTOWN_HOME, HILLS_HOME, MARINA_SLOTS, SUPERYACHT, Scenery, hillHeight, type SceneryState } from './scenery.ts';
 import { BUILD_BLOCKS, HOME_TIERS, HQ_FLOOR_CAP, ITEMS } from '../game/catalog.ts';
 import { decayOf, type GameEvent, type GameState } from '../game/economy.ts';
 import { atmosphereAt, localHour, type Atmosphere } from '../world/daylight.ts';
@@ -133,6 +133,12 @@ export class City {
   private beaconLevel = 0;
   /** The festival or protest on Civic Center Plaza, if the mood calls for one. */
   private mood: { key: string; proxy: THREE.Object3D } | null = null;
+  /** The grand opening (render/ceremony.ts) has the plaza: the festival or protest steps aside. */
+  private ceremonyOn = false;
+  /** The ceremony is holding the TINYTOWN sign dark until its cue. */
+  private signHeld = false;
+  /** What the scenery was last told, so the sign can be held and let go without a new day. */
+  private sceneryState: SceneryState | null = null;
   /** Fireworks waiting their turn in a show. */
   private volleys: { at: THREE.Vector3; count: number; spread: number; delay: number }[] = [];
   private sun: THREE.DirectionalLight;
@@ -213,7 +219,7 @@ export class City {
     const decay = decayOf(game.maintenance);
     this.trainStopped = decay.trainStopped;
     this.lampsFailing = decay.lampsFailing;
-    this.scenery.setState({
+    const scenery: SceneryState = {
       hills: game.regions.hills,
       island: game.regions.island,
       launch: game.regions.launchpad,
@@ -222,7 +228,9 @@ export class City {
       signLit: !decay.signDark,
       lampsFailing: decay.lampsFailing,
       bridgeRusting: decay.bridgeRusting,
-    }, animate);
+    };
+    this.sceneryState = scenery;
+    this.scenery.setState(this.signHeld ? { ...scenery, signLit: false } : scenery, animate);
     for (const [key, b] of this.builds) {
       if (!b.fade) continue;
       const item = ITEMS.get(key.split('|')[1]!);
@@ -416,6 +424,40 @@ export class City {
         this.show(new THREE.Vector3(pier.x + 3.5, 0.3, pier.z + 1), e.threshold >= 10_000 ? 3 : e.threshold >= 1_000 ? 2 : 1);
       }
     }
+  }
+
+  // ─── The grand opening (render/ceremony.ts) ─────────────────────────────
+
+  /**
+   * The ceremony takes the plaza (on) or gives it back (off): the festival
+   * or protest is hidden while its set stands there, and the sign is held
+   * dark until the ceremony switches it on.
+   */
+  setCeremony(on: boolean) {
+    this.ceremonyOn = on;
+    const key = this.mood ? this.batched.get(this.mood.proxy) : undefined;
+    if (key) this.homeBatch.setVisible(key, !on);
+    this.holdSign(on);
+  }
+
+  /** The sign's upkeep is paid: it's lit when nothing is holding it. */
+  get signLit(): boolean {
+    return this.sceneryState?.signLit ?? true;
+  }
+
+  /** Holds the TINYTOWN sign dark, at once, or lets it come back on (with its usual flicker) if it's paid for. */
+  holdSign(dark: boolean) {
+    this.signHeld = dark;
+    const s = this.sceneryState;
+    if (!s) return;
+    this.scenery.setState({ ...s, signLit: s.signLit && !dark }, true);
+    // Straight to dark rather than sputtering out on camera (when the scenery offers it).
+    if (dark) (this.scenery as Scenery & { snapSign?: (lit: boolean) => void }).snapSign?.(false);
+  }
+
+  /** A fireworks show at a point, for the ceremony's way home. */
+  fireworksShow(at: THREE.Vector3, size: 1 | 2 | 3) {
+    this.show(at, size);
   }
 
   /** A short fireworks show: volleys across a few seconds that build to a finale. */
@@ -959,6 +1001,7 @@ export class City {
     const { proxy } = this.place(`mood|${want}`, built, moodTip(game, weakest), animate ? 0 : 1);
     this.grow(proxy, animate, 'y', 0.8);
     this.mood = { key: want, proxy };
+    if (this.ceremonyOn) this.homeBatch.setVisible(this.batched.get(proxy)!, false);
   }
 
   /** Tents for the people your city can't house. More people, more tents (up to a point). */

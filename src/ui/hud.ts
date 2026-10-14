@@ -50,6 +50,7 @@ const FEED: Record<string, { icon: IconName; tone: Tone; kicker: string; linger?
   'game.homeless.appeared': { icon: 'tent', tone: 'bad', kicker: 'Housing' },
   'game.homeless.cleared': { icon: 'home', tone: 'good', kicker: 'Housing' },
   'account.welcome': { icon: 'sparkle', tone: 'brand', kicker: 'Welcome', linger: 8000 },
+  'game.opened': { icon: 'flag', tone: 'brand', kicker: 'Grand opening', linger: 10000 },
 };
 
 const LEGEND: { icon: IconName; tone: Tone; title: string; text: string }[] = [

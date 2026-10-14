@@ -1,0 +1,408 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   The grand opening: letterbox bars, a ticket-like title card with the
+   city's name and its real numbers, a Skip pill, and the veil the cuts
+   happen under. The city is the picture; the chrome stays out of its way.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.cer {
+  --cer-bar: min(10vh, 84px);
+  --cer-night: #0b0f1c;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  overflow: hidden;
+  font-family: var(--font-ui);
+}
+
+/* The HUD steps aside while it plays (exits accelerate away). */
+#ui.cer-hud-away {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-3) var(--ease-in);
+}
+
+.cer-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--cer-bar);
+  background: var(--cer-night);
+  transition: transform var(--dur-4) var(--ease-out);
+}
+
+.cer-top {
+  top: 0;
+  transform: translateY(-100%);
+}
+
+.cer-bottom {
+  bottom: 0;
+  transform: translateY(100%);
+}
+
+.cer.is-on .cer-bar {
+  transform: none;
+}
+
+.cer-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--cer-night);
+  opacity: 0;
+}
+
+/* ── Skip ─────────────────────────────────────────────────────────────── */
+
+.cer-skip {
+  position: absolute;
+  right: max(16px, 4vw);
+  bottom: calc((var(--cer-bar) - 32px) / 2);
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  border: 1px solid rgba(246, 238, 223, 0.2);
+  background: rgba(246, 238, 223, 0.08);
+  color: #f6eedf;
+  font: 550 13px/1 var(--font-ui);
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transition:
+    opacity var(--dur-4) var(--ease-out),
+    background var(--dur-1) var(--ease-out);
+}
+
+.cer.is-on .cer-skip {
+  opacity: 1;
+}
+
+.cer-skip:hover {
+  background: rgba(246, 238, 223, 0.16);
+}
+
+.cer-skip:focus-visible {
+  outline: 2px solid var(--bay-300);
+  outline-offset: 2px;
+}
+
+.cer-skip kbd {
+  padding: 1px 5px;
+  border: 1px solid rgba(246, 238, 223, 0.28);
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: rgba(246, 238, 223, 0.75);
+  font: 500 10.5px/1.4 var(--font-mono);
+}
+
+/* ── The card: an invitation, torn along the dotted line ──────────────── */
+
+.cer-card-wrap {
+  position: absolute;
+  left: max(24px, 4vw);
+  bottom: calc(var(--cer-bar) + 24px);
+  width: min(420px, calc(100vw - 48px));
+  /* The shadow follows the notches (a box-shadow would be cut off by the mask). */
+  filter: drop-shadow(0 2px 6px rgba(15, 20, 36, 0.12)) drop-shadow(0 24px 40px rgba(15, 20, 36, 0.32));
+  opacity: 0;
+  transform: translateY(18px);
+  visibility: hidden;
+}
+
+.cer-card-wrap.is-in {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--dur-4) var(--ease-out),
+    transform var(--dur-4) var(--ease-out);
+}
+
+.cer-card-wrap.is-out {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity var(--dur-3) var(--ease-in),
+    transform var(--dur-3) var(--ease-in),
+    visibility 0s linear var(--dur-3);
+  visibility: hidden;
+}
+
+.cer-card {
+  --tear-y: 70%;
+  --notch: 9px;
+  position: relative;
+  margin: 0;
+  padding: 22px 26px 20px;
+  border-radius: var(--r-xl);
+  background: var(--surface-solid);
+  color: var(--ink);
+  /* A hairline edge, so the night card stands off a dark city. */
+  box-shadow: inset 0 0 0 1px var(--line);
+  /* Two half-circle notches where the ticket tears. */
+  -webkit-mask:
+    radial-gradient(circle var(--notch) at 0 var(--tear-y), #0000 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% var(--tear-y), #0000 98%, #000) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle var(--notch) at 0 var(--tear-y), #0000 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% var(--tear-y), #0000 98%, #000) right / 51% 100% no-repeat;
+}
+
+/* A hairline of Golden Gate orange along the top, like the banner on the plaza. */
+.cer-card::before {
+  content: '';
+  position: absolute;
+  left: 26px;
+  right: 26px;
+  top: 0;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--accent);
+}
+
+.cer-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 2px 0 12px;
+  color: var(--accent-text);
+  font: 500 11px/1.2 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* The sun from the mark; it turns green when the ribbon is cut. */
+.cer-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--sun-400);
+  box-shadow: 0 0 0 4px var(--sun-soft);
+  transition:
+    background var(--dur-3) var(--ease-out),
+    box-shadow var(--dur-3) var(--ease-out);
+}
+
+.cer-eyebrow.is-open .cer-dot {
+  background: var(--good);
+  box-shadow: 0 0 0 4px var(--good-soft);
+  animation: cer-ping 900ms var(--ease-out) 1;
+}
+
+@keyframes cer-ping {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 4px var(--good-soft);
+  }
+}
+
+/* "Grand opening" gives way to "Now open": one rolls up and out as the other rolls in. */
+.cer-eyebrow-text {
+  display: inline-grid;
+  overflow: hidden;
+}
+
+.cer-was,
+.cer-now {
+  grid-area: 1 / 1;
+  transition:
+    transform var(--dur-3) var(--ease-out),
+    opacity var(--dur-3) var(--ease-out);
+}
+
+.cer-now {
+  transform: translateY(100%);
+  opacity: 0;
+  color: var(--good);
+}
+
+.cer-eyebrow.is-open .cer-was {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+.cer-eyebrow.is-open .cer-now {
+  transform: none;
+  opacity: 1;
+}
+
+.cer-title {
+  margin: 0;
+  font: 780 clamp(40px, 4.4vw, 60px) / 0.96 var(--font-display);
+  font-stretch: 90%;
+  letter-spacing: -0.034em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+/* The name rises into its line, a beat after the card lands. */
+.cer-line {
+  display: block;
+  overflow: hidden;
+  padding: 0.04em 0 0.08em;
+  margin-bottom: -0.06em;
+}
+
+.cer-line > span {
+  display: inline-block;
+  transform: translateY(105%);
+}
+
+.cer-card-wrap.is-in .cer-line > span {
+  transform: none;
+  transition: transform 640ms var(--ease-out) 90ms;
+}
+
+.cer-founded {
+  margin: 10px 0 0;
+  color: var(--ink-2);
+  font: 500 var(--t-lg) / 1.4 var(--font-ui);
+}
+
+.cer-tear {
+  margin: 18px -26px 16px;
+  border-top: 1.5px dashed var(--line-strong);
+}
+
+.cer-stats {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin: 0;
+}
+
+.cer-stat {
+  min-width: 0;
+}
+
+.cer-stat dd {
+  margin: 0;
+  font: 720 22px/1.1 var(--font-display);
+  font-stretch: 94%;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.cer-stat dt {
+  order: 2;
+  margin-top: 4px;
+  color: var(--ink-3);
+  font: 500 var(--t-sm) / 1.3 var(--font-ui);
+}
+
+.cer-stat {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+/* Each part of the card lands a beat after the last. */
+.cer-card-wrap.is-in :is(.cer-eyebrow, .cer-founded, .cer-tear, .cer-stat) {
+  animation: cer-rise var(--dur-4) var(--ease-out) both;
+}
+
+.cer-card-wrap.is-in .cer-eyebrow {
+  animation-delay: 40ms;
+}
+.cer-card-wrap.is-in .cer-founded {
+  animation-delay: 160ms;
+}
+.cer-card-wrap.is-in .cer-tear {
+  animation-delay: 210ms;
+}
+.cer-card-wrap.is-in .cer-stat:nth-child(1) {
+  animation-delay: 260ms;
+}
+.cer-card-wrap.is-in .cer-stat:nth-child(2) {
+  animation-delay: 310ms;
+}
+.cer-card-wrap.is-in .cer-stat:nth-child(3) {
+  animation-delay: 360ms;
+}
+
+@keyframes cer-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ── Phones: shorter bars, the card along the bottom ──────────────────── */
+
+@media (max-width: 699px) {
+  .cer {
+    --cer-bar: 52px;
+  }
+
+  .cer-card-wrap {
+    left: 16px;
+    right: 16px;
+    bottom: calc(var(--cer-bar) + 14px);
+    width: auto;
+  }
+
+  .cer-card {
+    padding: 18px 20px 16px;
+  }
+
+  .cer-card::before {
+    left: 20px;
+    right: 20px;
+  }
+
+  .cer-tear {
+    margin: 14px -20px 12px;
+  }
+
+  .cer-title {
+    font-size: clamp(32px, 10vw, 44px);
+  }
+
+  .cer-stat dd {
+    font-size: 19px;
+  }
+
+  .cer-skip {
+    right: 16px;
+    bottom: calc((var(--cer-bar) - 30px) / 2);
+    height: 30px;
+  }
+}
+
+/* ── Reduced motion: cut to the end state ──────────────────────────────── */
+
+.cer .no-motion,
+.cer .no-motion * {
+  transition: none !important;
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cer *,
+  .cer *::before,
+  #ui.cer-hud-away {
+    transition-duration: 1ms !important;
+    animation: none !important;
+  }
+
+  .cer-line > span {
+    transform: none;
+  }
+}
+
+:root.reduce-motion .cer *,
+:root.reduce-motion .cer *::before {
+  transition-duration: 1ms !important;
+  animation: none !important;
+}
+
+:root.reduce-motion .cer-line > span {
+  transform: none;
+}

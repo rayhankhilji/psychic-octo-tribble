@@ -28,7 +28,10 @@ import type { AuthProvider } from './api/auth.ts';
 import { cleanSearch, decideBoot, decideOpening, readReturn, type BootScreen } from './api/boot.ts';
 import { BACK_PAY_DAYS, isPaid, simOptionsFor, type ConfigResponse, type MeResponse, type WorldInfo } from './api/contract.ts';
 import { formatPrice, priceSheet } from './api/pricing.ts';
+import { settings, TIME_PREVIEWS } from './ui/settings-store.ts';
 import { FrontDoor, frontDoorInset, frontDoorSeen, holdHud, releaseHud, wantsFrontDoor } from './ui/frontdoor.ts';
+import type { Ceremony } from './render/ceremony.ts';
+import { Vector3 } from 'three';
 
 const SPEEDS = [
   { label: '1×', daysPerSecond: 12 },
@@ -39,14 +42,6 @@ const POLL_MS = 60_000;
 const NAME_KEY = 'tinytown:name';
 
 const params = new URLSearchParams(location.search);
-
-/** Click-through previews for the clock chip; null = follow the local clock. */
-const TIME_PREVIEWS: { label: string; hour: number }[] = [
-  { label: 'Morning', hour: 8.5 },
-  { label: 'Midday', hour: 13 },
-  { label: 'Golden hour', hour: 18.5 },
-  { label: 'Night', hour: 22.5 },
-];
 
 function storedName(): string | null {
   try {
@@ -78,7 +73,15 @@ interface HostedWorld {
   api: Api;
   world: WorldInfo;
   actions: Action[];
+  /** The founder's account, for remembering the grand opening per city in this browser. */
+  userId?: string;
 }
+
+/**
+ * `?inaugurate` (dev builds, or with `&debug`) plays the grand opening on
+ * whatever city is showing; `?inaugurate=<seconds>` holds it at that moment.
+ */
+const PREVIEW_OPENING = params.has('inaugurate') && (import.meta.env.DEV || params.has('debug'));
 
 interface AppOptions {
   timeline: Timeline;
@@ -115,6 +118,14 @@ class App {
   /** Saves still on their way to the server, in order. */
   private saving: Promise<void> = Promise.resolve();
   private unsaved = 0;
+  /**
+   * The grand opening (src/render/ceremony.ts): 'pending' from the first
+   * open of the founder's own city (or `?inaugurate`) until it has played,
+   * been skipped or turned out not to be wanted. The HUD waits for it.
+   */
+  private opening: 'pending' | 'playing' | null = null;
+  /** The day to record as seen once the opening is over (the server's first-open record waits for it). */
+  private seenLater: number | null = null;
   /** Set by the hosted shell: where the city name and "Connect" lead. */
   onConnect: (() => void) | null = null;
   readonly hud: Hud;
@@ -132,8 +143,20 @@ class App {
     if (fixed !== null) {
       this.city.targetHour = fixed;
       this.preview = { label: params.get('time')!, hour: fixed };
+    } else {
+      // Settings can hold the city at a time of day (the clock chip's previews); `?time=` still wins.
+      const held = TIME_PREVIEWS.find((p) => p.label === settings().time);
+      if (held) {
+        this.city.targetHour = held.hour;
+        this.preview = held;
+      }
     }
     this.stage = new Stage(document.getElementById('world')!, this.city);
+    // The first open of the founder's own city gets a grand opening: keep the HUD back for it (before the boot screen lifts).
+    if (PREVIEW_OPENING || (this.hosted && this.hosted.world.lastSeen === null)) {
+      this.opening = 'pending';
+      holdHud();
+    }
     // Dev and ?debug: the app on window, for screenshot scripts (tools/, tests/e2e).
     if (import.meta.env.DEV || params.has('debug')) (window as unknown as { __app: App }).__app = this;
     this.hud = new Hud(document.getElementById('ui')!, {
@@ -154,6 +177,11 @@ class App {
       onCycleTime: () => {
         const i = this.preview ? TIME_PREVIEWS.findIndex((p) => p.label === this.preview!.label) : -1;
         this.preview = i + 1 < TIME_PREVIEWS.length ? TIME_PREVIEWS[i + 1]! : null;
+        this.city.targetHour = this.preview?.hour ?? null;
+        this.refreshClock();
+      },
+      onSetTime: (label) => {
+        this.preview = TIME_PREVIEWS.find((p) => p.label === label) ?? null;
         this.city.targetHour = this.preview?.hour ?? null;
         this.refreshClock();
       },
@@ -242,9 +270,13 @@ class App {
     if (opts.intro) {
       this.show(this.last, false);
       this.stage.attract(true, frontDoorInset);
-    } else if ((timeline.source === 'demo' && !params.has('away')) || params.has('replay')) this.replay();
+    } else if (this.opening) this.show(this.last, false);
+    else if ((timeline.source === 'demo' && !params.has('away')) || params.has('replay')) this.replay();
     else this.show(this.last, false);
     this.stage.start();
+    // `?tour` forces the guided tour; demo visitors get a "Take a 1-minute tour" chip on their first touch (or when the replay ends, in tick()).
+    if (params.has('tour')) void this.tour().then((t) => t.startTour());
+    else if (timeline.source === 'demo' && !this.hosted) void this.tour().then((t) => t.armTourOffer());
     // Dev preview: `?moon` flies the trip on the last day; `?moon=<seconds>` holds it at that moment.
     if (params.has('moon') && (import.meta.env.DEV || params.has('debug'))) {
       this.show(this.last, false);
@@ -280,6 +312,88 @@ class App {
     return { name: this.timeline.name, day: this.last + 1, mrr: formatMoney(s.mrr, this.timeline.currency), people: users ? s.users! : s.customers, of: users ? 'users' : 'customers' };
   }
 
+  /** The grand opening is still to come or playing (the hosted shell holds its own welcome toast for it). */
+  get inaugurating(): boolean {
+    return this.opening !== null;
+  }
+
+  /**
+   * The grand opening: once nothing else has the screen, a short ceremony on
+   * Civic Center Plaza with the city's real numbers, then the feed's
+   * welcome and the guided tour. Whatever happens (not wanted, skipped,
+   * failed to load), the HUD comes back and the first open is recorded.
+   */
+  async inaugurate() {
+    if (this.opening !== 'pending') return;
+    this.opening = 'playing';
+    let over = false;
+    const settle = () => {
+      if (over) return;
+      over = true;
+      this.opening = null;
+      releaseHud();
+      if (this.hosted && this.seenLater !== null && this.hosted.world.lastSeen !== this.seenLater) {
+        void this.hosted.api.patchWorld({ lastSeen: this.seenLater }).catch(() => {});
+      }
+      this.seenLater = null;
+    };
+    try {
+      await whenBooted();
+      const [ui, { Ceremony }] = await Promise.all([import('./ui/ceremony.ts'), import('./render/ceremony.ts')]);
+      const key = ui.ceremonyKey(this.hosted?.userId ?? this.seed);
+      const wanted = ui.wantsCeremony({
+        preview: PREVIEW_OPENING,
+        hosted: !!this.hosted,
+        lastSeen: this.hosted?.world.lastSeen ?? null,
+        played: ui.ceremonyPlayed(key),
+        days: this.timeline.snapshots.length,
+        automated: navigator.webdriver,
+      });
+      if (!wanted) return settle();
+      await ui.untilCalm();
+      // Something else took the screen in the meantime (a moon trip): no ceremony over it.
+      if (this.stage.playing) return settle();
+      this.setPlaying(false);
+      this.show(this.last, false);
+      const s = this.timeline.snapshots[this.last]!;
+      const card = ui.openingCard({ name: this.timeline.name, currency: this.timeline.currency, mrr: s.mrr, customers: s.customers, users: s.users, today: Date.now() });
+      const hold = Number(params.get('inaugurate'));
+      let ceremony: Ceremony | null = null;
+      const overlay = new ui.CeremonyOverlay(card, () => ceremony?.skip());
+      ceremony = new Ceremony({
+        stage: this.stage,
+        city: this.city,
+        name: card.name,
+        founded: card.founded,
+        seed: this.seed,
+        ui: overlay,
+        ...(PREVIEW_OPENING && params.get('inaugurate') && Number.isFinite(hold) ? { hold } : {}),
+        onCue: (kind, text) => this.hud.sound.cue(kind, text),
+        onDone: () => {
+          if (!PREVIEW_OPENING) ui.markCeremony(key);
+          settle();
+          this.opened(card.name);
+        },
+      });
+      if (!ceremony.start()) {
+        overlay.remove();
+        settle();
+      }
+    } catch (err) {
+      // The ceremony never stands between a founder and their city.
+      console.error(err);
+      settle();
+    }
+  }
+
+  /** After the grand opening: the welcome in the feed, with a postcard to share, then the tour. */
+  private opened(name: string) {
+    this.hud.feed('game.opened', `Welcome to ${name}. Your city is open.`, this.today, { label: 'Share this', icon: 'share', run: () => setTimeout(() => this.share(), 400) });
+    window.setTimeout(() => {
+      void this.tour().then((t) => t.startTour(), () => {});
+    }, 1400);
+  }
+
   /** "While you were away": what happened since this browser last showed the city. */
   private welcomeBack() {
     const snaps = this.timeline.snapshots;
@@ -290,7 +404,9 @@ class App {
     const seen = preview ? snaps[Math.max(0, now - forced)]!.t : this.hosted ? this.hosted.world.lastSeen : lastSeen(this.saveKey);
     if (!preview) {
       // Only when there's a newer day to record: a second visit the same day costs the server nothing.
-      if (this.hosted) {
+      // The grand opening is the server's first-open record: it's written once the opening is over.
+      if (this.hosted && this.opening) this.seenLater = snaps[now]!.t;
+      else if (this.hosted) {
         if (this.hosted.world.lastSeen !== snaps[now]!.t) void this.hosted.api.patchWorld({ lastSeen: snaps[now]!.t }).catch(() => {});
       }
       else markSeen(this.saveKey, snaps[now]!.t);
@@ -471,7 +587,37 @@ class App {
     let steps = Math.min(4, Math.floor(this.carry));
     this.carry -= Math.floor(this.carry);
     while (steps-- > 0 && this.index < this.last) this.show(this.index + 1, true);
-    if (this.index >= this.last) this.setPlaying(false);
+    if (this.index >= this.last) {
+      this.setPlaying(false);
+      // The demo's story has played out: offer the tour (once per browser; a no-op after it's taken or waved away).
+      if (this.timeline.source === 'demo') void this.tour().then((t) => t.offerTour());
+    }
+  }
+
+  private tourModule: Promise<typeof import('./ui/tour.ts')> | null = null;
+
+  /**
+   * The guided tour (src/ui/tour.ts), loaded on first use so it stays its own
+   * chunk. Loading it registers what the tour needs from the city: the real
+   * numbers, where things are on screen, and the camera.
+   */
+  private tour(): Promise<typeof import('./ui/tour.ts')> {
+    this.tourModule ??= import('./ui/tour.ts').then((t) => {
+      const v = new Vector3();
+      t.setTourWorld({
+        facts: () => (this.game ? t.tourFacts(this.game, this.timeline) : null),
+        project: (x, y, z) => {
+          v.set(x, y, z).project(this.stage.camera);
+          if (Math.abs(v.z) > 1) return null;
+          const r = this.stage.renderer.domElement.getBoundingClientRect();
+          return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
+        },
+        focus: (x, y, z, zoom) => this.stage.focus(new Vector3(x, y, z), zoom),
+        resetView: () => this.stage.resetView(),
+      });
+      return t;
+    });
+    return this.tourModule;
   }
 
   private async poll() {
@@ -638,10 +784,11 @@ async function boot() {
   const demoSeed = Number(params.get('seed')) || 0;
   if (!config?.hosted || !config.supabase) {
     const { timeline, notice } = await loadTimeline();
-    const intro = wantsFrontDoor({ search: params, seen: frontDoorSeen(), demo: timeline.source === 'demo', signedIn: false });
+    const intro = !PREVIEW_OPENING && wantsFrontDoor({ search: params, seen: frontDoorSeen(), demo: timeline.source === 'demo', signedIn: false });
     if (intro) holdHud();
     const app = new App({ timeline, notice, seed: demoSeed, intro });
     if (intro) openFrontDoor(app, null);
+    void app.inaugurate();
     return;
   }
 
@@ -682,7 +829,7 @@ async function boot() {
   if (screen.kind === 'world' && me) {
     try {
       const [actions, timeline] = await Promise.all([api.actions(), api.timeline()]);
-      if (timeline.snapshots?.length) app = new App({ timeline, seed: me.world.seed, hosted: { api, world: me.world, actions }, accounts: true });
+      if (timeline.snapshots?.length) app = new App({ timeline, seed: me.world.seed, hosted: { api, world: me.world, actions, userId: me.user.id }, accounts: true });
       else {
         waiting = true;
         notice = "Stripe is connected, and your first numbers are still on their way. Here's the demo until they land.";
@@ -695,7 +842,7 @@ async function boot() {
     if (!app) screen = { kind: 'demo', cta: 'onboard' };
   }
   // A first visit to the demo opens on the front door (unless a dialog opens by itself: see below).
-  const intro = !app && wantsFrontDoor({ search: params, seen: frontDoorSeen(), demo: true, signedIn: !!session });
+  const intro = !app && !PREVIEW_OPENING && wantsFrontDoor({ search: params, seen: frontDoorSeen(), demo: true, signedIn: !!session });
   if (intro) holdHud();
   app ??= new App({ timeline: demoTimeline({ boost: Number(params.get('boost')) || 1 }), notice, seed: demoSeed, accounts: true, intro });
 
@@ -724,11 +871,17 @@ async function boot() {
   }
   await whenBooted();
   measurePerf(performance.now());
-  if (ret.checkout === 'success' && me && !isPaid(me.plan.status)) return void shell.confirmCheckout();
-  if (ret.checkout === 'success' && opening.dialog === 'none') app.hud.feed('account.welcome', "You're in. Your plan is active, and your city is live.", Date.now());
+  if (ret.checkout === 'success' && me && !isPaid(me.plan.status)) {
+    void app.inaugurate();
+    return void shell.confirmCheckout();
+  }
+  // The grand opening has its own welcome.
+  if (ret.checkout === 'success' && opening.dialog === 'none' && !app.inaugurating) app.hud.feed('account.welcome', "You're in. Your plan is active, and your city is live.", Date.now());
   // A remembered plan only matters while there's a plan to pick.
   if (opening.dialog !== 'plan' && me && isPaid(me.plan.status)) takePlanIntent();
   shell.handleOpening(opening);
+  // The first open of the founder's own city: the grand opening, once any dialog that just opened is closed.
+  void app.inaugurate();
 }
 
 startTelemetry();

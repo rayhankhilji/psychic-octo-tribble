@@ -55,6 +55,7 @@ Everything above `src/render` is **pure and unit-tested** (`tests/`). The same n
 | `src/render/construction.ts` | Building-site animation around a new building. |
 | `src/render/moon.ts` | Screen-pinned moon shown during rocket flights (with the moon house at tier 6). |
 | `src/render/moonscene.ts` | `MoonScene` (the lunar set, built on the first trip) and `MoonTrip` (the trip cinematic and its overlay). `Stage.play(cinematic)` swaps the scene and camera through `Post.setView`. |
+| `src/render/ceremony.ts`, `src/ui/ceremony.ts` | The grand opening: on the first open of a founder's own city, a ribbon cutting on Civic Center Plaza (`CeremonySet`: stage, banner, bunting, crowd, ribbon, confetti) played as a `Cinematic` in the main scene (`Ceremony`), with letterbox bars, a title card with the real numbers and a Skip pill (`CeremonyOverlay`). `wantsCeremony()` decides; `main.ts` holds the HUD and the server's `lastSeen` until it's over. |
 | `src/render/exhaust.ts` | Rocket flame and smoke/dust particles, shared by the bay and the moon. |
 | `src/audio/*` | The synthesised soundscape: `engine.ts` (`Sound`), `ambience.ts`, `sfx.ts`, `cues.ts` (pure: feed kind → sound, rate limits). |
 | `src/ui/recap*.ts`, `src/ui/mux.ts` | The growth clip: the share sheet and recorder, the overlay painter, the pure schedule and camera path, MP4/WebM muxers. |
