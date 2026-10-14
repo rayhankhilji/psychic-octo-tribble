@@ -604,13 +604,24 @@ export interface HillsGround {
   homeDrive: P3[];
 }
 
+/** Where a street lamp throws its light: the spot on the road under it, and the road's slope there. */
+export interface LampSpot {
+  x: number;
+  y: number;
+  z: number;
+  /** The road's direction (unit, in x/z) and its rise per unit along it, so the pool can lie on the grade. */
+  tx: number;
+  tz: number;
+  grade: number;
+}
+
 /**
  * The Hills streets: asphalt, curbs, a yellow centre line on the boulevard,
  * turning circles, lamps, stone walls where the road is cut into the hill
  * and white rails where it runs along a drop. `ground(x, z)` is the natural
- * slope beside the road.
+ * slope beside the road. Each lamp's pool of light goes into `lamps`.
  */
-export function hillsStreets(b: GeoBuilder, r: () => number, plan: HillsGround, ground: (x: number, z: number) => number) {
+export function hillsStreets(b: GeoBuilder, r: () => number, plan: HillsGround, ground: (x: number, z: number) => number, lamps: LampSpot[] = []) {
   for (const s of plan.streets) {
     const track = s.kind === 'track';
     strip(b, s.pts, s.w, track ? 0xc9b48e : ASPHALT, track ? 0.025 : 0.03);
@@ -644,6 +655,9 @@ export function hillsStreets(b: GeoBuilder, r: () => number, plan: HillsGround, 
         next = along + 2.3;
         flip = -flip;
         lamp(b, p[0] - tz * flip * (s.w / 2 + 0.1), p[2] + 0.02, p[1] + tx * flip * (s.w / 2 + 0.1));
+        // The light falls mostly on the road: centre the pool a little in from the lamp, at the road's height.
+        const run = Math.hypot(q[0] - o[0], q[1] - o[1]) || 1;
+        lamps.push({ x: p[0] - tz * flip * (s.w / 2 - 0.12), y: p[2] + 0.04, z: p[1] + tx * flip * (s.w / 2 - 0.12), tx, tz, grade: (q[2] - o[2]) / run });
       }
       if (i % 2) continue;
       for (const side of [1, -1]) {

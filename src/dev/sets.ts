@@ -438,3 +438,24 @@ Object.assign(SETS, {
     });
   },
 } satisfies Record<string, () => ShowItem[]>);
+
+// ─── Landscape: the parks seeded cities lay out: `?set=ls-squares&zoom=5`, `?set=ls-parks` ──
+import { centralPark, squarePark } from '../render/scenery.ts';
+Object.assign(SETS, {
+  'ls-squares': (): ShowItem[] =>
+    ['fountain', 'bandstand', 'tennis', 'playground'].map((label, style) => {
+      const b = new GeoBuilder();
+      squarePark(b, rng(31 + style), 0, 0, style, ['round', 'plane', 'cypress', 'palm']);
+      return { label, object: b.build().group, size: 4.4 };
+    }),
+  'ls-parks': (): ShowItem[] =>
+    [
+      { label: 'central park, 3 × 2 blocks', w: 3, d: 2 },
+      { label: 'central park, 2 × 2 blocks', w: 2, d: 2 },
+    ].map(({ label, w, d }, i) => {
+      const b = new GeoBuilder();
+      const rect = { x0: -w * 2.5, x1: w * 2.5, z0: -d * 2.5, z1: d * 2.5 };
+      centralPark(b, rng(7 + i), rect, ['round', 'plane', 'pine', 'cypress'], null);
+      return { label, object: b.build().group, size: 16 };
+    }),
+} satisfies Record<string, () => ShowItem[]>);

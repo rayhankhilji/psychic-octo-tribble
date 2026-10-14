@@ -2361,7 +2361,7 @@ function islandModern(b: Kit, r: () => number) {
   const white = 0xf3f1ea;
   const stone = 0xe0d6c2;
   const light: ColorLike = GLASS_HOME;
-  b.box(3.0, 0.04, 3.0, 0, 0, 0, PALETTE.lawn);
+  b.box(3.0, 0.04, 3.0, 0, -0.03, 0, PALETTE.lawn);
   // A stone podium carries the house and the pool terrace; the lawn steps down in front
   prism(b, rectPts(2.6, 1.7, -0.1, -0.5), 0.04, 0.1, stone);
   for (let k = 0; k < 3; k++) b.box(1.4 - k * 0.2, 0.033 * (3 - k), 0.12, -0.6, 0.04, 0.4 + k * 0.1, stone);
@@ -2515,7 +2515,7 @@ function islandEstate(b: Kit, r: () => number) {
   const shutter = 0x5d7a58;
   const iron = 0x2a2f38;
   const light: ColorLike = GLASS_HOME;
-  b.box(2.8, 0.04, 2.5, 0, 0, 0, PALETTE.lawn);
+  b.box(2.8, 0.04, 2.5, 0, -0.03, 0, PALETTE.lawn);
   // The upper terrace the house stands on: a limestone podium with a balustrade along its front
   const ty = 0.16;
   prism(b, rectPts(2.5, 1.0, -0.1, -0.7), 0.04, ty - 0.04, stone);

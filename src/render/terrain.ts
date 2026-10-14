@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { AIRPORT_FILL, ISLANDS, LANDMARKS, SEA, TOWN_GROUND, TREASURE_COAST, WORLD_SPEC, coastDistance, fbm, gradeWeight, hillsPlan, isBeach, naturalHeight, polygonDistance, terrainHeight } from '../world/map.ts';
+import { AIRPORT_FILL, BLOCKS, GRID, ISLAND_COVE, ISLANDS, LANDMARKS, MARINA, SEA, inSignZone, TOWN_GROUND, TREASURE_COAST, WORLD_SPEC, coastDistance, fbm, gradeWeight, hillsPlan, isBeach, naturalHeight, polygonDistance, terrainHeight } from '../world/map.ts';
 import type { Atmosphere } from '../world/daylight.ts';
 
 /** Area the terrain mesh covers; beyond it, open water. */
@@ -19,6 +19,8 @@ const OAK = new THREE.Color(0x5f8a45);
 const DRY = new THREE.Color(0xb39457);
 const ROCK = new THREE.Color(0x9a9184);
 const ROCK_DARK = new THREE.Color(0x7d766c);
+/** Chamise and scrub oak on the sign's slope. */
+const CHAPARRAL = new THREE.Color(0x7f8a50);
 /** Cut banks and road shoulders: decomposed granite. */
 const EARTH = new THREE.Color(0xc2a682);
 const SAND = new THREE.Color(0xf0dcab);
@@ -27,6 +29,8 @@ const SEABED = new THREE.Color(0x7aa7a0);
 const VERGE = new THREE.Color(0x8fbf62);
 const GARDEN = new THREE.Color(0x7ab650);
 const FOREST = new THREE.Color(0x6a8a4a);
+/** The estate's mown lawn: the same green as the lawn under the house. */
+const LAWN = new THREE.Color(0x82c757);
 
 /** How finely each part of the world is meshed: cells per tile side (a power of two). */
 function tileCells(x0: number, z0: number): number {
@@ -36,8 +40,12 @@ function tileCells(x0: number, z0: number): number {
   // Twin Peaks and TinyTown Hills: the closest look anyone takes at bare ground (wherever this world put them).
   const { x: px, z: pz } = WORLD_SPEC.peaks.centre;
   if (overlaps(-30 + Math.min(0, px + 14), 10 + Math.max(0, px + 14), -48 + Math.min(0, pz + 36), -21.5)) return 16;
-  // Islands, the Presidio and Lands End, the airport, Sausalito and the Golden Gate headlands.
+  // Your island, up close whenever you visit it: fine enough that its beaches and lawns have clean edges.
   const F = ISLANDS.founder;
+  if (overlaps(F.x - F.r - 1, F.x + F.r + 1, F.z - F.r - 1, F.z + F.r + 1)) return 32;
+  // The Marina Green and the harbour's shore, in the default view: a crisp lawn edge, not a smear.
+  if (MARINA.green && overlaps(MARINA.green.x - 4.5, MARINA.green.x + 4.5, MARINA.green.z - 1, MARINA.z + 1.5)) return 16;
+  // Islands, the Presidio and Lands End, the airport, Sausalito and the Golden Gate headlands.
   const A = ISLANDS.angel;
   const dg = LANDMARKS.goldenGate.x + 34.6;
   if (overlaps(4, 42, -12, 48) || overlaps(-50, -18 + Math.max(0, dg), -6, 34) || overlaps(12, 31, -56, -31) || overlaps(-24, -8, 30, 46)) return 8;
@@ -68,6 +76,7 @@ export class Terrain {
     grass = WORLD_SPEC.classic ? GRASS : GRASS.clone().offsetHSL(look.grassHue, 0, look.grassLight);
     park = WORLD_SPEC.classic ? PARK : PARK.clone().offsetHSL(look.grassHue, 0, look.grassLight);
     dryness = look.dryness;
+    pointXs = GRID.bz1 >= 2 ? BLOCKS.filter((b) => b.bz === GRID.bz1).map((b) => b.bx * 5) : [];
     this.object.add(this.ground());
     this.water = waterMaterial(depthTexture());
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 900, 1, 1).rotateX(-Math.PI / 2), this.water);
@@ -103,7 +112,7 @@ export class Terrain {
       const cx = Math.floor(x / 2);
       const cz = Math.floor(z / 2);
       for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const [lx, lz] of lotCells.get(`${cx + i},${cz + j}`) ?? []) d = Math.min(d, Math.hypot(x - lx, z - lz));
-      return 1 - Math.min(1, Math.max(0, (d - 0.7) / 0.8));
+      return 1 - Math.min(1, Math.max(0, (d - 0.75) / 0.5));
     };
     for (let j = 0; j < tz; j++) {
       for (let i = 0; i < tx; i++) {
@@ -188,6 +197,9 @@ let grass = GRASS;
 let park = PARK;
 let dryness = 1;
 
+/** The North Point's blocks (their x), if this world has one: set when the terrain is built. */
+let pointXs: number[] = [];
+
 /** How much of a watered garden there is at (x, z): set while the ground is built. */
 let garden: (x: number, z: number) => number = () => 0;
 
@@ -205,7 +217,18 @@ function groundColour(c: THREE.Color, x: number, h: number, z: number, slope: nu
     c.copy(ROCK).offsetHSL(0, 0, (fine - 0.5) * 0.08);
     return;
   }
-  if (isBeach(x, z) || h < SEA + 0.25) {
+  // The Marina Green: mown lawn from Marina Boulevard down to a thin strip of sand at the water, not a beach.
+  const green = marinaGreen(x, z);
+  if (green > 0 && h > SEA + 0.04) {
+    c.copy(park).offsetHSL(0, 0.02, 0.02 + (fine - 0.5) * 0.03);
+    c.lerp(SAND, Math.max(1 - green, 1 - smoothstep(SEA + 0.16, SEA + 0.26, h)));
+    return;
+  }
+  // Your island's strand blends into its lawns instead of stepping, so the edge stays clean up the slopes.
+  const F = ISLANDS.founder;
+  const L = ISLANDS.launch;
+  const isle = Math.hypot(x - F.x, z - F.z) < F.r + 1.5 || Math.hypot(x - L.x, z - L.z) < L.r + 1.2;
+  if (!isle && (isBeach(x, z) || h < SEA + 0.25) && !pointLawn(x, z, h)) {
     c.copy(SAND).lerp(WET, Math.max(0, 1 - (h - SEA) * 3));
     return;
   }
@@ -221,14 +244,22 @@ function groundColour(c: THREE.Color, x: number, h: number, z: number, slope: nu
   // Green near the city and low down; golden dry grass higher up, with sage scrub in patches.
   c.copy(grass);
   // Your island is watered: lawns and gardens, not dry grass.
-  const lush = Math.hypot(x - ISLANDS.founder.x, z - ISLANDS.founder.z) < 5.6 || Math.hypot(x - ISLANDS.launch.x, z - ISLANDS.launch.z) < 3.4 ? 0.25 : 1;
+  // Telegraph Hill is a city park: green to the top, not the dry gold of the open hills.
+  const telegraph = Math.hypot(x - LANDMARKS.coitTower.x, z - LANDMARKS.coitTower.z) < 3.8;
+  const lush = Math.hypot(x - ISLANDS.founder.x, z - ISLANDS.founder.z) < 5.6 || Math.hypot(x - ISLANDS.launch.x, z - ISLANDS.launch.z) < 3.4 ? 0.25 : telegraph ? 0.12 : 1;
   const dry = Math.min(1, Math.max(0, (h - 0.25) / 1.5 + (noise - 0.5) * 0.9) * dryness) * lush;
   c.lerp(fine > 0.55 ? GOLD : STRAW, dry);
   c.lerp(SAGE, Math.max(0, Math.min(0.6, (noise - 0.55) * 2.4)) * dry);
   if (h > 6) c.lerp(DRY, 0.3);
+  // The sign's slope is thick with chaparral, like Mount Lee under the Hollywood sign: dark sage in clumps.
+  if (inSignZone(x, z, 1.5)) {
+    const brush = 0.5 + 0.5 * fbm(x * 1.3 + 5, z * 1.3 - 2, 2);
+    c.lerp(CHAPARRAL, Math.min(0.75, Math.max(0, brush - 0.38) * 2.2) * dry);
+  }
   c.lerp(GARDEN, garden(x, z) * 0.85);
   // Oak and bay laurel down the ravines; bare, rockier crests.
-  c.lerp(OAK, Math.max(0, Math.min(0.75, curve * 0.9)) * Math.min(1, h / 1.2));
+  // (Not on your island's lawns, where every little gully in the wobbly shore would streak the slope.)
+  c.lerp(OAK, Math.max(0, Math.min(0.75, curve * 0.9)) * Math.min(1, h / 1.2) * (isle ? 0.2 : 1));
   // Graded ground (cut banks, road shoulders, terraces) shows bare earth.
   const graded = gradeWeight(x, z);
   if (graded > 0.02) {
@@ -242,6 +273,42 @@ function groundColour(c: THREE.Color, x: number, h: number, z: number, slope: nu
   const rock = Math.min(1, Math.max(0, (slope - (wooded ? 2.6 : lush < 1 ? 1.8 : 0.85)) * 1.5) + Math.max(0, -curve - 1.2) * 0.25 * Math.min(1, (h - 4) / 2));
   c.lerp(fine > 0.5 ? ROCK : ROCK_DARK, rock);
   c.offsetHSL(0, 0, (noise - 0.5) * 0.06);
+  // The estate's lawn runs out from under the house to the edge of the plateau, exactly the lawn's own green
+  // (after the noise, so nothing tints it) wherever the house's square base could reach, so its edge doesn't show.
+  const estate = Math.hypot(x - F.x, z - F.z);
+  if (estate < 3.3) c.lerp(LAWN, 1 - smoothstep(2.35, 3.3, estate));
+  if (isle) {
+    const inland = -coastDistance(x, z);
+    const strand = Math.hypot(x - ISLAND_COVE.x, z - ISLAND_COVE.z) < ISLAND_COVE.r + 1.3 ? 1.2 : 0.35;
+    const sand = Math.max(1 - smoothstep(strand - 0.15, strand + 0.35, inland), 1 - smoothstep(SEA + 0.15, SEA + 0.5, h));
+    c.lerp(TMP.copy(SAND).lerp(WET, Math.max(0, 1 - (h - SEA) * 3)), sand);
+  }
+}
+/** Scratch colour for the island's strand blend. */
+const TMP = new THREE.Color();
+
+const smoothstep = (e0: number, e1: number, v: number) => {
+  const t = Math.min(1, Math.max(0, (v - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * On a North Point (a block out on the shore, in some worlds) the beach all
+ * round it would be as wide as anywhere else and swamp the point: keep it to
+ * a strip at the water, with grass behind.
+ */
+function pointLawn(x: number, z: number, h: number): boolean {
+  if (!pointXs.length || h < SEA + 0.3 || !pointXs.some((px) => Math.abs(px - x) < 9.5)) return false;
+  return coastDistance(x, z) < -1.0;
+}
+
+/** How much of the Marina Green (0–1) there is at (x, z): its span along the shore, fading at the ends. */
+function marinaGreen(x: number, z: number): number {
+  const g = MARINA.green;
+  // From the green itself down to the water (never across the strait to Marin).
+  if (!g || z < g.z - g.d / 2 - 0.3 || z > MARINA.z + 4) return 0;
+  const edge = g.w / 2 + 0.4 - Math.abs(x - g.x);
+  return Math.min(1, Math.max(0, edge / 0.9));
 }
 
 /** Distance to shore, 0 at the coast and 1 in deep water, as a texture the water samples. */
