@@ -41,6 +41,7 @@ class SolidAO extends GTAOPass {
 export class Post {
   readonly composer: EffectComposer;
   private ao: SolidAO;
+  private scenePass: RenderPass;
   private bloom: UnrealBloomPass;
   private grade: ShaderPass;
   quality: Quality;
@@ -50,7 +51,8 @@ export class Post {
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(renderer, target);
-    this.composer.addPass(new RenderPass(scene, camera));
+    this.scenePass = new RenderPass(scene, camera);
+    this.composer.addPass(this.scenePass);
 
     this.ao = new SolidAO(scene, camera, size.x, size.y);
     this.ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.6, thickness: 1.4, scale: 1.15, samples: 12, distanceFallOff: 1, screenSpaceRadius: false });
@@ -77,6 +79,24 @@ export class Post {
       if (t.samples === samples) continue;
       t.samples = samples;
       t.dispose();
+    }
+  }
+
+  /**
+   * What the composer draws: the city through its iso camera, or another set
+   * (the moon) through its own camera, with every effect still on.
+   */
+  setView(scene: THREE.Scene, camera: THREE.Camera) {
+    if (this.scenePass.scene === scene && this.scenePass.camera === camera) return;
+    this.scenePass.scene = scene;
+    this.scenePass.camera = camera;
+    this.ao.scene = scene;
+    this.ao.camera = camera;
+    // GTAO reconstructs positions from depth differently for the two kinds of camera.
+    const perspective = (camera as THREE.PerspectiveCamera).isPerspectiveCamera ? 1 : 0;
+    if (this.ao.gtaoMaterial.defines.PERSPECTIVE_CAMERA !== perspective) {
+      this.ao.gtaoMaterial.defines.PERSPECTIVE_CAMERA = perspective;
+      this.ao.gtaoMaterial.needsUpdate = true;
     }
   }
 

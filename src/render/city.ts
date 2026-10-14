@@ -7,6 +7,7 @@ import { encampment, ESTATE_HELIPAD, founderHome, helicopter, HELI_ROTOR, itemMo
 import { Fireworks, Rain, Train } from './effects.ts';
 import { FogBanks, setFogLight } from './fog.ts';
 import { Moon } from './moon.ts';
+import { Exhaust } from './exhaust.ts';
 import { Traffic } from './traffic.ts';
 import { Life, SHADOW_ONLY_LAYER } from './life.ts';
 import { Construction } from './construction.ts';
@@ -59,6 +60,13 @@ const streetBlocks = (): BlockCoord[] => BLOCKS.filter((b) => b.use === 'city' |
 /** The F-line: vintage streetcars from the Castro down Market and along the Embarcadero to the Wharf. */
 const fLine = (): Pt[] => [MARKET_END, MARKET_START, ...EMBARCADERO.slice(EMBARCADERO.findIndex(([, z]) => z > MARKET_START[1]), EMBARCADERO.findIndex(([x]) => x < PIER.x0 + 1.4) + 1)];
 
+/** The rocket's part of a moon trip, on the bay. */
+export type RocketPhase = 'ascent' | 'away' | 'landing';
+/** Seconds the rocket sits on the pad with its engines lit before it climbs. */
+export const ROCKET_IGNITION = 1.6;
+/** Seconds from high above the bay to touching down on the pad. */
+export const ROCKET_LANDING = 5.2;
+
 const easeOutBack = (t: number) => 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2;
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 
@@ -109,10 +117,12 @@ export class City {
   private tents: { count: number; group: THREE.Group } | null = null;
   private highlights = new THREE.Group();
   private rocketObj: THREE.Group | null = null;
-  private launch: { t: number; done: () => void } | null = null;
+  /** The rocket's part of a moon trip, on the bay (see `flyRocket`). */
+  private launch: { phase: RocketPhase; t: number } | null = null;
   /** The founder's helicopter, once the island is theirs: parked on a pad, or in the air between the airport and the island. */
   private heli: Heli | null = null;
-  private flame: THREE.Mesh;
+  /** Flame, steam and smoke under the rocket, made on its first flight. */
+  private exhaust: Exhaust | null = null;
   private trainStopped = false;
   private lampsFailing = false;
   private roadsKey = '';
@@ -174,11 +184,6 @@ export class City {
     this.scene.add(this.homeBatch.object);
     this.pickables.push(this.homeBatch.object);
     sc.layers.enable(SHADOW_ONLY_LAYER);
-    this.flame = new THREE.Mesh(
-      new THREE.ConeGeometry(0.2, 1.2, 10).rotateX(Math.PI).translate(0, -0.5, 0),
-      glowMaterial({ color: new THREE.Color(3, 1.6, 0.4), transparent: true, opacity: 0.9 }),
-    );
-    this.flame.visible = false;
     this.scene.add(this.scenery.object, this.roadLayer, this.fireworks.object, this.rain.object, this.moon.object, this.train.object, this.traffic.object, this.highlights);
     this.scene.add(this.fog.object);
   }
@@ -243,7 +248,7 @@ export class City {
 
   /** Anything animating right now (pop-ins, building sites, fireworks, a launch): the stage keeps full frame rate. */
   get lively(): boolean {
-    return this.anims.length > 0 || this.fog.busy || this.scenery.fogBusy || this.sites.size > 0 || this.busy || this.volleys.length > 0 || this.launch !== null || !!this.heli?.flight || (this.heli?.spin ?? 0) > 0;
+    return this.anims.length > 0 || this.fog.busy || this.scenery.fogBusy || this.sites.size > 0 || this.busy || this.volleys.length > 0 || this.launch !== null || !!this.exhaust?.busy || !!this.heli?.flight || (this.heli?.spin ?? 0) > 0;
   }
 
   /** Builds everything still queued, now (for screenshots and tests). */
@@ -298,14 +303,50 @@ export class City {
     return [...this.highlights.children, ...this.markers.values(), ...this.pickables, ...this.scenery.pickables];
   }
 
-  /** Fly the rocket up out of sight and back. Calls `done` when it has landed. */
-  launchRocket(done: () => void): boolean {
-    if (!this.rocketObj || this.launch) return false;
-    this.launch = { t: 0, done };
-    this.rocketObj.add(this.flame);
-    this.flame.visible = true;
+  /** The founder owns a rocket, standing on the pad (or flying). */
+  get hasRocket(): boolean {
+    return this.rocketObj !== null;
+  }
+
+  /** The rocket's model, for the moon to copy (it lands the same ship there). */
+  get rocketModel(): THREE.Object3D | null {
+    return this.rocketObj;
+  }
+
+  /**
+   * The rocket's moves on the bay, for the moon trip, which runs the clock
+   * and calls this every frame with the seconds since the move began:
+   * `'ascent'` lights the engines and climbs out of the sky, `'away'` keeps
+   * it out of sight while it's on the moon, `'landing'` brings it down onto
+   * the pad on a long burn, and `null` parks it, engines off. False without
+   * a rocket.
+   */
+  flyRocket(phase: RocketPhase | null, t = 0): boolean {
+    if (!phase) {
+      this.launch = null;
+      this.exhaust?.clear();
+      this.rocketObj?.position.set(ISLANDS.launch.x, this.rocketBase, ISLANDS.launch.z);
+      if (this.rocketObj) this.rocketObj.visible = true;
+      return !!this.rocketObj;
+    }
+    if (!this.rocketObj) return false;
+    if (!this.exhaust) {
+      this.exhaust = new Exhaust('air');
+      this.scene.add(this.exhaust.object);
+    }
+    if (this.launch) {
+      this.launch.phase = phase;
+      this.launch.t = t;
+    } else this.launch = { phase, t };
     return true;
   }
+
+  /** Where the rocket is (its middle), for the camera to follow: the same vector each call. */
+  readonly rocketAt = (): THREE.Vector3 => {
+    const r = this.rocketObj;
+    return r ? this.rocketPos.set(r.position.x, r.position.y + 2, r.position.z) : this.rocketPos.set(ISLANDS.launch.x, this.rocketBase + 2, ISLANDS.launch.z);
+  };
+  private rocketPos = new THREE.Vector3();
 
   /** Where the helicopter is parked, or null without one. */
   get helicopterPad(): 'airport' | 'island' | null {
@@ -872,7 +913,11 @@ export class City {
       if (!key.startsWith('site:') || wanted.has(key)) continue;
       this.builds.delete(key);
       if (b.fade) this.fades.delete(b.fade);
-      if (b.group === this.rocketObj) this.rocketObj = null;
+      if (b.group === this.rocketObj) {
+        // Scrubbed back to before the rocket mid-flight: the flight ends with it.
+        this.rocketObj = null;
+        this.launch = null;
+      }
       this.remove(b.group, animate);
     }
     for (const [key, make] of wanted) {
@@ -1086,7 +1131,7 @@ export class City {
     this.rain.update(dt);
     this.moon.home = (this.game?.home.tier ?? 0) >= 6;
     // The iso view has no sky, so the moon only rises for rocket flights, as their destination.
-    if (this.camera) this.moon.update(dt, this.camera, 0, !!this.launch && this.launch.t > 2 && this.launch.t < 11);
+    if (this.camera) this.moon.update(dt, this.camera, 0, this.launch?.phase === 'ascent' && this.launch.t > 1.6);
     if (this.volleys.length) {
       for (const v of this.volleys) if ((v.delay -= dt) <= 0) this.fireworks.launch(v.at, v.count, v.spread);
       this.volleys = this.volleys.filter((v) => v.delay > 0);
@@ -1174,31 +1219,44 @@ export class City {
   }
 
   private updateLaunch(dt: number) {
+    const x = this.exhaust;
+    if (!x) return;
     const l = this.launch;
     const r = this.rocketObj;
-    if (!l || !r) return;
-    l.t += dt;
     const base = this.rocketBase;
-    if (l.t < 6) {
-      // Lift-off: slow, then fast, out of sight
-      r.position.y = base + 0.4 * l.t * l.t * l.t;
-      this.flame.scale.setScalar(1 + Math.random() * 0.3);
-      if (Math.random() < 0.5) this.fireworks.launch(new THREE.Vector3(ISLANDS.launch.x, base + 0.1, ISLANDS.launch.z), 0, 0);
-    } else if (l.t < 9) {
-      r.visible = false;
-    } else if (l.t < 14) {
-      // Coming home: a gentle powered landing
-      r.visible = true;
-      const u = (l.t - 9) / 5;
-      r.position.y = base + 40 * (1 - u) ** 3;
-    } else {
-      r.position.y = base;
-      r.remove(this.flame);
-      this.flame.visible = false;
-      this.launch = null;
-      l.done();
+    const pad = this.tmpPad.set(ISLANDS.launch.x, base, ISLANDS.launch.z);
+    // Smoke takes the light of the hour: sunlit cream by day, blue-grey by night, warm at dusk.
+    const a = this.atmosphere;
+    x.ambient.setRGB(...a.fog).multiplyScalar(0.55 + 0.45 * (1 - a.night)).lerp(this.tmpSmoke.setRGB(0.95, 0.93, 0.9), 0.45 * (1 - a.night));
+    if (!l || !r) {
+      // Parked (or the rocket went away mid-flight): engines off, let the last smoke drift off.
+      x.thrust = 0;
+      x.update(dt, r ? r.position : pad, base);
+      return;
     }
+    const t = l.t;
+    r.visible = l.phase !== 'away';
+    if (l.phase === 'ascent') {
+      // Ignition: the engines light and steam rolls off the pad while the clamps hold it,
+      // then a slow, heavy climb that keeps on accelerating, out of the top of the sky.
+      const hold = ROCKET_IGNITION;
+      x.thrust = Math.min(1, t / 0.5);
+      const c = Math.max(0, t - hold);
+      const shake = t < hold + 0.6 ? 0.006 * Math.min(1, t / 0.4) : 0;
+      r.position.set(pad.x + (Math.random() - 0.5) * shake, base + Math.min(120, 0.55 * c * c + 0.2 * c * c * c), pad.z + (Math.random() - 0.5) * shake);
+    } else if (l.phase === 'away') {
+      x.thrust = 0;
+      r.position.set(pad.x, base + 80, pad.z);
+    } else {
+      // Home: falling from high above on a long burn, slowing to a stop on the pad.
+      const u = Math.min(1, t / ROCKET_LANDING);
+      x.thrust = u < 1 ? 0.55 + 0.45 * u : Math.max(0, 1 - (t - ROCKET_LANDING) / 0.5);
+      r.position.set(pad.x, base + 26 * (1 - u) ** 2.4, pad.z);
+    }
+    x.update(dt, r.position, base);
   }
+  private tmpPad = new THREE.Vector3();
+  private tmpSmoke = new THREE.Color();
 
   /** Sun, sky and lights for the current hour (local clock unless overridden). */
   private sunDir = new THREE.Vector3(0, 1, 0);

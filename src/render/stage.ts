@@ -14,6 +14,25 @@ const QUALITIES: Quality[] = ['low', 'medium', 'high'];
 /** How far the camera sits from what it looks at. Far enough that nothing is ever behind the near plane. */
 const DISTANCE = 240;
 
+/** A set to draw instead of the city for a while (the moon), through its own camera. */
+export interface Shot {
+  scene: THREE.Scene;
+  camera: THREE.Camera;
+  exposure: number;
+  look: { bloom: number; night: number; tilt: number; focusY: number; warmth: number };
+}
+
+/**
+ * A sequence that takes the screen (the moon trip). Each frame it moves
+ * things along and says what to draw: a `Shot`, or null for the city
+ * through the usual camera, which it may steer with `follow()`. Input to
+ * the map is off until it's `done`.
+ */
+export interface Cinematic {
+  update(dt: number, time: number): Shot | null;
+  readonly done: boolean;
+}
+
 function requestedQuality(): Quality | null {
   const q = new URLSearchParams(location.search).get('quality');
   return q === 'low' || q === 'medium' || q === 'high' ? q : null;
@@ -54,7 +73,8 @@ export class Stage {
   private dragging = false;
   private lastPick = 0;
   private wasCalm = false;
-  private following: { target: () => THREE.Vector3; zoom: number } | null = null;
+  private following: { target: () => THREE.Vector3; zoom: number; height: boolean; snap: boolean } | null = null;
+  private cinema: Cinematic | null = null;
   private tmpStep = new THREE.Vector3();
   /**
    * Attract mode (the front door): the camera sways slowly around the city
@@ -139,7 +159,7 @@ export class Stage {
     el.addEventListener('pointerup', (e) => {
       const d = this.down;
       this.down = null;
-      if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || e.button !== 0) return;
+      if (!d || this.cinema || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || e.button !== 0) return;
       const rect = el.getBoundingClientRect();
       const p = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
       this.raycaster.setFromCamera(p, this.camera);
@@ -149,7 +169,7 @@ export class Stage {
       this.wake();
       // Moving focus around the title card isn't touching the city.
       if (e.key !== 'Tab' && e.key !== 'Shift') this.stopDrift();
-      if (e.target instanceof HTMLInputElement) return;
+      if (e.target instanceof HTMLInputElement || this.cinema) return;
       if (e.key === 'q' || e.key === 'Q') this.rotate(-1);
       if (e.key === 'e' || e.key === 'E') this.rotate(1);
     });
@@ -232,13 +252,37 @@ export class Stage {
   /**
    * Keeps the camera on something that moves (a helicopter on its way to
    * your island), easing towards it each frame, until `stopFollowing()`
-   * or the user grabs the controls.
+   * or the user grabs the controls. With `height`, the view also rises and
+   * falls with it (a rocket), as far as the camera's limits allow; `snap`
+   * starts it there instead of easing over (for a cut).
    */
-  follow(target: () => THREE.Vector3, zoom: number) {
+  follow(target: () => THREE.Vector3, zoom: number, height = false, snap = false) {
     this.stopDrift();
     this.userZoomed = true;
     this.glide = null;
-    this.following = { target, zoom };
+    this.following = { target, zoom, height, snap };
+  }
+
+  /**
+   * Hands the screen to a cinematic (or back, with null): the map stops
+   * taking input, and each frame draws what the cinematic says until it's
+   * done.
+   */
+  play(c: Cinematic | null) {
+    this.cinema = c;
+    this.controls.enabled = !c;
+    if (c) {
+      this.stopDrift();
+      this.spin = null;
+      this.pointer.set(2, 2);
+      this.onHover(null, 0, 0);
+    } else this.post.setView(this.city.scene, this.camera);
+    this.wake();
+  }
+
+  /** A cinematic has the screen. */
+  get playing(): boolean {
+    return this.cinema !== null;
   }
 
   stopFollowing() {
@@ -358,7 +402,7 @@ export class Stage {
   private frame(now: number) {
     // A calm city (no input, no replay, nothing moving the camera, nothing popping in) draws at
     // 30 fps: the miniature still breathes, at half the CPU and GPU. Skipped frames fold into dt.
-    const calm = !this.active && !this.drift?.on && !this.spin && !this.glide && !this.following && !this.easing && !this.city.lively && now - this.lastInput > 4000;
+    const calm = !this.active && !this.cinema && !this.drift?.on && !this.spin && !this.glide && !this.following && !this.easing && !this.city.lively && now - this.lastInput > 4000;
     if (this.lastFrame && now - this.lastFrame < (calm ? 1000 / 30 : 1000 / 60) - 2) return;
     this.lastFrame = now;
     const paced = calm || this.wasCalm;
@@ -369,6 +413,9 @@ export class Stage {
     const time = this.timer.getElapsed();
     // Calm frames are slow on purpose: only full-rate frames say anything about the machine.
     if (!paced) this.adapt(raw);
+    // A cinematic moves first, so the camera follows where things are this frame.
+    const shot = this.cinema ? this.cinema.update(dt, time) : null;
+    if (this.cinema?.done) this.play(null);
 
     if (this.drift?.on && !this.spin && !this.glide && !this.following) {
       // A slow sway either side of the start angle: 22° each way over 76 s
@@ -400,12 +447,16 @@ export class Stage {
       // Ride along: ease the view onto the moving target, ground level beneath it.
       const f = this.following;
       const at = f.target();
-      const k = Math.min(1, dt * 3);
-      const step = this.tmpStep.set(at.x - this.controls.target.x, 0, at.z - this.controls.target.z).multiplyScalar(k);
-      this.controls.target.add(step);
+      const k = f.snap ? 1 : Math.min(1, dt * 3);
+      const t = this.controls.target;
+      const step = this.tmpStep.set(at.x - t.x, f.height ? at.y - t.y : 0, at.z - t.z).multiplyScalar(k);
+      // Within the camera's limits (a rocket climbs far above them): move the camera only as far as the target goes.
+      step.y = THREE.MathUtils.clamp(t.y + step.y, -2, 8) - t.y;
+      t.add(step);
       this.camera.position.add(step);
-      this.camera.zoom += (f.zoom - this.camera.zoom) * Math.min(1, dt * 1.5);
+      this.camera.zoom += (f.zoom - this.camera.zoom) * (f.snap ? 1 : Math.min(1, dt * 1.5));
       this.camera.updateProjectionMatrix();
+      f.snap = false;
     } else if (this.glide) {
       const g = this.glide;
       g.t = Math.min(1, g.t + dt / 1.1);
@@ -432,16 +483,23 @@ export class Stage {
     // Ground visible on screen: the frame's width, and its height stretched by the iso tilt.
     this.city.setView(this.controls.target, Math.hypot(VIEW * aspect, VIEW * 1.75) / this.camera.zoom / 2, DISTANCE, this.camera);
     this.city.update(dt, time);
-    const a = this.city.atmosphere;
-    this.renderer.toneMappingExposure = a.exposure;
-    // The miniature look is strongest at the overview and fades as you zoom in close.
-    const tilt = THREE.MathUtils.clamp(1.25 - this.camera.zoom * 0.28, 0.25, 1);
-    const evening = Math.max(0, 1 - Math.abs(a.hour - 18.6) / 1.6);
-    this.post.update(time, { bloom: a.bloom, night: a.night, tilt, focusY: 0.47, warmth: evening });
+    if (shot) {
+      this.renderer.toneMappingExposure = shot.exposure;
+      this.post.setView(shot.scene, shot.camera);
+      this.post.update(time, shot.look);
+    } else {
+      const a = this.city.atmosphere;
+      this.renderer.toneMappingExposure = a.exposure;
+      this.post.setView(this.city.scene, this.camera);
+      // The miniature look is strongest at the overview and fades as you zoom in close.
+      const tilt = THREE.MathUtils.clamp(1.25 - this.camera.zoom * 0.28, 0.25, 1);
+      const evening = Math.max(0, 1 - Math.abs(a.hour - 18.6) / 1.6);
+      this.post.update(time, { bloom: a.bloom, night: a.night, tilt, focusY: 0.47, warmth: evening });
+    }
     this.onFrame(dt);
 
     // Hover picks raycast hundreds of models: ten times a second is plenty, and none while dragging.
-    if (this.pointerDirty && !this.dragging && now - this.lastPick > 100) {
+    if (this.pointerDirty && !this.dragging && !this.cinema && now - this.lastPick > 100) {
       this.pointerDirty = false;
       this.lastPick = now;
       this.raycaster.setFromCamera(this.pointer, this.camera);

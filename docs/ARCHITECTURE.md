@@ -54,6 +54,10 @@ Everything above `src/render` is **pure and unit-tested** (`tests/`). The same n
 | `src/render/batch.ts` | `Batch`: draws hundreds of GeoBuilder models as one `BatchedMesh` per material, with per-model transform, glow level and tooltip. |
 | `src/render/construction.ts` | Building-site animation around a new building. |
 | `src/render/moon.ts` | Screen-pinned moon shown during rocket flights (with the moon house at tier 6). |
+| `src/render/moonscene.ts` | `MoonScene` (the lunar set, built on the first trip) and `MoonTrip` (the trip cinematic and its overlay). `Stage.play(cinematic)` swaps the scene and camera through `Post.setView`. |
+| `src/render/exhaust.ts` | Rocket flame and smoke/dust particles, shared by the bay and the moon. |
+| `src/audio/*` | The synthesised soundscape: `engine.ts` (`Sound`), `ambience.ts`, `sfx.ts`, `cues.ts` (pure: feed kind → sound, rate limits). |
+| `src/ui/recap*.ts`, `src/ui/mux.ts` | The growth clip: the share sheet and recorder, the overlay painter, the pure schedule and camera path, MP4/WebM muxers. |
 | `src/render/geo.ts` | **`GeoBuilder`** and the shared materials (see below). |
 | `src/render/palette.ts` | Colour palette. |
 | `src/ui/` | `hud.ts` (top bar, metrics, timeline dock, feed/toasts, tooltips, dialogs), `game-ui.ts` (city card, build menu, home ladder, placement), `brand.ts` (logo geometry → SVG and canvas), `icons.ts` (one stroke icon family), `dom.ts` (helpers, count-up numbers), `loader.ts` (boot screen), `thumbnails.ts` (offscreen renderer for item thumbnails), `styles.css` (design tokens and all styles). |

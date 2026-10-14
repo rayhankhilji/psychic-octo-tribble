@@ -89,8 +89,8 @@ All in `docs/GAME_DESIGN.md` and HANDOFF §7.
 - [x] **"While you were away" summary** when the app opens. Logic done and tested (`src/game/away.ts`, `lastSeen`/`markSeen` in `save.ts`); the card (`Hud.showAway`) is being built by the UI agent, then main.ts wires it at boot with a `?away=N` preview param for the demo. Done: card is `Hud.showAway`; try `/?demo&away=30`.
 - [x] **Celebrations, part 1:** fireworks shows over the bay for MRR milestones (smaller downtown for customer milestones); a street festival on Civic Center Plaza at satisfaction 85+, an orderly protest at City Hall below 40 with a banner naming the weakest part.
 - [x] **Celebrations, part 2:** when the TINYTOWN sign relights on the live day, the camera flies to the hillside for the fireworks and the feed offers "Share this" (a postcard). Feed toasts can carry an action button.
-- [ ] **Moon scene:** after the rocket launch, cut to the moon, show the moon house, then the return. The moon sprite during flights (`src/render/moon.ts`) is the current stand-in.
-- [ ] **Sound:** ambient city by day and night, waves and gulls, construction, fireworks, UI ticks. Off by default or very quiet, with a mute toggle.
+- [x] **Moon scene:** a ~30 s cinematic: lift-off from the island, a tilt up into space, the founder's moon house (a lit geodesic dome, Earth with the bay's lights, a rover, a TinyTown flag, a sign with the city's name), and the return. Skippable (Esc), with a reduced-motion version. `?moon` / `?moon=<seconds>` in dev or `?debug`; `window.__moonTrip.seek(t)`. Left: on portrait screens the moon shots are wide and the house reads small; sailboats can show behind the climbing rocket.
+- [x] **Sound:** synthesised in the browser (`src/audio/`), off by default, speaker button or M. Left: someone should listen and tune levels; no volume slider yet.
 - [ ] **More $1B-a-month projects:** a second bridge, a new district across the bay (Oakland side), an international airport upgrade, "launch a venture" from the venture studio.
 
 ## P4: Hosted product (the next big phase)

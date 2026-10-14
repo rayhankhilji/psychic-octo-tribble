@@ -19,6 +19,7 @@ import { clearActions, joinedAt, lastSeen, loadActions, markSeen, saveActions } 
 import { awaySummary, snapshotIndexAt } from './game/away.ts';
 import { HOME_TIERS } from './game/catalog.ts';
 import { composePostcard } from './ui/postcard.ts';
+import type { ClipHost } from './ui/recap.ts';
 import { afterFrames, bootFailure, hasWebGL2, hideBoot, narrateBoot, whenBooted } from './ui/loader.ts';
 import { measurePerf, reportWebGL, setTelemetry, startTelemetry } from './telemetry.ts';
 import { setThumbnailContext } from './ui/thumbnails.ts';
@@ -170,14 +171,23 @@ class App {
         location.reload();
       },
     });
+    // Sound: the ambience hears the camera zoom and the weather; fireworks boom as they burst.
+    this.hud.sound.listen(() => ({ zoom: this.stage.camera.zoom, rain: this.moments[this.index]?.weather === 'rain' }));
+    this.city.fireworks.onBurst = () => this.hud.sound.firework();
+    // The moon trip (Your home → Fly to the moon), loaded on first use: most cities never get there.
+    // `hold` freezes it at that many seconds in, for previews (`?moon=<seconds>`).
+    const flyToMoon = (hold?: number) => {
+      if (this.stage.playing) return;
+      this.setPlaying(false);
+      void import('./render/moonscene.ts').then(({ MoonTrip }) => {
+        const trip = new MoonTrip({ stage: this.stage, city: this.city, name: this.timeline.name, hold, onDone: (landed) => landed && this.hud.feed('game.moon', 'Back from your moon house. Worth every penny.', this.today) });
+        if (trip.start()) this.hud.feed('game.moon', 'Lift-off! Flying to your house on the moon', this.today);
+      });
+    };
     this.gameUI = new GameUI(document.getElementById('ui')!, this.hud.sideEl, this.hud.toolsEl, {
       onBuild: (item, plot) => this.startBuild(item, plot),
       onPickHome: (tier, choice) => this.act({ t: this.today, kind: 'home', tier, choice }),
-      onFlyToMoon: () => {
-        this.stage.focus(this.city.focusOf('launchpad'), 1.6);
-        const ok = this.city.launchRocket(() => this.hud.feed('game.moon', 'Back from your moon house. Worth every penny.', this.today));
-        if (ok) this.hud.feed('game.moon', 'Lift-off! Flying to your house on the moon', this.today);
-      },
+      onFlyToMoon: () => flyToMoon(),
       onFlyHelicopter: () => {
         const ok = this.city.flyHelicopter((at) => {
           this.gameUI.setHelicopter(at);
@@ -235,11 +245,19 @@ class App {
     } else if ((timeline.source === 'demo' && !params.has('away')) || params.has('replay')) this.replay();
     else this.show(this.last, false);
     this.stage.start();
+    // Dev preview: `?moon` flies the trip on the last day; `?moon=<seconds>` holds it at that moment.
+    if (params.has('moon') && (import.meta.env.DEV || params.has('debug'))) {
+      this.show(this.last, false);
+      const at = params.get('moon');
+      flyToMoon(at ? Number(at) : undefined);
+    }
     this.refreshClock();
     // Lift the boot screen once the world has drawn its first few frames, then say what changed.
     afterFrames(3, () => {
       hideBoot();
       this.welcomeBack();
+      // `?recap` opens the share sheet on the growth clip (`?recap=3` films a 3-second test clip).
+      if (params.has('recap')) whenBooted().then(() => this.share('clip'));
     });
 
     if (timeline.source === 'live') window.setInterval(() => this.poll(), POLL_MS);
@@ -480,7 +498,12 @@ class App {
     }
   }
 
-  private share() {
+  /**
+   * The share sheet: a postcard of the city on screen (day or night, real
+   * numbers only when asked), or the growth clip (src/ui/recap.ts, loaded
+   * on first use).
+   */
+  private share(pick: 'postcard' | 'clip' = 'postcard') {
     const frame = this.stage.capture();
     const s = this.moments[this.index]!.snapshot;
     const t = this.timeline;
@@ -508,7 +531,56 @@ class App {
             ],
       });
     const slug = t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'city';
-    this.hud.openShare(frame, compose, `tinytown-${slug}-day-${day}.png`);
+    const postcard = () => this.hud.openShare(frame, compose, `tinytown-${slug}-day-${day}.png`);
+    const seconds = Number(params.get('recap')) || undefined;
+    import('./ui/recap.ts').then(
+      ({ openShareSheet }) => openShareSheet({ frame, postcard, clip: this.clipHost(), pick, file: `tinytown-${slug}-growth`, ...(seconds ? { seconds } : {}) }),
+      // The clip's code didn't arrive (offline, a new deploy): the postcard still works.
+      () => postcard(),
+    );
+  }
+
+  /**
+   * What the growth clip needs: the city to film, the real numbers, and a
+   * way to step the replay without the HUD, the feed or the saved day
+   * noticing. `hold()` hands back a function that restores all of it.
+   */
+  private clipHost(): ClipHost {
+    let prev: { i: number; game: GameState } | null = null;
+    return {
+      stage: this.stage,
+      city: this.city,
+      name: this.timeline.name,
+      demo: this.timeline.source === 'demo',
+      currency: this.timeline.currency,
+      snapshots: this.timeline.snapshots,
+      // The clip always runs to the latest day, wherever the replay happens to be.
+      today: this.last,
+      hold: () => {
+        const index = this.index;
+        const playing = this.playing;
+        this.setPlaying(false);
+        return () => {
+          this.show(index, false);
+          if (playing) {
+            this.playing = true;
+            this.stage.active = true;
+            this.hud.setPlaying(true);
+          }
+        };
+      },
+      showDay: (i, animate) => {
+        const game = simulate(this.timeline.snapshots, this.actions, i, this.sim);
+        this.city.setWorld(this.plan(i, game), game, animate);
+        if (animate && prev && prev.i !== i) {
+          this.city.celebrateGame(diffGame(prev.game, game));
+          this.city.celebrate(diffMoments(this.moments[prev.i]!, this.moments[i]!));
+        }
+        const weekAgo = this.moments[Math.max(0, i - 7)]!;
+        this.city.setShippingPace(this.moments[i]!.snapshot.commits - weekAgo.snapshot.commits);
+        prev = { i, game };
+      },
+    };
   }
 }
 
