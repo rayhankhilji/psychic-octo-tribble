@@ -220,3 +220,7 @@ The house is a free reward; the airport and jets you buy. Old houses stay on the
 - **Difficulty:** every MRR unlock and price at a tenth (moon at $100k MRR). Housing stays at $0.20 of MRR per active user.
 - **Connectors:** Composio if it gives the data we need; otherwise native.
 - Earlier the same day: keep the price in the invite email; a settings panel with the current quality as the default; a guided tour; an inauguration ceremony per founder; fix night-time light flicker.
+
+> studio 10 bungalow 50 tinytown hills 250 estate is 1k island is 5k moon is 10k and then get everything on that wavelength.
+
+- **Final ladder (supersedes "10x easier"):** hacker house $0, studio $10, bungalow $50, TinyTown Hills $250, estate $1k, island $5k, **moon $10k MRR**. Every other MRR gate follows the same curve (anchors 10→10, 100→50, 1k→250, 10k→1k, 100k→5k, 1M→10k), and prices scale with their gate. Housing stays at $0.20 per user; $1 of MRR = $10,000.

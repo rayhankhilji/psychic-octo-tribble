@@ -72,7 +72,7 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
 | **Wealth-based cars:** taxis downtown, convertibles in the Hills, more luxury cars as the city gets richer | The owner's request. | Built in traffic (`setLuxury`) |
 | **Your brand on HQ:** sign up with name and URL; we pull the logo and colour, and HQ wears a rooftop logo sign | The owner's idea. | Name sign built; **URL and logo import aren't** |
 | **Paid only, $29 a year (annual only), no free trial, no refunds** | The owner's call (2026-10-14; was $12/mo or $99/yr). An impulse price for a delight product; annual avoids novelty churn. | Built |
-| **Everything 10x easier** (2026-10-14) | The owner found $1M MRR for the moon out of reach. Every MRR unlock and every price is a tenth of before (moon at $100k MRR); $1 of MRR = $10,000 and housing at $0.20 per user are unchanged. | Built |
+| **An easier ladder** (2026-10-14) | The owner found $1M MRR for the moon out of reach. Houses: studio $10, bungalow $50, Hills $250, estate $1k, island $5k, moon $10k MRR; every other gate follows the same curve and prices scale with their gate. $1 of MRR = $10,000 and housing at $0.20 per user are unchanged. | Built |
 | **Composio vs native connectors** | The owner prefers Composio if it gives the data we need (founders trust a bigger name). Evaluated in `docs/CONNECTORS.md`. | See CONNECTORS.md |
 | **Hosting: Vercel + Supabase** | The owner OK'd it. Don't buy a domain without asking. | Not built |
 | **The world is the San Francisco Bay** (no longer an LA mix) | The owner: "it should look more like the bay area of SF layout". The TINYTOWN sign stays, on Twin Peaks. | Built |
