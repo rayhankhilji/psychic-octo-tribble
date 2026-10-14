@@ -1837,7 +1837,10 @@ function reflection(src: GeoBuilder, waterY: number, pond: { x: number; z: numbe
     fog: true,
     vertexColors: true,
     transparent: true,
-    depthWrite: false,
+    // Every face lies in the water plane: writing depth and passing only nearer fragments
+    // keeps overlapping faces from stacking into a milky ghost.
+    depthWrite: true,
+    depthFunc: THREE.LessDepth,
     // The mirror turns every triangle's winding inside out: faces are kept or dropped by their normals instead.
     side: THREE.DoubleSide,
     uniforms: THREE.UniformsUtils.merge([
@@ -1850,11 +1853,13 @@ function reflection(src: GeoBuilder, waterY: number, pond: { x: number; z: numbe
       varying vec3 vColor;
       varying vec3 vNormal;
       varying vec2 vWorld;
+      varying float vH;
       void main() {
         vColor = color;
         // The camera's forward direction, from the view matrix.
         vec3 f = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
         float h = position.y - uY;
+        vH = h;
         vec3 mirrored = vec3(position.x, uY - h, position.z);
         vec3 p = mirrored + f * (h / min(f.y, -0.05));
         vNormal = vec3(normal.x, -normal.y, normal.z);
@@ -1872,6 +1877,7 @@ function reflection(src: GeoBuilder, waterY: number, pond: { x: number; z: numbe
       varying vec3 vColor;
       varying vec3 vNormal;
       varying vec2 vWorld;
+      varying float vH;
       void main() {
         vec3 f = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
         if (dot(normalize(vNormal), -f) < 0.0) discard;
@@ -1880,13 +1886,16 @@ function reflection(src: GeoBuilder, waterY: number, pond: { x: number; z: numbe
         if (e > 1.0) discard;
         // Seen from the water, the sunlit side is the underside: shade softly by the mirrored normal.
         float lit = 0.62 + 0.3 * max(0.0, dot(normalize(vNormal), normalize(vec3(0.35, -0.6, 0.45)))) ;
-        float ripple = 0.9 + 0.1 * sin((vWorld.x - vWorld.y) * 38.0 + uTime * 1.3);
-        // By day the stone, darkened and tinted by the water; at night the floodlit rotunda as a warm shimmer.
-        vec3 day = mix(uWater, vColor * lit * 0.85, 0.5);
-        vec3 night = vec3(0.24, 0.17, 0.09) * lit * vColor;
-        vec3 c = mix(day, night, uNight) * ripple;
-        // Laid over the lagoon itself, fading out toward its banks and thinner at night.
-        float a = mix(0.85, 0.32, uNight) * (1.0 - smoothstep(0.5, 1.0, e));
+        // A reflection is the stone darkened and sunk into the water's colour: about half as bright,
+        // strongest at the waterline and fading the further up the building the light came from,
+        // broken into drifting horizontal bands by the ripples.
+        vec3 deep = uWater * 0.45;
+        vec3 day = mix(deep, vColor * lit * 0.55, 0.5);
+        vec3 night = vec3(0.22, 0.15, 0.08) * lit * vColor;
+        vec3 c = mix(day, night, uNight);
+        float fade = 1.0 - smoothstep(0.0, 2.0, vH);
+        float band = 0.6 + 0.4 * sin(vH * 55.0 - uTime * 1.6 + sin(vWorld.x * 9.0 + uTime * 0.7) * 1.4);
+        float a = mix(0.42, 0.3, uNight) * mix(0.3, 1.0, fade) * band * (1.0 - smoothstep(0.45, 1.0, e));
         gl_FragColor = vec4(c, a);
         #include <fog_fragment>
       }`,
