@@ -188,10 +188,10 @@ export function classicWorld(): WorldSpec {
       [140, 60],
     ],
     islands: {
-      // Your island sits well out in the bay, north of the shipping lane: you fly there (helicopter or jet).
-      founder: { id: 'founder', x: 12, z: 39, r: 4.5, h: 1.2 },
+      // Your island sits far out in the bay, well north of the shipping lane and clear of the city: you fly there (helicopter or jet).
+      founder: { id: 'founder', x: 12, z: 52, r: 4.5, h: 1.2 },
       // South-west of the estate, behind it from the north-east camera, so the rocket never stands in front of the house.
-      launch: { id: 'launch', x: 7.7, z: 34.5, r: 2.6, h: 0.25 },
+      launch: { id: 'launch', x: 7.7, z: 47.5, r: 2.6, h: 0.25 },
       yerba: { id: 'yerba', x: 33, z: -7, r: 3.6, h: 3.2 },
       treasure: { id: 'treasure', x: 35.5, z: -0.5, r: 3.2, h: 0.25 },
       angel: { id: 'angel', x: -16, z: 38, r: 6.5, h: 6 },
@@ -381,7 +381,7 @@ export function generateWorld(seed: number, attempt = 0): WorldSpec {
   let fx = range(4, 18.5);
   // Keep a wide channel between your island and Angel Island.
   if (Math.abs(fx - angel.x) < angel.r + fr + 6) fx = angel.x + angel.r + fr + 6;
-  const founder = { id: 'founder', x: Math.min(19, fx), z: range(37.5, 40.2), r: fr, h: range(1.1, 1.3) };
+  const founder = { id: 'founder', x: Math.min(19, fx), z: range(50.5, 53.2), r: fr, h: range(1.1, 1.3) };
   // The launch site: round the estate's far side, never between the north-east camera and the house.
   let turn = range(-0.35, 0.35);
   const lx = 4.3 * flip;

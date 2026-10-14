@@ -125,9 +125,6 @@ export class Scenery {
   /** Each region's fog banks, laid while it's closed and burnt off when it opens. */
   private clouds: Record<'hills' | 'island' | 'launch', { key: string; spec: FogSpec; tip: string; proxy: THREE.Object3D | null }[]> = { hills: [], island: [], launch: [] };
   private launchKey = '';
-  private beam: THREE.Mesh;
-  private beamMat: THREE.ShaderMaterial;
-  private beamCentre = new THREE.Vector3();
   private sign: Sign;
   private bay: BayBridge;
   private mill: Windmill | null = null;
@@ -196,12 +193,6 @@ export class Scenery {
     this.islandPools = lightPools(this.islandLamps, 0.7, this.poolMat);
     this.islandPools.visible = this.state.island;
     this.object.add(this.islandPools);
-
-    this.beamMat = lighthouseBeamMaterial();
-    // Narrow at the lamp, widening out to sea along +x.
-    this.beam = new THREE.Mesh(new THREE.CylinderGeometry(BEAM.spread, 0.05, BEAM.length, 20, 1, true).rotateZ(-Math.PI / 2).translate(BEAM.length / 2, 0, 0), this.beamMat);
-    this.beam.renderOrder = 3;
-    this.object.add(this.beam);
   }
 
   /** Moves a static model into the batch (its tooltip comes too). Returns its batch key. */
@@ -1132,7 +1123,7 @@ export class Scenery {
 
   /**
    * Your island: a low green plateau for the estate, a sandy cove with a
-   * jetty for the superyacht, the lighthouse on its rocky knoll, palms along
+   * jetty for the superyacht, a stone lookout on its rocky knoll, palms along
    * the beaches and pines on the rocks. On the side that faces the city, the
    * grounds: a terrace walk with clipped hedges, cypress and garden lights, a
    * lemon grove, and a belvedere on the point. The launch site waits under
@@ -1148,27 +1139,25 @@ export class Scenery {
     const X = (dx: number) => isl.x + dx * f;
     const Z = (dz: number) => isl.z + dz;
     const local = (x: number) => (x - isl.x) * f;
-    // Lighthouse on the rocky north point: a white tower, a gallery, the lantern, a keeper's cottage.
-    // On top of the rocky knoll (the first of the island's knolls), wherever this world put it.
+    // A stone lookout on the rocky knoll (the first of the island's knolls): a low terrace, a bench, a telescope.
+    // A private island has no lighthouse; this is where you stand to look back at the city.
     const knoll = WORLD_SPEC.estate.knolls[0]!;
     const lx = isl.x + knoll[0];
     const lz = isl.z + knoll[1];
     const ly = terrainHeight(lx, lz);
-    b.cylinder(0.3, 0.34, 0.08, lx, ly - 0.04, lz, 0xbdb4a2, 12);
-    b.cylinder(0.15, 0.21, 1.3, lx, ly, lz, PALETTE.trim, 12);
-    for (const band of [0.42, 0.86]) b.cylinder(0.2 - band * 0.05, 0.2 - band * 0.05, 0.1, lx, ly + band, lz, 0xc84a3a, 12);
-    b.cylinder(0.21, 0.21, 0.05, lx, ly + 1.3, lz, 0x2a2f38, 12);
-    b.cylinder(0.12, 0.12, 0.22, lx, ly + 1.35, lz, 0xbfe0ff, 12, 'glass');
-    b.blob(0.11, lx, ly + 1.46, lz, [3, 2.6, 1.6], true);
-    b.cylinder(0.02, 0.15, 0.16, lx, ly + 1.57, lz, 0xc84a3a, 12);
-    this.beamCentre.set(lx, ly + 1.46, lz);
-    // The keeper's cottage just below it, towards the estate.
+    b.cylinder(0.42, 0.46, 0.1, lx, ly - 0.05, lz, 0xd8cdb6, 14);
+    // A low parapet round the far side, a bench facing the city, and a brass telescope.
+    for (let k = 0; k < 9; k++) {
+      const a = Math.PI * 0.15 + (k / 8) * Math.PI * 0.7;
+      b.box(0.1, 0.09, 0.05, lx + Math.cos(a) * 0.4, ly + 0.05, lz + Math.sin(a) * 0.4, 0xcfc3aa, false, -a);
+    }
+    const kr = Math.atan2(isl.x - lx, isl.z - lz);
+    b.box(0.3, 0.035, 0.08, lx, ly + 0.09, lz, PALETTE.wood, false, kr);
+    b.cylinder(0.008, 0.012, 0.16, lx + 0.18, ly + 0.05, lz - 0.12, 0x2a2f38, 5);
+    b.cylinder(0.014, 0.02, 0.1, lx + 0.18, ly + 0.2, lz - 0.12, 0xc9a24a, 6);
+    // The path from the estate ends here.
     const kx = lx + (isl.x - lx) * 0.17;
     const kz = lz + (isl.z - lz) * 0.17;
-    const ky = terrainHeight(kx, kz);
-    const kr = Math.atan2(isl.x - lx, isl.z - lz);
-    b.box(0.5, 0.22, 0.36, kx, ky - 0.03, kz, 0xf6f2ea, false, kr);
-    b.gable(0.5, 0.11, 0.36, kx, ky + 0.19, kz, 0xc84a3a, 0.03, kr);
     // The jetty: a boardwalk out across the cove's beach to a quay alongside the superyacht.
     const qx = SUPERYACHT.x + 0.48 * f;
     const deck = SEA + 0.32;
@@ -1196,7 +1185,7 @@ export class Scenery {
       b.box(0.05, 0.014, 0.12, ux + 0.08 * f, uy, uz - 0.08, 0xf6f2ea);
     }
     b.rbox(0.32, 0.04, 0.07, X(-3.1), SEA + 0.24, Z(-1.75), 0xe85a2a, 0.02, 'smooth', 0.4 * f);
-    // Paths from the estate: down to the jetty and up to the lighthouse.
+    // Paths from the estate: down to the jetty and up to the lookout.
     for (const path of [[[X(-1.8), Z(-0.4)], [X(-2.4), Z(-0.8)], [walkTo, ISLAND_COVE.z]], [[X(-1.2), Z(1.5)], [X(-1.8), Z(2.2)], [kx, kz - 0.25]]] as Pt[][]) {
       ribbon(b, path, 0.16, stone, 0.03);
     }
@@ -1240,7 +1229,7 @@ export class Scenery {
         this.islandLamps.push({ x: x - Math.cos(a) * 0.17, y: y + 0.03, z: z - Math.sin(a) * 0.17, tx: -Math.sin(a), tz: Math.cos(a), grade: 0 });
       } else b.box(0.3, 0.07, 0.07, x, y - 0.01, z, 0x3f6e36, false, -a + Math.PI / 2);
     }
-    // The point that faces the camera (north-east), clear of the lighthouse and the launch site.
+    // The point that faces the camera (north-east), clear of the lookout and the launch site.
     let best: { x: number; z: number; d: number } | null = null;
     for (const deg of [45, 30, 60, 15, 75]) {
       const a = (deg * Math.PI) / 180;
@@ -1929,12 +1918,6 @@ export class Scenery {
     this.poolMat.visible = night > 0.02;
     this.bay.lights.uniforms.uTime!.value = time;
     this.bay.lights.uniforms.uNight!.value = night * (this.state.lampsFailing ? 0.3 : 1);
-
-    // The lighthouse only shines once the island is yours.
-    this.beamMat.uniforms.uLevel!.value = 0.55 * night * (this.state.lampsFailing ? 0.3 : 1);
-    this.beam.visible = night > 0.05 && this.state.island;
-    this.beam.position.copy(this.beamCentre);
-    this.beam.rotation.y = time * 0.8;
   }
 
   /** Point size for the Bay Lights, which needs the drawing buffer's pixel ratio. */
@@ -2089,41 +2072,6 @@ function lightPools(spots: readonly LampSpot[], size: number, material: THREE.Ma
   mesh.renderOrder = 2;
   mesh.computeBoundingSphere();
   return mesh;
-}
-
-const BEAM = { length: 7, spread: 0.75 };
-
-/**
- * A soft lighthouse beam: brightest at the lamp, fading out along its length
- * and toward its silhouette, so it reads as light in the air, not a solid cone.
- */
-function lighthouseBeamMaterial(): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
-    uniforms: { uLevel: { value: 0 }, uColor: { value: new THREE.Color(1.0, 0.9, 0.66) } },
-    vertexShader: `
-      varying float vAlong;
-      varying vec3 vNormal;
-      void main() {
-        vAlong = position.x / ${BEAM.length.toFixed(1)};
-        vNormal = normalize(normalMatrix * normal);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }`,
-    fragmentShader: `
-      uniform float uLevel;
-      uniform vec3 uColor;
-      varying float vAlong;
-      varying vec3 vNormal;
-      void main() {
-        // The iso camera is orthographic: it always looks down view-space -z.
-        float face = pow(abs(normalize(vNormal).z), 1.4);
-        float fall = pow(1.0 - clamp(vAlong, 0.0, 1.0), 2.2);
-        gl_FragColor = vec4(uColor * uLevel * face * fall, 1.0);
-      }`,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-  });
 }
 
 /** A flat strip along a polyline, draped on the terrain (or at `lift` above 0 in the flat city). */

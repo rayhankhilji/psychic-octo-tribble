@@ -438,7 +438,7 @@ const TOWN_GROUND_OF = ['excelsior', 'westlake', 'sausalito', 'east', 'flats'] a
 function islandHeight(id: IslandId, x: number, z: number, depth: number): number {
   switch (id) {
     case 'founder': {
-      // A low plateau for the estate, rocky knolls to the north-west where the lighthouse stands.
+      // A low plateau for the estate, rocky knolls to the north-west where the lookout stands.
       const isl = ISLANDS.founder;
       // Low dunes and lawns: a quick rise from the strand, then the plateau.
       let h = isl.h * smooth(0, 1.3, depth) + 0.06 * fbm(x * 0.9, z * 0.9, 2);
@@ -1683,7 +1683,7 @@ export let PRESIDIO_PKWY: Pt[];
 export const BAY_APPROACH: Pt[] = [[11.6, -6.5], [9.5, -6.8], [7.5, -7.5]];
 export const AIRPORT_ROAD: Pt[] = [[11.2, -21], [12.6, -26], [14.4, -31], [16.4, -36]];
 /** Extent of the world worth framing. */
-export const WORLD = { x0: -50, x1: 18, z0: -40, z1: 46 } as const;
+export const WORLD = { x0: -50, x1: 18, z0: -40, z1: 59 } as const;
 
 /** The Embarcadero from Mission Bay round the Ferry Building to the north-east corner: the same in every world. */
 const EMBARCADERO_EAST: Pt[] = [[11.2, -21], [10.9, -12], [10.75, -3], [10.6, 3], [9.7, 7.4], [7, 8.8], [2, 9.5]];
@@ -1730,8 +1730,8 @@ function assign(spec: WorldSpec): boolean {
   EAST_BAY = spec.eastBay;
   ISLANDS = spec.islands;
   const F = spec.islands.founder;
-  ISLAND_COVE = spec.classic ? { x: 16.75, z: 37.85, r: 1.75 } : { x: F.x + spec.estate.cove.dx, z: F.z + spec.estate.cove.dz, r: spec.estate.cove.r };
-  SUPERYACHT = spec.classic ? { x: 17.1, z: 37.6 } : { x: F.x + spec.estate.yacht.dx, z: F.z + spec.estate.yacht.dz };
+  ISLAND_COVE = spec.classic ? { x: 16.75, z: 50.85, r: 1.75 } : { x: F.x + spec.estate.cove.dx, z: F.z + spec.estate.cove.dz, r: spec.estate.cove.r };
+  SUPERYACHT = spec.classic ? { x: 17.1, z: 50.6 } : { x: F.x + spec.estate.yacht.dx, z: F.z + spec.estate.yacht.dz };
   TWIN_PEAKS = { x: spec.peaks.centre.x, z: spec.peaks.centre.z, r: 14, h: 7.5 };
   TWIN_PEAKS_SUMMITS = spec.peaks.summits;
   HILLS_LEVELS = spec.levels;

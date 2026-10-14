@@ -25,7 +25,7 @@ describe('the Bay map', () => {
     expect(WORLD_SPEC.classic).toBe(true);
     expect(LANDMARKS.goldenGate.x).toBe(-34.6);
     expect(PIER).toEqual({ x0: -10.4, x1: -6.4, z0: 10.6, z1: 22 });
-    expect([ISLANDS.founder.x, ISLANDS.founder.z]).toEqual([12, 39]);
+    expect([ISLANDS.founder.x, ISLANDS.founder.z]).toEqual([12, 52]);
     // Every block's use, column by column from the west: the classic plan, unchanged.
     expect(BLOCKS.map((b) => b.use[0]).join('')).toBe('cccpchpphccpccpphhcpcccphhcpcccchhcpcccchhmccccchhcmccchhcccmchccccccmcc');
   });
