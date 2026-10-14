@@ -14,8 +14,17 @@
  *   /?mockapi=pastdue            your city, with the last payment failed
  *   /?mockapi=local              no hosted accounts (today's behaviour)
  *   /?mockapi=waitlist           signed in, but the waitlist hasn't reached this email (403 not_invited)
+ *   /?mockapi=stripe-broken      Stripe connected, but its access has died (timeline 409 not_connected: reconnect)
+ *   /?mockapi=stripe-test        Stripe connected in test mode (setup warns that test data never moves the city)
+ *   /?mockapi=github-gone        the GitHub App was uninstalled on GitHub (repositories 409: install again)
+ *   /?mockapi=manual             your city, counting a number you set
+ *   /?mockapi=composio           connected, with this server connecting Stripe and GitHub through Composio
+ *   /?mockapi=ga4                your city, with Google Analytics offered (through Composio) in step 3; add
+ *                                `&connected=ga4` to land back from Google with properties to pick
  *
  * Extras: `&mockerr=checkout|portal|signin|repos|users|connect|timeline|link` makes that call fail;
+ * `&mockerr=posthog-key|posthog-project|repo|preview` fail the PostHog check, the repository pick, or
+ * the numbers behind the setup cards; `&mockempty` gives a Stripe account with no subscriptions yet.
  * `&mockreject` makes the server refuse the next build (409), to see the rollback.
  * `&mockcaptcha` turns on Turnstile with Cloudflare's always-pass test key.
  */
@@ -26,7 +35,23 @@ import type { AuthProvider, AuthSession, OAuthProvider } from './auth.ts';
 import { AuthError } from './auth.ts';
 import { ROUTES, type ConfigResponse, type Connections, type MeResponse, type PlanStatus, type UsersRequest } from './contract.ts';
 
-export type MockState = 'waitlist' | 'signedout' | 'unpaid' | 'canceled' | 'paid-unconnected' | 'paid-stripe' | 'paid-github' | 'connected' | 'pastdue' | 'local';
+export type MockState =
+  | 'waitlist'
+  | 'signedout'
+  | 'unpaid'
+  | 'canceled'
+  | 'paid-unconnected'
+  | 'paid-stripe'
+  | 'paid-github'
+  | 'connected'
+  | 'pastdue'
+  | 'local'
+  | 'stripe-broken'
+  | 'stripe-test'
+  | 'github-gone'
+  | 'manual'
+  | 'composio'
+  | 'ga4';
 
 const DAY = 86_400_000;
 const params = new URLSearchParams(location.search);
@@ -67,10 +92,21 @@ export function installMockApi(state: MockState): AuthProvider | null {
   let actions: Action[] = demoActions(timeline.snapshots);
   let rejectNext = params.has('mockreject');
 
+  // Back from an install a moment ago (`&connected=…`): the setup dialog celebrates it.
+  const justNow = (p: string) => (params.get('connected') === p ? now - 4_000 : now - 40 * DAY);
+  const hasStripe = ['paid-stripe', 'paid-github', 'connected', 'pastdue', 'stripe-broken', 'stripe-test', 'github-gone', 'manual', 'composio', 'ga4'].includes(state);
+  const hasGithub = ['paid-github', 'connected', 'pastdue', 'github-gone', 'manual', 'composio', 'ga4'].includes(state);
+  // Google Analytics: linked once back from Google (`&connected=ga4`).
+  const ga4Linked = params.get('connected') === 'ga4';
   const connections: Connections = {
-    stripe: ['paid-stripe', 'paid-github', 'connected', 'pastdue'].includes(state) ? { account: 'acct_1PxNightjar', name: null, livemode: true, connectedAt: now - 40 * DAY } : null,
-    github: ['paid-github', 'connected', 'pastdue'].includes(state) ? { installationId: 51_204_877, repo: state === 'paid-github' ? null : 'nightjar-hq/nightjar', connectedAt: now - 40 * DAY } : null,
-    users: state === 'connected' || state === 'pastdue' ? { source: 'posthog', host: 'https://eu.posthog.com', projectId: '48213', connectedAt: now - 38 * DAY } : { source: 'customers' },
+    stripe: hasStripe ? { account: 'acct_1PxNightjar', name: state === 'composio' ? 'Nightjar' : null, livemode: state !== 'stripe-test', connectedAt: justNow('stripe') } : null,
+    github: hasGithub ? { installationId: 51_204_877, repo: state === 'paid-github' || state === 'github-gone' ? null : 'nightjar-hq/nightjar', connectedAt: justNow('github') } : null,
+    users:
+      state === 'connected' || state === 'pastdue' || state === 'composio'
+        ? { source: 'posthog', host: 'https://eu.posthog.com', projectId: '48213', connectedAt: now - 38 * DAY }
+        : state === 'manual'
+          ? { source: 'manual', value: 2_400, updatedAt: now - 12 * DAY }
+          : { source: 'customers' },
   };
   const me = (): MeResponse => ({
     user: { id: 'mock-user', email: 'mara@nightjar.dev' },
@@ -86,11 +122,9 @@ export function installMockApi(state: MockState): AuthProvider | null {
   const config: ConfigResponse = {
     hosted: state !== 'local',
     supabase: state !== 'local' ? { url: 'https://mock.supabase.co', anonKey: 'mock-anon-key' } : null,
-    plans: [
-      { interval: 'month', amount: 1200, currency: 'usd' },
-      { interval: 'year', amount: 9900, currency: 'usd' },
-    ],
-    connect: { stripe: true, github: true, posthog: true },
+    // TinyTown is sold by the year. `&mockmonthly` adds the old monthly price, as a server still configured with one would.
+    plans: [...(params.has('mockmonthly') ? [{ interval: 'month' as const, amount: 1200, currency: 'usd' }] : []), { interval: 'year', amount: 2900, currency: 'usd' }],
+    connect: { stripe: true, github: true, posthog: true, ...(state === 'composio' ? { via: { stripe: 'composio', github: 'composio' } } : {}), ...(state === 'ga4' ? { ga4: true } : {}) } as ConfigResponse['connect'],
     captcha: params.has('mockcaptcha') ? { provider: 'turnstile', siteKey: '1x00000000000000000000AA' } : null,
     access: state === 'waitlist' ? 'waitlist' : 'open',
     supportEmail: 'help@tinytown.example',
@@ -144,17 +178,40 @@ export function installMockApi(state: MockState): AuthProvider | null {
         return json({ url: hrefFor('paid-github', { connected: 'github' }) });
       case `GET ${ROUTES.githubRepos}`:
         if (fail === 'repos') return err(502, "GitHub didn't answer. Try again in a moment.", 'upstream');
+        if (state === 'github-gone') return err(409, 'The TinyTown GitHub App was uninstalled. Connect GitHub again.', 'not_connected');
         return connections.github ? json({ repos: REPOS }) : err(400, 'Install the GitHub app first.', 'not_connected');
       case `PUT ${ROUTES.githubRepo}`:
         if (!connections.github) return err(400, 'Install the GitHub app first.', 'not_connected');
+        if (fail === 'repo') return err(400, "TinyTown can't see that repository. Add it to the app's access on GitHub.", 'bad_request');
         connections.github = { ...connections.github, repo: String(body.repo) };
         return json(connections);
       case `PUT ${ROUTES.users}`: {
         if (fail === 'users') return err(400, "PostHog didn't accept that key. Check it has read access to the project.", 'bad_request');
+        if (body.source === 'posthog' && fail === 'posthog-key') return err(409, "PostHog didn't accept the API key. Check it has Query read access.", 'not_connected');
+        if (body.source === 'posthog' && fail === 'posthog-project') return err(409, "PostHog couldn't find that project id.", 'not_connected');
+        if (body.source === 'ga4') {
+          if (!ga4Linked) return err(409, 'Connect Google Analytics first.', 'not_connected');
+          if (body.test === true) return json({ ok: true, source: 'ga4', monthlyActiveUsers: 3_910, asOf: now - (now % DAY), days: 364 });
+          connections.users = { source: 'ga4', property: String(body.property), propertyName: String(body.propertyName ?? ''), connectedAt: Date.now() } as unknown as Connections['users'];
+          return json(connections);
+        }
+        // `test: true` checks the key and saves nothing (server/users.ts).
+        if (body.test === true) return json({ ok: true, source: 'posthog', monthlyActiveUsers: 2_340, asOf: now - (now % DAY), days: 365 });
         const r = body as unknown as UsersRequest;
         connections.users = r.source === 'manual' ? { source: 'manual', value: r.value, updatedAt: Date.now() } : r.source === 'posthog' ? { source: 'posthog', host: r.host, projectId: r.projectId, connectedAt: Date.now() } : { source: 'customers' };
         return json(connections);
       }
+      case 'POST /api/connect/ga4':
+        return json({ url: hrefFor('ga4', { connected: 'ga4' }) });
+      case 'GET /api/connect/ga4/properties':
+        if (!ga4Linked) return err(409, 'Connect Google Analytics first.', 'not_connected');
+        return json({
+          properties: [
+            { id: '314159265', name: 'nightjar.dev', account: 'Nightjar' },
+            { id: '271828182', name: 'Nightjar app (iOS and Android)', account: 'Nightjar' },
+            { id: '161803398', name: 'Mara’s blog', account: 'Mara Okafor' },
+          ],
+        });
       case 'DELETE /api/connect/stripe':
         connections.stripe = null;
         return json({ ok: true });
@@ -167,8 +224,11 @@ export function installMockApi(state: MockState): AuthProvider | null {
     if (!paid) return err(402, 'This needs an active TinyTown plan.', 'payment_required');
     switch (route) {
       case `GET ${ROUTES.timeline}`:
-        if (fail === 'timeline') return err(409, 'Stripe is not connected, or its access has expired.', 'not_connected');
-        return json(timeline);
+        if (fail === 'timeline' || state === 'stripe-broken') return err(409, 'Your Stripe connection has expired. Connect Stripe again.', 'not_connected');
+        if (fail === 'preview') return err(502, 'Stripe took too long to respond. Try again in a moment.', 'upstream');
+        if (!connections.stripe && !connections.github?.repo) return err(409, 'Connect Stripe or choose a GitHub repository to build your city.', 'not_connected');
+        if (params.has('mockempty')) return json({ ...timeline, snapshots: timeline.snapshots.map((x) => ({ ...x, mrr: 0, customers: 0 })) });
+        return json({ ...timeline, integrations: { stripe: !!connections.stripe, github: !!connections.github?.repo } });
       case `GET ${ROUTES.actions}`:
         return json({ actions });
       case `POST ${ROUTES.actions}`:

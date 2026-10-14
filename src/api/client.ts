@@ -20,6 +20,8 @@ import {
   type RedirectResponse,
   type ReposResponse,
   type UsersRequest,
+  type UsersTestResult,
+  type Ga4PropertiesResponse,
   type WorldInfo,
   type WorldPatch,
 } from './contract.ts';
@@ -211,6 +213,19 @@ export class Api {
 
   setUsers(req: UsersRequest) {
     return this.call<Connections>('PUT', ROUTES.users, req);
+  }
+
+  /** Checks a users source (PostHog key, GA4 property) without saving it. */
+  testUsers(req: Extract<UsersRequest, { source: 'posthog' | 'ga4' }>) {
+    return this.call<UsersTestResult>('PUT', ROUTES.users, { ...req, test: true });
+  }
+
+  connectGa4() {
+    return this.call<RedirectResponse>('POST', ROUTES.connectGa4);
+  }
+
+  async ga4Properties(): Promise<Ga4PropertiesResponse['properties']> {
+    return (await this.call<Ga4PropertiesResponse>('GET', ROUTES.ga4Properties)).properties;
   }
 
   /** Everything we hold about the founder, as a file to save (named by the server). */

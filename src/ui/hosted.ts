@@ -234,6 +234,14 @@ export class HostedShell {
       // A fresh boot loads the world with its seed and the new connections.
       finish: () => location.assign('/'),
       inWorld: this.screen.kind === 'world',
+      // Google Analytics through Composio, when this server offers it (docs/CONNECTORS.md).
+      ga4: this.deps.config.connect.ga4
+        ? {
+            connect: () => this.deps.api.connectGa4(),
+            properties: () => this.deps.api.ga4Properties(),
+            save: (p, test) => (test ? this.deps.api.testUsers({ source: 'ga4', property: p.id, propertyName: p.name }) : this.deps.api.setUsers({ source: 'ga4', property: p.id, propertyName: p.name })),
+          }
+        : undefined,
     });
     this.onboard.open({ ...opts, stripeBroken: opts.stripeBroken ?? this.stripeBroken });
   }

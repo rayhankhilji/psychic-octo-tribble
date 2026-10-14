@@ -129,7 +129,7 @@ export interface AuditEntry {
 }
 
 export interface ConnectionInfo {
-  provider: 'stripe' | 'github' | 'posthog';
+  provider: 'stripe' | 'github' | 'posthog' | 'ga4';
   account: string;
   name: string | null;
   livemode: boolean | null;

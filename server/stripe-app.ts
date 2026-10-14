@@ -3,10 +3,11 @@ import { ROUTES, type RedirectResponse } from '../src/api/contract.ts';
 import type { StripeSubscription } from '../src/data/stripe.ts';
 import { startOfDay } from '../src/data/types.ts';
 import { track } from './analytics.ts';
+import { composioAccount, composioFor, connectLink, ensureActive, stripeAccount, stripeSubscriptions, verifiedAccount } from './composio.ts';
 import type { Ctx, Hosted } from './context.ts';
 import { decrypt, encrypt } from './crypto.ts';
 import { decryptionKeys, type Settings } from './env.ts';
-import { HttpError, notConfigured } from './http.ts';
+import { HttpError, notConfigured, upstream } from './http.ts';
 import { backHome, callbackUrl, finishState, startState } from './oauth.ts';
 import { fetchStripeSubscriptions } from './sources.ts';
 import type { ConnectionRow, ProfileRow } from './store.ts';
@@ -28,6 +29,17 @@ export function requireStripeApp(ctx: Ctx): StripeApp & { secrets: NonNullable<S
 }
 
 export function installLink(ctx: Hosted, user: AuthUser): { body: RedirectResponse; setCookie: string } {
+  if (composioFor(ctx.env, 'stripe')) {
+    // Through Composio: the browser first comes back to our own callback with
+    // the signed state (and the cookie this response sets), which asks
+    // Composio for the link. Starting there keeps this route synchronous and
+    // the whole flow tied to the browser that began it.
+    const { state, setCookie } = startState(ctx, user, 'stripe');
+    const url = new URL(callbackUrl(ctx, ROUTES.stripeCallback, false));
+    url.searchParams.set('state', state);
+    url.searchParams.set('via', 'composio');
+    return { body: { url: url.toString() }, setCookie };
+  }
   const app = requireStripeApp(ctx);
   // Stripe requires HTTPS redirect URIs in live mode.
   const redirectUri = callbackUrl(ctx, ROUTES.stripeCallback, app.livemode);
@@ -69,6 +81,7 @@ const ACCESS_TTL_MS = 55 * 60_000;
 
 /** `GET /api/connect/stripe/callback?code=…&state=…`: Stripe sends the founder back here after they approve the app. */
 export async function callback(ctx: Hosted): Promise<Response> {
+  if (composioFor(ctx.env, 'stripe')) return composioCallback(ctx);
   const app = ctx.s.stripeApp && ctx.s.secrets ? requireStripeApp(ctx) : null;
   if (!app) return backHome(ctx, 'stripe', 'not_configured');
   const state = finishState(ctx, 'stripe');
@@ -116,6 +129,60 @@ export async function callback(ctx: Hosted): Promise<Response> {
   return backHome(ctx, 'stripe');
 }
 
+/**
+ * The Composio flow, both legs: `?via=composio` (from installLink) goes out
+ * to Composio's link; `?status=…&connected_account_id=…` is Composio sending
+ * the founder back. Either way the signed state and its cookie must match.
+ */
+async function composioCallback(ctx: Hosted): Promise<Response> {
+  if (!ctx.s.secrets) return backHome(ctx, 'stripe', 'not_configured');
+  const state = finishState(ctx, 'stripe');
+  if (!state) return backHome(ctx, 'stripe', 'state');
+  const q = ctx.url.searchParams;
+  const accountId = q.get('connected_account_id');
+  if (q.get('via') === 'composio' && !accountId) {
+    const back = new URL(callbackUrl(ctx, ROUTES.stripeCallback, false));
+    back.searchParams.set('state', q.get('state')!);
+    const { url } = await connectLink(ctx, 'stripe', state.user, back.toString());
+    return awayTo(url);
+  }
+  if (q.get('status') !== 'success' || !accountId) return backHome(ctx, 'stripe', 'denied');
+  if (!(await verifiedAccount(ctx, 'stripe', state.user, accountId))) return backHome(ctx, 'stripe', 'state');
+
+  const account = await stripeAccount(ctx, accountId);
+  if (!account.livemode && !ctx.s.allowTestMode) return backHome(ctx, 'stripe', 'testmode');
+  const stamp = new Date(ctx.now).toISOString();
+  await ctx.db.upsert(
+    'connections',
+    {
+      user_id: state.user,
+      provider: 'stripe',
+      account_id: account.id,
+      display_name: account.name,
+      livemode: account.livemode,
+      // Composio holds the tokens; we keep only which of its accounts is this founder's.
+      secret: null,
+      access_token: null,
+      access_expires_at: null,
+      token_version: randomInt(1, 1_000_000_000),
+      metadata: { via: 'composio', composio: accountId },
+      connected_at: stamp,
+      updated_at: stamp,
+    },
+    'user_id,provider',
+  );
+  await markJoined(ctx, state.user);
+  await ctx.db.remove('timelines', { user_id: state.user });
+  await track(ctx, state.user, 'connected_stripe', { livemode: account.livemode, via: 'composio' });
+  return backHome(ctx, 'stripe');
+}
+
+/** Off to a provider's page (Composio's link): https only, never cached, no Referer. */
+export function awayTo(url: string): Response {
+  if (!/^https:\/\//.test(url)) throw upstream("Couldn't start connecting. Try again in a moment.");
+  return new Response(null, { status: 302, headers: { Location: url, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
+}
+
 /** The founder's first real connection starts their back-pay window (see GAME_DESIGN, "Back pay"). */
 export async function markJoined(ctx: Hosted, userId: string) {
   const profile = await ctx.db.one<ProfileRow>('profiles', { user_id: userId });
@@ -136,6 +203,9 @@ const refreshing = new Map<string, Promise<string>>();
  * lands on the version we read, and a loser re-reads the winner's token.
  */
 export function accessToken(ctx: Hosted, row: ConnectionRow): Promise<string> {
+  // A Composio connection has no token of ours: Composio refreshes it. This
+  // only checks it still works, for the hourly look for broken connections.
+  if (composioAccount(row)) return ensureActive(ctx, 'stripe', row).then(() => '');
   const app = requireStripeApp(ctx);
   const ctxKey = `${row.user_id}:stripe`;
   // Any key still in rotation opens it; every refresh re-seals under the current key.
@@ -198,6 +268,8 @@ const reconnect = () => new HttpError(409, 'Your Stripe connection has expired. 
 
 /** Every subscription on the founder's account, read with their access token. */
 export async function founderSubscriptions(ctx: Hosted, row: ConnectionRow): Promise<StripeSubscription[]> {
+  const viaComposio = composioAccount(row);
+  if (viaComposio) return stripeSubscriptions(ctx, viaComposio);
   const token = await accessToken(ctx, row);
   return fetchStripeSubscriptions(token);
 }

@@ -20,7 +20,7 @@ export type NotifyEvent =
   | { kind: 'plan.payment_failed'; userId: string; ref?: string }
   | { kind: 'plan.canceled'; userId: string; endsAt: number | null; ref?: string }
   | { kind: 'plan.ended'; userId: string; ref?: string }
-  | { kind: 'connection.broken'; userId: string; provider: 'stripe' | 'github' | 'posthog'; ref?: string }
+  | { kind: 'connection.broken'; userId: string; provider: 'stripe' | 'github' | 'posthog' | 'ga4'; ref?: string }
   | { kind: 'account.deleted'; email: string }
   | { kind: 'access.invited'; email: string; ref?: string };
 

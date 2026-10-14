@@ -447,7 +447,7 @@ export const shortDate = (t: number) => SHORT.format(new Date(t));
 
 // ─── Lifecycle emails ─────────────────────────────────────────────────────
 
-const PROVIDER_NAMES = { stripe: 'Stripe', github: 'GitHub', posthog: 'PostHog' } as const;
+const PROVIDER_NAMES = { stripe: 'Stripe', github: 'GitHub', posthog: 'PostHog', ga4: 'Google Analytics' } as const;
 
 export function welcome(brand: Brand, x: { interval: 'month' | 'year' }): Email {
   return render(brand, {
@@ -536,11 +536,13 @@ export function connectionBroken(brand: Brand, x: { provider: keyof typeof PROVI
     stripe: 'This usually means the TinyTown app was uninstalled from your Stripe account, or its access was revoked.',
     github: 'This usually means the TinyTown GitHub App was uninstalled, or it lost access to your repository.',
     posthog: 'This usually means your PostHog key was rotated or deleted.',
+    ga4: 'This usually means TinyTown’s access was removed from your Google account.',
   }[x.provider];
   const what = {
     stripe: 'Until you reconnect, your city can’t see new revenue or customers.',
     github: 'Until you reconnect, new releases won’t show up in town.',
     posthog: 'Until you reconnect, your active-user count won’t update.',
+    ga4: 'Until you reconnect, your active-user count won’t update.',
   }[x.provider];
   return render(brand, {
     subject: `Reconnect ${name} to keep your city growing`,

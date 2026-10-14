@@ -1,6 +1,7 @@
 import { ROUTES, type ConfigResponse, type Provider } from '../src/api/contract.ts';
 import type { Timeline } from '../src/data/types.ts';
 import { checkAccess, resetAccessCaches } from './access.ts';
+import { composioFor, removeAccount } from './composio.ts';
 import { appUrl, checkout, plans, portal, resetBillingCaches, webhook } from './billing.ts';
 import { hosted, rateLimit, requireUser, resetContextCaches, type Ctx, type Hosted } from './context.ts';
 import { settings, type Env } from './env.ts';
@@ -11,10 +12,10 @@ import { HttpError, errorResponse, json, notConfigured, readJson } from './http.
 import { finishRequest, log, reportError } from './log.ts';
 import { backHome } from './oauth.ts';
 import { requirePaid, resetStateCaches, userState, type Part } from './state.ts';
-import { worldInfo } from './store.ts';
+import { worldInfo, type ConnectionRow } from './store.ts';
 import * as stripeApp from './stripe-app.ts';
 import { buildTimeline, readConfig } from './timeline.ts';
-import { setUsersSource } from './users.ts';
+import { ga4Callback, ga4Link, ga4PropertyList, setUsersSource } from './users.ts';
 import { getActions, me, patchWorld, postAction } from './world.ts';
 
 /**
@@ -69,6 +70,15 @@ async function route(ctx: Ctx): Promise<Response> {
     return json(await webhook(h));
   }
   // A browser lands on these, so failures go home with a message rather than as JSON.
+  if (path === ROUTES.ga4Callback) {
+    if (method !== 'GET') throw methodNotAllowed();
+    try {
+      return await ga4Callback(h);
+    } catch (err) {
+      await reportError(ctx, err, 'ga4 callback failed');
+      return backHome(h, 'ga4', 'upstream');
+    }
+  }
   if (path === ROUTES.stripeCallback || path === ROUTES.githubCallback) {
     if (method !== 'GET') throw methodNotAllowed();
     const provider = path === ROUTES.stripeCallback ? 'stripe' : 'github';
@@ -81,7 +91,7 @@ async function route(ctx: Ctx): Promise<Response> {
   }
 
   const handler = ROUTE_TABLE[path];
-  const connectDelete = /^\/api\/connect\/(stripe|github|posthog)$/.exec(path);
+  const connectDelete = /^\/api\/connect\/(stripe|github|posthog|ga4)$/.exec(path);
   if (!handler && !(connectDelete && method === 'DELETE')) throw new HttpError(404, 'Not found.', 'bad_request');
 
   const user = await requireUser(h);
@@ -159,6 +169,13 @@ const ROUTE_TABLE: Record<string, Record<string, Handler>> = {
       return json(body, 200, { 'Set-Cookie': setCookie });
     }),
   },
+  [ROUTES.connectGa4]: {
+    POST: paid(10, async (ctx, user) => {
+      const { body, setCookie } = ga4Link(ctx, user);
+      return json(body, 200, { 'Set-Cookie': setCookie });
+    }),
+  },
+  [ROUTES.ga4Properties]: { GET: paid(20, async (ctx, user) => json(await ga4PropertyList(ctx, user))) },
   [ROUTES.githubRepos]: { GET: paid(20, async (ctx, user) => json(await github.repos(ctx, user))) },
   [ROUTES.githubRepo]: { PUT: paid(10, async (ctx, user) => json(await github.setRepo(ctx, user, await readJson(ctx.req)))) },
   [ROUTES.users]: { PUT: paid(10, async (ctx, user) => json(await setUsersSource(ctx, user, await readJson(ctx.req)))) },
@@ -166,8 +183,13 @@ const ROUTE_TABLE: Record<string, Record<string, Handler>> = {
 
 /** `DELETE /api/connect/:provider`. The provider-side app stays installed; the founder can remove it there. */
 async function disconnect(ctx: Hosted, userId: string, provider: Provider): Promise<{ ok: true }> {
+  // A connection made through Composio: revoke Composio's copy of the tokens too.
+  if (provider !== 'posthog') {
+    const row = await ctx.db.one<ConnectionRow>('connections', { user_id: userId, provider });
+    if (row) await removeAccount(ctx, provider, row);
+  }
   await ctx.db.remove('connections', { user_id: userId, provider });
-  if (provider === 'posthog' && ctx.userState?.state.profile.users_source === 'posthog') {
+  if ((provider === 'posthog' || provider === 'ga4') && ctx.userState?.state.profile.users_source === provider) {
     await ctx.db.update('profiles', { user_id: userId }, { users_source: 'customers' });
   }
   await ctx.db.remove('timelines', { user_id: userId });
@@ -188,7 +210,13 @@ async function config(ctx: Ctx): Promise<ConfigResponse> {
     hosted: true,
     supabase: { url: s.supabase.url, anonKey: s.supabase.anonKey },
     plans: billingReady ? await plans(ctx) : [],
-    connect: { stripe: !!s.stripeApp && !!s.appUrl, github: !!s.githubApp && !!s.appUrl, posthog: !!s.secrets },
+    connect: {
+      stripe: (!!s.stripeApp || !!composioFor(ctx.env, 'stripe')) && !!s.appUrl,
+      github: (!!s.githubApp || !!composioFor(ctx.env, 'github')) && !!s.appUrl,
+      posthog: !!s.secrets,
+      ga4: !!composioFor(ctx.env, 'ga4') && !!s.appUrl && !!s.secrets,
+      via: { stripe: composioFor(ctx.env, 'stripe') ? 'composio' : 'native', github: composioFor(ctx.env, 'github') ? 'composio' : 'native' },
+    },
     captcha: ctx.env.TURNSTILE_SITE_KEY ? { provider: 'turnstile', siteKey: ctx.env.TURNSTILE_SITE_KEY } : null,
     access: ctx.env.ACCESS_MODE === 'waitlist' ? 'waitlist' : 'open',
     supportEmail: ctx.env.SUPPORT_EMAIL || null,

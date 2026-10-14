@@ -47,7 +47,7 @@ export type ConnectFailure =
   | 'not_configured'
   | 'invalid_request';
 
-const NAMES = { stripe: 'Stripe', github: 'GitHub' } as const;
+const NAMES = { stripe: 'Stripe', github: 'GitHub', ga4: 'Google Analytics' } as const;
 
 /**
  * What goes after `provider:` in `connect_error`. The app knows the short

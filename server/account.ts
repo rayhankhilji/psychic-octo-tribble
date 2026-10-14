@@ -1,3 +1,4 @@
+import { composioAccount, removeAccount } from './composio.ts';
 import { ROUTES, isPaid, type DeleteAccountResponse } from '../src/api/contract.ts';
 import { track } from './analytics.ts';
 import { hosted, rateLimit, requireUser, type Hosted } from './context.ts';
@@ -234,8 +235,10 @@ export async function deleteAccount(ctx: Hosted, user: AuthUser, body: Record<st
   // no API for the app's developer (Connect's /oauth/deauthorize is for
   // Connect platforms). Deleting our row drops the only copy of the refresh
   // token, and the last access token expires within the hour.
-  if (connections.some((c) => c.provider === 'stripe')) stillInstalled.push({ provider: 'stripe', url: STRIPE_APPS_PAGE });
-  const github = connections.find((c) => c.provider === 'github');
+  // Composio connections: revoke Composio's copy of the tokens (there's no app of ours installed to remove).
+  for (const c of connections) if (c.provider !== 'posthog' && composioAccount(c)) await removeAccount(ctx, c.provider, c);
+  if (connections.some((c) => c.provider === 'stripe' && !composioAccount(c))) stillInstalled.push({ provider: 'stripe', url: STRIPE_APPS_PAGE });
+  const github = connections.find((c) => c.provider === 'github' && !composioAccount(c));
   if (github && (await uninstallGithub(ctx, github)) === 'installed') stillInstalled.push({ provider: 'github', url: GITHUB_APPS_PAGE });
 
   // 3. Every row, in one transaction.

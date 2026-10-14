@@ -12,7 +12,7 @@ export interface ProfileRow {
   name: string;
   joined_at: number | null;
   last_seen: number | null;
-  users_source: 'customers' | 'manual' | 'posthog';
+  users_source: 'customers' | 'manual' | 'posthog' | 'ga4';
   users_manual: { t: number; value: number }[];
   created_at: string;
 }
@@ -31,7 +31,7 @@ export interface SubscriptionRow {
   comp?: boolean;
 }
 
-export type Provider = 'stripe' | 'github' | 'posthog';
+export type Provider = 'stripe' | 'github' | 'posthog' | 'ga4';
 
 export interface ConnectionRow {
   user_id: string;
@@ -113,13 +113,17 @@ export function planOf(sub: SubscriptionRow | null) {
   };
 }
 
-export function usersSourceOf(p: ProfileRow, posthog: ConnectionRow | undefined): UsersSource {
+export function usersSourceOf(p: ProfileRow, posthog: ConnectionRow | undefined, ga4?: ConnectionRow): UsersSource {
   if (p.users_source === 'manual' && p.users_manual.length) {
     const last = p.users_manual.at(-1)!;
     return { source: 'manual', value: last.value, updatedAt: last.t };
   }
   if (p.users_source === 'posthog' && posthog) {
     return { source: 'posthog', host: String(posthog.metadata.host ?? ''), projectId: posthog.account_id, connectedAt: ms(posthog.connected_at)! };
+  }
+  if (p.users_source === 'ga4' && ga4 && typeof ga4.metadata.property === 'string') {
+    const name = ga4.metadata.propertyName;
+    return { source: 'ga4', property: ga4.metadata.property, propertyName: typeof name === 'string' ? name : null, connectedAt: ms(ga4.connected_at)! };
   }
   return { source: 'customers' };
 }
@@ -131,8 +135,8 @@ export function connectionsOf(p: ProfileRow, rows: ConnectionRow[]): Connections
   return {
     stripe: stripe ? { account: stripe.account_id, name: stripe.display_name, livemode: !!stripe.livemode, connectedAt: ms(stripe.connected_at)! } : null,
     github: github
-      ? { installationId: Number(github.account_id), repo: typeof github.metadata.repo === 'string' ? github.metadata.repo : null, connectedAt: ms(github.connected_at)! }
+      ? { installationId: /^\d+$/.test(github.account_id) ? Number(github.account_id) : 0, repo: typeof github.metadata.repo === 'string' ? github.metadata.repo : null, connectedAt: ms(github.connected_at)! }
       : null,
-    users: usersSourceOf(p, by('posthog')),
+    users: usersSourceOf(p, by('posthog'), by('ga4')),
   };
 }

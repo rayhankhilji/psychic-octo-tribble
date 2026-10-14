@@ -2,14 +2,16 @@
  * Your account: the plan and when it renews, billing (Stripe's portal),
  * what's connected, the name on the HQ sign, and signing out.
  */
-import type { Api } from '../api/client.ts';
+import { ApiRequestError, type Api } from '../api/client.ts';
 import { isPaid, LEGAL, type ConfigResponse, type Connections, type EmailPrefs, type MeResponse, type Provider, type WorldInfo } from '../api/contract.ts';
 import { perInterval } from '../api/pricing.ts';
 import { markSvg } from './brand.ts';
 import { busy, focusFirst, longDate, makeDialog, message } from './dialogs.ts';
 import { escape, showModal } from './dom.ts';
 import { ICON } from './icons.ts';
-import { usersSummary } from './onboarding.ts';
+import type { Timeline } from '../data/types.ts';
+import { brandTile } from './brand-icons.ts';
+import { githubFacts, housingNeed, revenueFacts, shippingFacts, shortDate, shortId, statusPill, stripeFacts, usersBrand, usersSummary, viaOf, type ConnectorFacts } from './onboarding.ts';
 
 export interface AccountDeps {
   api: Api;
@@ -28,6 +30,17 @@ export interface AccountDeps {
   /** Off to the plain demo. */
   leave(): void;
 }
+
+const moneyOf = (n: number, currency: string) => {
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase(), maximumFractionDigits: 0 }).format(n);
+  } catch {
+    return `${Math.round(n).toLocaleString('en-US')} ${currency.toUpperCase()}`;
+  }
+};
+const monthYearOf = (t: number) => new Date(t).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+const PROVIDER_NAMES = { stripe: 'Stripe', github: 'GitHub', posthog: 'PostHog', ga4: 'Google Analytics' };
 
 const link = (href: string, text: string) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
 
@@ -49,6 +62,9 @@ export class AccountDialog {
   /** The account view, or the "delete your account" confirmation. */
   private view: 'account' | 'delete' | 'goodbye' = 'account';
   private stillInstalled: { provider: 'stripe' | 'github'; url: string }[] = [];
+  /** The numbers behind the connections (the city's own timeline), and whether it says a connection is dead. */
+  private data: { state: 'loading' } | { state: 'ready'; t: Timeline } | { state: 'error'; err: unknown } | null = null;
+  private manualSaved = false;
 
   constructor(deps: AccountDeps) {
     this.deps = deps;
@@ -63,6 +79,7 @@ export class AccountDialog {
       e.preventDefault();
       const form = e.target as HTMLFormElement;
       if (form.classList.contains('delete-form')) void this.deleteAccount(form);
+      else if (form.classList.contains('manual-form')) void this.saveManual(form);
       else void this.saveName(form);
     });
     this.d.addEventListener('change', (e) => {
@@ -77,6 +94,12 @@ export class AccountDialog {
         if (b) b.disabled = !ok;
         return;
       }
+      if (t.name === 'manual' && this.manualSaved) {
+        this.manualSaved = false;
+        const b = this.d.querySelector<HTMLButtonElement>('.manual-form button');
+        if (b) (b.classList.remove('done'), (b.innerHTML = '<span class="label">Update</span>'));
+        return;
+      }
       if (!this.nameSaved) return;
       this.nameSaved = false;
       const b = this.d.querySelector<HTMLButtonElement>('.name-form button');
@@ -89,10 +112,168 @@ export class AccountDialog {
     this.confirming = null;
     this.nameSaved = false;
     this.prefs = 'loading';
+    this.manualSaved = false;
     this.render();
     showModal(this.d);
     focusFirst(this.d, '[data-autofocus]');
     void this.loadPrefs();
+    void this.loadData();
+  }
+
+  /** What the connections are feeding the city. Only the Connections section re-renders, so focus stays put. */
+  private async loadData() {
+    const c = this.deps.me().connections;
+    if (!isPaid(this.deps.me().plan.status) || (!c.stripe && !c.github?.repo)) return void (this.data = null);
+    this.data = { state: 'loading' };
+    try {
+      this.data = { state: 'ready', t: await this.deps.api.timeline() };
+    } catch (err) {
+      this.data = { state: 'error', err };
+    }
+    this.refreshConnections();
+  }
+
+  private refreshConnections() {
+    const section = this.d.querySelector('[data-section=conn]');
+    if (!section || this.view !== 'account') return;
+    const active = document.activeElement as HTMLElement | null;
+    const key = active && section.contains(active) ? (active.dataset.act ?? active.getAttribute('name')) : null;
+    section.outerHTML = this.connectionsSection();
+    if (key) this.d.querySelector<HTMLElement>(`[data-section=conn] [data-act="${key}"], [data-section=conn] [name="${key}"]`)?.focus({ preventScroll: true });
+  }
+
+  /** Stripe is "connected" but the city can't read it: the server said reconnect. */
+  private get stripeBroken(): boolean {
+    return this.data?.state === 'error' && this.data.err instanceof ApiRequestError && this.data.err.code === 'not_connected' && !!this.deps.me().connections.stripe?.livemode;
+  }
+
+  private connectionsSection(): string {
+    const { connections: c, plan } = this.deps.me();
+    const paid = isPaid(plan.status);
+    const t = this.data?.state === 'ready' ? this.data.t : null;
+    const loading = this.data?.state === 'loading';
+    const scope = (f: ConnectorFacts) =>
+      `<details class="acct-scope"><summary>${f.readOnly ? `${ICON.lock}Read-only` : `${ICON.alert}Read and write`} · what it reads</summary><ul>${f.reads.map((r) => `<li>${ICON.check}<span>${r}</span></li>`).join('')}${f.never.map((r) => `<li class="no">${ICON.close}<span>${r}</span></li>`).join('')}</ul><p>${escape(f.grant)}</p></details>`;
+    const card = (key: string, brand: Parameters<typeof brandTile>[0], title: string, pill: string, detail: string, extra: string, actions: string, on: boolean, wide = '') => `
+      <li class="conn acct-cx ${on ? 'on' : ''}" data-conn="${key}">
+        ${brandTile(brand, 'md')}
+        <span class="conn-text"><span class="acct-cx-title"><b>${title}</b>${pill}</span><small>${detail}</small></span>
+        <span class="conn-actions">${actions}</span>
+        ${wide || extra ? `<span class="acct-cx-wide">${wide}${extra}</span>` : ''}
+      </li>`;
+    const found = (text: string) => `<span class="acct-found${loading ? ' is-loading' : ''}">${text}</span>`;
+    const confirm = (p: Provider, what: string) => `
+      <li class="conn-confirm" role="group" aria-label="Confirm disconnect">
+        ${ICON.alert}<span>${what}</span>
+        <button class="btn sm ghost" type="button" data-act="keep">Keep it</button>
+        <button class="btn sm danger" type="button" data-act="disconnect" data-provider="${p}" data-autofocus>Disconnect</button>
+      </li>`;
+
+    const sf = stripeFacts(viaOf(this.deps.config, 'stripe'));
+    let stripe: string;
+    if (c.stripe) {
+      const r = t ? revenueFacts(t) : null;
+      const broken = this.stripeBroken;
+      const who = `${escape(c.stripe.name ?? shortId(c.stripe.account))}${c.stripe.name ? ` · ${escape(shortId(c.stripe.account))}` : ''} · ${c.stripe.livemode ? 'Live mode' : 'Test mode'} · since ${shortDate(c.stripe.connectedAt)}`;
+      const wide = broken ? `<span class="acct-broken">${ICON.alert}<span>TinyTown can't read your subscriptions: the app was removed from your Stripe account, or its access expired. Your city and everything you built are safe; reconnect to bring it back.</span></span>` : '';
+      const extra = broken
+        ? ''
+        : `${r && r.since != null ? found(`<b class="num">${moneyOf(r.mrr, r.currency)}</b> MRR · <b class="num">${r.customers.toLocaleString('en-US')}</b> paying customers · since ${monthYearOf(r.since)}`) : loading ? found('Reading your subscriptions…') : ''}${scope(sf)}`;
+      stripe = card(
+        'stripe',
+        'stripe',
+        'Stripe',
+        statusPill(broken ? 'broken' : 'connected'),
+        who,
+        extra,
+        `<button class="btn sm ${broken ? 'primary' : 'ghost'}" type="button" data-act="reconnect-stripe" ${broken ? 'data-autofocus' : ''}>${broken ? `${ICON.refresh}<span class="label">Reconnect</span>` : 'Reconnect'}</button><button class="btn sm ghost" type="button" data-act="ask" data-provider="stripe">Disconnect</button>`,
+        !broken,
+        wide,
+      );
+    } else {
+      stripe = card('stripe', 'stripe', 'Stripe', '<span class="cx-status req">Required</span>', 'Not connected: your city runs on it', scope(sf), paid ? `<button class="btn sm" type="button" data-act="setup" data-step="1">Connect</button>` : '', false);
+    }
+
+    const gf = githubFacts(viaOf(this.deps.config, 'github'));
+    let github: string;
+    if (c.github) {
+      const sh = t ? shippingFacts(t) : null;
+      const extra = c.github.repo
+        ? `${sh ? found(`<b class="num">${sh.releases.toLocaleString('en-US')}</b> ${sh.releases === 1 ? 'release' : 'releases'}${sh.latest ? `, latest ${escape(sh.latest.name)}` : ''} · <b class="num">${sh.commits30.toLocaleString('en-US')}</b> commits in 30 days`) : loading ? found('Reading releases and commits…') : ''}${scope(gf)}`
+        : scope(gf);
+      github = card(
+        'github',
+        'github',
+        'GitHub',
+        statusPill(c.github.repo ? 'connected' : 'off', true).replace('Optional', 'Pick a repository'),
+        c.github.repo ? `${escape(c.github.repo)} · since ${shortDate(c.github.connectedAt)}` : 'Installed, no repository picked yet',
+        extra,
+        `<button class="btn sm ghost" type="button" data-act="setup" data-step="2">${c.github.repo ? 'Change' : 'Pick one'}</button><button class="btn sm ghost" type="button" data-act="ask" data-provider="github">Disconnect</button>`,
+        !!c.github.repo,
+      );
+    } else {
+      github = card('github', 'github', 'GitHub', statusPill('off', true), 'Not connected: releases add floors to your HQ', scope(gf), paid ? `<button class="btn sm" type="button" data-act="setup" data-step="2">Connect</button>` : '', false);
+    }
+
+    // Population: the source, what it counts today, and (for a number you set) a quick way to update it.
+    const u = c.users;
+    const last = t ? [...t.snapshots].reverse().find((x) => x.users != null) : null;
+    const residents = u.source === 'customers' ? (t?.snapshots.at(-1)?.customers ?? null) : (last?.users ?? (u.source === 'manual' ? u.value : null));
+    const mrr = t?.snapshots.at(-1)?.mrr ?? null;
+    const house =
+      residents != null
+        ? found(
+            `<b class="num">${residents.toLocaleString('en-US')}</b> residents${mrr != null ? ` · ${housingNeed(residents) <= mrr ? 'everyone has a home' : `homes for ${Math.max(100, Math.floor(mrr / 0.2)).toLocaleString('en-US')}`}` : ''}`,
+          )
+        : '';
+    const manual =
+      u.source === 'manual' && paid
+        ? `<form class="manual-form" novalidate><label class="field"><span class="sr-only">Monthly active users</span><input type="number" name="manual" min="0" step="1" inputmode="numeric" value="${u.value}" aria-label="Monthly active users"></label><button class="btn sm ${this.manualSaved ? 'done' : ''}" type="submit">${this.manualSaved ? `${ICON.check}<span class="label">Updated</span>` : '<span class="label">Update</span>'}</button></form>`
+        : '';
+    const usersTitle = u.source === 'customers' ? 'Active users' : u.source === 'manual' ? 'Active users' : 'Active users';
+    const users = card(
+      'users',
+      usersBrand(u),
+      usersTitle,
+      '',
+      escape(usersSummary(u)),
+      `${house}${manual}`,
+      paid ? `<button class="btn sm ghost" type="button" data-act="setup" data-step="3">Change</button>${u.source === 'posthog' ? '<button class="btn sm ghost" type="button" data-act="ask" data-provider="posthog">Disconnect</button>' : ''}` : '',
+      true,
+    );
+    return `<section class="acct-section" aria-labelledby="acct-conn" data-section="conn" ${loading ? 'aria-busy="true"' : ''}>
+        <h3 id="acct-conn">Connections</h3>
+        <ul class="conns">
+          ${stripe}${this.confirming === 'stripe' ? confirm('stripe', 'Disconnect Stripe? Your city stops following your revenue until you reconnect.') : ''}
+          ${github}${this.confirming === 'github' ? confirm('github', 'Disconnect GitHub? Releases and commits stop arriving; your HQ keeps the floors it has.') : ''}
+          ${users}${this.confirming === 'posthog' ? confirm('posthog', 'Disconnect PostHog? Your population goes back to counting paying customers, and the saved key is deleted.') : ''}
+        </ul>
+        <div class="acct-error" data-slot="conn"></div>
+      </section>`;
+  }
+
+  /** A number you set, updated in place: it counts from today, like the setup step. */
+  private async saveManual(form: HTMLFormElement) {
+    const input = form.querySelector<HTMLInputElement>('input[name=manual]')!;
+    const raw = input.value.trim();
+    this.slot('conn', '');
+    if (!/^\d+$/.test(raw)) {
+      this.slot('conn', message('bad', 'Enter your monthly active users as a whole number, like 12000.'));
+      return input.focus();
+    }
+    const done = busy(form.querySelector('button'), 'Updating…');
+    try {
+      const c = await this.deps.api.setUsers({ source: 'manual', value: Number(raw) });
+      this.deps.onConnections(c);
+      this.manualSaved = true;
+      this.live.textContent = `Active users set to ${Number(raw).toLocaleString('en-US')}, from today.`;
+      void this.loadData();
+      this.refreshConnections();
+      this.d.querySelector<HTMLElement>('.manual-form button')?.focus();
+    } catch (err) {
+      done();
+      this.slot('conn', message('bad', err instanceof Error ? err.message : "Couldn't update it. Try again."));
+    }
   }
 
   private async loadPrefs() {
@@ -141,7 +322,7 @@ export class AccountDialog {
     if (this.view === 'delete') return this.renderDelete();
     if (this.view === 'goodbye') return this.renderGoodbye();
     const me = this.deps.me();
-    const { plan, connections: c, user, world } = me;
+    const { plan, user, world } = me;
     const paid = isPaid(plan.status);
     const sale = this.deps.config.plans.find((p) => p.interval === plan.interval);
     const planName = plan.interval === 'year' ? 'Yearly' : plan.interval === 'month' ? 'Monthly' : 'No plan';
@@ -166,32 +347,6 @@ export class AccountDialog {
       : paid
         ? 'Active.'
         : 'Pick a plan to open your own city.';
-    const row = (icon: string, title: string, detail: string, actions: string, on: boolean, key: string) => `
-      <li class="conn ${on ? 'on' : ''}" data-conn="${key}">
-        <span class="tile ${on ? 'tone-good' : ''}">${icon}</span>
-        <span class="conn-text"><b>${title}</b><small>${detail}</small></span>
-        <span class="conn-actions">${actions}</span>
-      </li>`;
-    const confirm = (p: Provider, what: string) => `
-      <li class="conn-confirm" role="group" aria-label="Confirm disconnect">
-        ${ICON.alert}<span>${what}</span>
-        <button class="btn sm ghost" type="button" data-act="keep">Keep it</button>
-        <button class="btn sm danger" type="button" data-act="disconnect" data-provider="${p}" data-autofocus>Disconnect</button>
-      </li>`;
-    const stripe = c.stripe
-      ? row(ICON.card, 'Stripe', `${escape(c.stripe.name ? `${c.stripe.name} · ${c.stripe.account}` : c.stripe.account)}${c.stripe.livemode ? '' : ' · test mode'}`, `<button class="btn sm ghost" type="button" data-act="reconnect-stripe">Reconnect</button><button class="btn sm ghost" type="button" data-act="ask" data-provider="stripe">Disconnect</button>`, true, 'stripe')
-      : row(ICON.card, 'Stripe', 'Not connected: your city needs it', paid ? `<button class="btn sm" type="button" data-act="setup" data-step="1">Connect</button>` : '', false, 'stripe');
-    const github = c.github
-      ? row(ICON.github, 'GitHub', c.github.repo ? escape(c.github.repo) : 'Installed, no repository picked', `<button class="btn sm ghost" type="button" data-act="setup" data-step="2">${c.github.repo ? 'Change' : 'Pick one'}</button><button class="btn sm ghost" type="button" data-act="ask" data-provider="github">Disconnect</button>`, true, 'github')
-      : row(ICON.github, 'GitHub', 'Optional: releases and commits', paid ? `<button class="btn sm" type="button" data-act="setup" data-step="2">Connect</button>` : '', false, 'github');
-    const users = row(
-      ICON.users,
-      'Active users',
-      escape(usersSummary(c.users)),
-      paid ? `<button class="btn sm ghost" type="button" data-act="setup" data-step="3">Change</button>${c.users.source === 'posthog' ? '<button class="btn sm ghost" type="button" data-act="ask" data-provider="posthog">Disconnect</button>' : ''}` : '',
-      true,
-      'users',
-    );
     this.body.className = 'dialog-body account';
     this.body.innerHTML = `
       <header class="dialog-head">
@@ -213,17 +368,9 @@ export class AccountDialog {
           ${!paid ? `<button class="btn primary" type="button" data-act="plans" data-autofocus>Pick a plan</button>` : ''}
         </div>
         <div class="acct-error" data-slot="plan"></div>
-        ${paid ? `<p class="acct-fine">${ICON.external}<span>Opens Stripe's billing portal: update your card, switch between monthly and yearly, download invoices, or cancel.</span></p>` : ''}
+        ${paid ? `<p class="acct-fine">${ICON.external}<span>Opens Stripe's billing portal: update your card, download invoices, or cancel.</span></p>` : ''}
       </section>
-      <section class="acct-section" aria-labelledby="acct-conn">
-        <h3 id="acct-conn">Connections</h3>
-        <ul class="conns">
-          ${stripe}${this.confirming === 'stripe' ? confirm('stripe', 'Disconnect Stripe? Your city stops following your revenue until you reconnect.') : ''}
-          ${github}${this.confirming === 'github' ? confirm('github', 'Disconnect GitHub? Releases and commits stop arriving; your HQ keeps the floors it has.') : ''}
-          ${users}${this.confirming === 'posthog' ? confirm('posthog', 'Disconnect PostHog? Your population goes back to counting paying customers, and the saved key is deleted.') : ''}
-        </ul>
-        <div class="acct-error" data-slot="conn"></div>
-      </section>
+      ${this.connectionsSection()}
       ${
         paid
           ? `<section class="acct-section" aria-labelledby="acct-city">
@@ -408,7 +555,7 @@ export class AccountDialog {
         const c = this.deps.me().connections;
         this.deps.onConnections(provider === 'posthog' ? { ...c, users: { source: 'customers' } } : { ...c, [provider]: null });
         this.confirming = null;
-        this.live.textContent = `${{ stripe: 'Stripe', github: 'GitHub', posthog: 'PostHog' }[provider]} disconnected.`;
+        this.live.textContent = `${(PROVIDER_NAMES as Record<string, string>)[provider] ?? 'That'} disconnected.`;
         this.render();
         focusFirst(this.d, `[data-conn=${provider === 'posthog' ? 'users' : provider}] button`);
       } catch (err) {

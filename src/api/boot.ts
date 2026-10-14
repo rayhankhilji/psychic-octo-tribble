@@ -43,10 +43,10 @@ export interface ReturnState {
   connectError: { provider: Provider | null; message: string } | null;
 }
 
-const PROVIDERS: readonly Provider[] = ['stripe', 'github', 'posthog'];
+const PROVIDERS: readonly Provider[] = ['stripe', 'github', 'posthog', 'ga4'];
 const asProvider = (v: string | null | undefined): Provider | null => ((PROVIDERS as readonly string[]).includes(v ?? '') ? (v as Provider) : null);
 
-const NAMES: Record<Provider, string> = { stripe: 'Stripe', github: 'GitHub', posthog: 'PostHog' };
+const NAMES: Record<Provider, string> = { stripe: 'Stripe', github: 'GitHub', posthog: 'PostHog', ga4: 'Google Analytics' };
 
 /** Known reasons an install can fail, in plain words. */
 const CONNECT_ERRORS: Record<string, (p: string) => string> = {
@@ -119,7 +119,7 @@ export function decideOpening(screen: BootScreen, ret: ReturnState, me: MeRespon
   if (screen.kind === 'demo' && screen.cta === 'waitlist') return { dialog: 'waitlist' };
   if (opts.signInError && !me) return { dialog: 'signin', error: opts.signInError };
   if (ret.checkout === 'cancel' && me && !isPaid(me.plan.status)) return { dialog: 'plan', note: 'checkout-cancel' };
-  const stepOf = (p: Provider | null): 1 | 2 | 3 => (p === 'github' ? 2 : p === 'posthog' ? 3 : 1);
+  const stepOf = (p: Provider | null): 1 | 2 | 3 => (p === 'github' ? 2 : p === 'posthog' || p === 'ga4' ? 3 : 1);
   if (ret.connectError && me) return { dialog: 'onboard', welcome: false, step: stepOf(ret.connectError.provider), error: ret.connectError.message };
   if (ret.connected && me) {
     // Stripe done: on to GitHub. GitHub installed: stay there to pick a repository.

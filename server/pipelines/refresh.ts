@@ -1,4 +1,5 @@
 import { DAY, startOfDay, type Timeline } from '../../src/data/types.ts';
+import { composioAccount, ensureActive } from '../composio.ts';
 import type { Hosted } from '../context.ts';
 import { decrypt } from '../crypto.ts';
 import { decryptionKeys } from '../env.ts';
@@ -171,11 +172,16 @@ async function brokenProviders(ctx: Hosted, profile: ProfileRow, rows: Connectio
     try {
       if (row.provider === 'stripe') {
         // Test-mode connections are ignored by the build (unless ALLOW_TEST_MODE), not broken.
-        if (!(row.livemode || ctx.s.allowTestMode) || !ctx.s.stripeApp) continue;
+        if (!(row.livemode || ctx.s.allowTestMode) || (!ctx.s.stripeApp && !composioAccount(row))) continue;
+        // Composio connections are checked with Composio (accessToken does that for them).
         await accessToken(ctx, row);
       } else if (row.provider === 'github') {
-        if (!ctx.s.githubApp || typeof row.metadata.repo !== 'string') continue;
-        await installationToken(ctx.s.githubApp, row.account_id, ctx.now);
+        if (typeof row.metadata.repo !== 'string') continue;
+        if (composioAccount(row)) await ensureActive(ctx, 'github', row);
+        else if (ctx.s.githubApp) await installationToken(ctx.s.githubApp, row.account_id, ctx.now);
+      } else if (row.provider === 'ga4') {
+        if (profile.users_source !== 'ga4') continue;
+        await ensureActive(ctx, 'ga4', row);
       } else if (row.provider === 'posthog') {
         // Only counts while it's the population source; otherwise the build never uses it.
         if (profile.users_source !== 'posthog' || !row.secret || !ctx.s.secrets) continue;

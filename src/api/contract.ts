@@ -29,8 +29,13 @@ export interface ConfigResponse {
   supabase: { url: string; anonKey: string } | null;
   /** Plans on sale. Amounts in minor units (cents). Empty when billing isn't configured. */
   plans: Plan[];
-  /** Which ways to connect data are set up on this server. */
-  connect: { stripe: boolean; github: boolean; posthog: boolean };
+  /**
+   * Which ways to connect data are set up on this server. `via` says whether
+   * Stripe and GitHub go through our own apps (native) or Composio, so the
+   * setup screens can say exactly what access is granted (docs/CONNECTORS.md).
+   * `ga4`: Google Analytics, through Composio, as a source of active users.
+   */
+  connect: { stripe: boolean; github: boolean; posthog: boolean; ga4?: boolean; via?: { stripe: ConnectVia; github: ConnectVia } };
   /** Bot check on sign-in (Supabase's captcha support), when configured. The browser passes the token to Supabase. */
   captcha?: { provider: 'turnstile'; siteKey: string } | null;
   /** `open`: anyone can sign up and pay. `waitlist`: only invited emails can (403 `not_invited` otherwise). */
@@ -75,6 +80,8 @@ export interface TelemetryReport {
 
 export type PlanInterval = 'month' | 'year';
 
+export type ConnectVia = 'native' | 'composio';
+
 export interface Plan {
   interval: PlanInterval;
   amount: number;
@@ -103,7 +110,8 @@ export interface Connections {
 export type UsersSource =
   | { source: 'customers' }
   | { source: 'manual'; value: number; updatedAt: number }
-  | { source: 'posthog'; host: string; projectId: string; connectedAt: number };
+  | { source: 'posthog'; host: string; projectId: string; connectedAt: number }
+  | { source: 'ga4'; property: string; propertyName: string | null; connectedAt: number };
 
 export interface WorldInfo {
   /** Seeds the founder's map: same size and plot count as everyone else, a different layout. */
@@ -155,7 +163,7 @@ export interface RedirectResponse {
 /** `POST /api/connect/stripe` → RedirectResponse (Stripe App install link). Callback: `GET /api/connect/stripe/callback`. */
 /** `POST /api/connect/github` → RedirectResponse (GitHub App install). Callback: `GET /api/connect/github/callback`. */
 /** `DELETE /api/connect/:provider` → { ok: true }. Disconnecting PostHog puts the population back on customers. */
-export type Provider = 'stripe' | 'github' | 'posthog';
+export type Provider = 'stripe' | 'github' | 'posthog' | 'ga4';
 
 /** `GET /api/connect/github/repos` → { repos } (repositories the installation can see). */
 export interface ReposResponse {
@@ -167,11 +175,33 @@ export interface RepoRequest {
   repo: string;
 }
 
-/** `PUT /api/connect/users` → Connections. Manual number, PostHog (key stays server-side), or back to customers. */
+/**
+ * `PUT /api/connect/users` → Connections. Manual number, PostHog (key stays
+ * server-side), a Google Analytics property, or back to customers. With
+ * `test: true` (PostHog, GA4) the server checks the source and saves nothing,
+ * answering UsersTestResult instead.
+ */
 export type UsersRequest =
   | { source: 'customers' }
   | { source: 'manual'; value: number }
-  | { source: 'posthog'; host: string; projectId: string; apiKey: string };
+  | { source: 'posthog'; host: string; projectId: string; apiKey: string; test?: boolean }
+  | { source: 'ga4'; property: string; propertyName?: string; test?: boolean };
+
+/** What "Test connection" answers: the source's latest monthly active users, nothing saved. */
+export interface UsersTestResult {
+  ok: true;
+  source: 'posthog' | 'ga4';
+  monthlyActiveUsers: number | null;
+  /** That day (UTC ms). */
+  asOf: number | null;
+  /** Days of history the source returned. */
+  days: number;
+}
+
+/** `GET /api/connect/ga4/properties` → the GA4 properties the founder's Google account can read. */
+export interface Ga4PropertiesResponse {
+  properties: { id: string; name: string; account: string }[];
+}
 
 /** Where an OAuth callback sends the browser back to: `/?connected=stripe`, or `/?connect_error=...`. */
 export const RETURN_PARAMS = { connected: 'connected', error: 'connect_error', checkout: 'checkout' } as const;
@@ -192,6 +222,10 @@ export const ROUTES = {
   githubRepos: '/api/connect/github/repos',
   githubRepo: '/api/connect/github/repo',
   users: '/api/connect/users',
+  /** Google Analytics through Composio: `POST` → RedirectResponse; callback; `GET` properties. */
+  connectGa4: '/api/connect/ga4',
+  ga4Callback: '/api/connect/ga4/callback',
+  ga4Properties: '/api/connect/ga4/properties',
   account: '/api/account',
   accountExport: '/api/account/export',
   telemetry: '/api/telemetry',

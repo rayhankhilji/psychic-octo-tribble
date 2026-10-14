@@ -35,7 +35,7 @@ describe('/api/config', () => {
         { interval: 'month', amount: 1200, currency: 'usd' },
         { interval: 'year', amount: 9900, currency: 'usd' },
       ],
-      connect: { stripe: true, github: true, posthog: true },
+      connect: { stripe: true, github: true, posthog: true, ga4: false, via: { stripe: 'native', github: 'native' } },
       captcha: null,
       access: 'open',
       supportEmail: null,

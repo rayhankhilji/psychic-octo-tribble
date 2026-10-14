@@ -70,7 +70,7 @@ export function decrypt(sealed: string, keys: string | readonly string[], contex
 export interface OAuthState {
   /** Supabase user id the flow was started for. */
   user: string;
-  provider: 'stripe' | 'github';
+  provider: 'stripe' | 'github' | 'ga4';
   /** Expiry, ms since epoch. */
   exp: number;
   /** Random value also kept in an HttpOnly cookie, tying the callback to the browser that started it. */
