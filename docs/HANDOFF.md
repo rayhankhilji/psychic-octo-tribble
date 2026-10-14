@@ -105,6 +105,14 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
 - **Email and static pages:** a masthead with the skyline, a ticket-like invite with a picture of the demo city, a digest led by its numbers, legal pages with contents and print styles, a 404 that builds itself.
 - **Fog over locked land** (`src/render/fog.ts`): see the fog commit.
 
+**Build wave (2026-10-14):** the owner kept the price in the invite email and said "continue building". Seven agents, each in its own files:
+
+- **The moon trip** (`src/render/moonscene.ts`): a ~30 s cinematic from lift-off to the founder's moon house and back; skippable; `?moon`.
+- **Sound** (`src/audio/`): synthesised ambience and event sounds, off by default (speaker button or M).
+- **Growth clip** (`src/ui/recap*.ts`): Share → a 15 s square or vertical video of the city growing with the real numbers, filmed frame by frame (WebCodecs → MP4/WebM).
+- **Database load:** one `user_state()` call per request (migration 0007); a session is 13 calls instead of 34. Ship 0007 first.
+- **Scenery, landmarks, models:** lamp pools at night, the Marina, Golden Gate Park, the airport, the Palace of Fine Arts, City Hall, floodlit landmarks, the island's villa and grounds, over-budget models trimmed. Grown city ~247 draw calls.
+
 Still open with the owner: whether the public GitHub repository should stay public, the legal decisions in LAUNCH.md, and the two account-deletion questions in TODO.
 
 **Headless gotcha learned:** homes build a few per frame; SwiftShader frames are slow, so screenshot tools call `city.finishBuilding()` after scrubbing (`tools/playwright.mjs`), otherwise shots catch a half-built city.
