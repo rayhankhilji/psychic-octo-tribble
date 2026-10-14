@@ -28,6 +28,14 @@ Built and committed (2026-10-13): accounts, billing, the paywall, onboarding, th
 - [x] Fewer database calls per visit (reads rate-limited in memory; lastSeen written once a day in one call).
 - [ ] Known gaps: founders must remove the Stripe App themselves after deleting; per-instance limits on telemetry; `style-src 'unsafe-inline'` (inline `style=` attributes in the HUD). Several cities on one Stripe account is allowed on purpose: co-founders share one company account.
 
+## P0: Before launch (2026-10-14)
+
+- [ ] **Owner: connect the new Supabase and Vercel** (connectors at claude.ai/customize/connectors, or `SUPABASE_ACCESS_TOKEN` / `VERCEL_TOKEN` in the environment's secrets), then a new session can create the database, run migrations 0001–0008, set env vars and deploy.
+- [ ] **Owner: say "push to main"** (a production deploy; `main` is behind this branch). Switch GitHub's default branch to `main`.
+- [ ] **A real-device pass** on a GPU laptop and a phone: the flicker fix, the grand opening, the tour, settings, the black-at-night phone render seen once in SwiftShader, the growth clip's MP4 path on Safari, sound by ear.
+- [ ] **Optional:** GA4 through Composio (Composio Pro, an auth config restricted to `analytics.readonly`, `CONNECT_VIA=composio`). Amplitude and Mixpanel are possible later; Plausible never (its daily salt inflates users).
+- [ ] Left from this wave: GTAO noise crawls faintly when panning at High (needs world-anchored noise in the AO pass); the plane prices ($12M/$30M/$50M) deviate from the gate-scaling rule on purpose; the ceremony's crowd could scale with real customers.
+
 ## P1: Design pass follow-ups (2026-10-13)
 
 - [x] **Re-render the launch images after the fog change** (done; rerun after big visual changes): `node tools/brand-assets.mjs social --base=<dev url>` (the social kit) and `node tools/email-assets.mjs` (the invite's city picture) still show the old cloud look.

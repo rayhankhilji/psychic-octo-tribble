@@ -115,6 +115,17 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
 - **Database load:** one `user_state()` call per request (migration 0007); a session is 13 calls instead of 34. Ship 0007 first.
 - **Scenery, landmarks, models:** lamp pools at night, the Marina, Golden Gate Park, the airport, the Palace of Fine Arts, City Hall, floodlit landmarks, the island's villa and grounds, over-budget models trimmed. Grown city ~247 draw calls.
 
+**Launch-readiness wave (2026-10-14, evening):** the owner asked for the flicker fix, settings, a guided onboarding, an inauguration per founder, connectors, a new price and an easier ladder. Done and committed:
+
+- **Pricing:** $29 a year, annual only (`plans.ts`/`plans.css` ticket, `stripe-setup.mjs` moves the lookup key, Adaptive Pricing for local currency). Old subscribers keep renewing.
+- **Ladder:** studio $10, bungalow $50, Hills $250, estate $1k, island $5k, moon $10k; `easeMrr()` maps every other gate (`src/game/catalog.ts`). The plain demo reaches the moon on day 404.
+- **Settings** (`src/ui/settings*.ts`, gear or `,`): Automatic quality stays the default; High/Balanced/Battery saver, tilt-shift, shadows, sound and volume, time of day, reduce motion, replay the tour.
+- **Guided tour** (`src/ui/tour.ts`, `?tour`): ten spotlight steps with real numbers; "Press here" waits for the action.
+- **Grand opening** (`src/render/ceremony.ts`, `src/ui/ceremony.ts`, `?inaugurate`): a ribbon cutting on Civic Center Plaza the first time a founder's city opens, then the tour.
+- **Connectors** (`docs/CONNECTORS.md`): crafted cards with live numbers; Composio evaluated: it has the data, but Stripe and GitHub through it need write access, so they stay native; Google Analytics 4 through Composio behind `CONNECT_VIA=composio` (migration 0008).
+- **Night flicker** fixed at the root (`SteadyBloom`, slow window changes, calm beacons, minimum light-point size).
+- The island moved far out into the bay and lost its lighthouse.
+
 Still open with the owner: whether the public GitHub repository should stay public, the legal decisions in LAUNCH.md, and the two account-deletion questions in TODO.
 
 **Headless gotcha learned:** homes build a few per frame; SwiftShader frames are slow, so screenshot tools call `city.finishBuilding()` after scrubbing (`tools/playwright.mjs`), otherwise shots catch a half-built city.
