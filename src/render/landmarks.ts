@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLOW, GeoBuilder, type ColorLike, type Facing } from './geo.ts';
 import { PALETTE } from './palette.ts';
-import { BAY_APPROACH, EMBARCADERO, LANDMARKS, PRESIDIO_PKWY, SEA, terrainHeight } from '../world/map.ts';
-import { rng } from '../world/rng.ts';
+import { Kit, neonOf, pixelText, textWidth } from './towers.ts';
+import { BAY_APPROACH, EMBARCADERO, LANDMARKS, PRESIDIO_PKWY, RUNWAY, SEA, fbm, terrainHeight } from '../world/map.ts';
+import { pick, rng } from '../world/rng.ts';
 import { worldSeed } from '../world/seed.ts';
 
 const ORANGE = 0xc43a2a;
@@ -682,15 +683,127 @@ function waldoTunnel(b: GeoBuilder, x: number, z: number, deckY: number) {
     // …and down the jambs
     for (const s of [-1, 1]) b.transformed(new THREE.BoxGeometry(0.012, y1 - deckY, 0.045).translate(0.061, (y1 + deckY) / 2, s * (r0 + 0.0225)), m, c);
   });
-  // A short concrete hood back into the hill, where the headland is too low to cover the bore
-  let hood = 0.6;
-  for (let d = 0.6; d < 1.2; d += 0.1) {
-    hood = d;
-    if (terrainHeight(x, z + d) > top - 0.2) break;
+  // Where the headland is too low to cover the bore, it was covered for it: a cut-and-cover vault
+  // under an earth berm planted like the hill, so from the city side the bridge runs into a
+  // grassy brow over the headwall rather than into a concrete box.
+  berm(b, x, z, 0, 1, top - 0.07, { u: 1.1, v: -0.05, k: 0.75 }, 0xd8d2c4);
+  // Lanterns on the headwall either side of the arch
+  for (const s of [-1, 1]) {
+    b.box(0.04, 0.03, 0.05, x + s * 0.88, deckY + 0.62, z - 0.03, 0x3a3631);
+    b.box(0.05, 0.07, 0.05, x + s * 0.88, deckY + 0.65, z - 0.04, LAMP, true);
   }
-  b.transformed(new THREE.BoxGeometry(hood, top - deckY + 0.2, 1.9).translate(-0.4 - hood / 2, (top + deckY - 0.4) / 2, 0), m, 0xcfc8b8);
-  b.transformed(new THREE.BoxGeometry(hood + 0.04, 0.05, 2.0).translate(-0.4 - hood / 2, top - 0.15, 0), m, 0xb8b0a0);
-  for (const s of [-1, 1]) wingWall(b, x + s * 1.1, z - 0.05, x + s * 2.1, z + 0.7, top - 0.1, 0xd8d2c4);
+}
+
+/**
+ * Earth heaped over a tunnel's hood: level just under the headwall's coping
+ * over the bore, rounding over its shoulders and running down to meet the
+ * hillside, and the wing walls either side of the portal that hold it back,
+ * their copings following the bank down until it meets the ground. Coloured
+ * like the headlands' summer grass, sage and scrub. The portal stands at
+ * (x, z) and (bx, bz) points from it into the hill; the wing walls leave
+ * the headwall at `wing.u` either side of the bore, `wing.v` in front of
+ * it, and splay back `wing.k` per unit outward.
+ */
+function berm(b: GeoBuilder, x: number, z: number, bx: number, bz: number, crest: number, wing: { u: number; v: number; k: number }, wallColor: ColorLike) {
+  const step = 0.1;
+  const half = 0.8;
+  const deep = 0.6;
+  const front = 0.3;
+  const batter = 1.5;
+  // Local frame: u across the portal, v back into the hill.
+  const ax = bz;
+  const az = -bx;
+  const world = (u: number, v: number): [number, number] => [x + u * ax + v * bx, z + u * az + v * bz];
+  const surface = (u: number, v: number) => {
+    const du = Math.max(0, Math.abs(u) - half);
+    const dv = Math.max(0, v - front - deep);
+    const d = Math.hypot(du, dv);
+    // A rounded shoulder, then a steady batter down to the ground.
+    const r = 0.3;
+    return crest - batter * (d < r ? (d * d) / (2 * r) : d - r / 2);
+  };
+  // The wing walls' line: the earth stands only behind them and the headwall, and drops
+  // away steeply just behind their line so its edge follows the wall, not the grid.
+  const wallV = (u: number) => wing.v + (Math.abs(u) - wing.u) * wing.k;
+  const edge = (u: number) => (Math.abs(u) <= wing.u ? front : Math.max(front - (Math.abs(u) - wing.u) * 4, wallV(u) + 0.08));
+  const height = (u: number, v: number) => surface(u, v) - Math.max(0, edge(u) - v) * 6;
+  const nx = Math.round(5.6 / step);
+  const nz = Math.round(3.4 / step);
+  const pos: number[] = [];
+  const col: number[] = [];
+  const gold = new THREE.Color(0xd2b56e);
+  const straw = new THREE.Color(0xc8a862);
+  const sage = new THREE.Color(0x98a568);
+  type V = { px: number; pz: number; y: number; up: boolean; c: THREE.Color };
+  const vert = (i: number, j: number): V => {
+    const u = -2.8 + i * step;
+    // Rows run parallel to the bank's front edge, so the edge is a clean line rather than steps.
+    const v = edge(u) - 0.5 + j * step;
+    const [px, pz] = world(u, v);
+    const g = terrainHeight(px, pz);
+    const h = height(u, v);
+    const up = h > g;
+    // The terrain's own summer palette, smoothly, vertex by vertex
+    const n = 0.5 + 0.5 * fbm(px * 0.35, pz * 0.35, 3);
+    const fine = 0.5 + 0.5 * fbm(px * 1.7 + 11, pz * 1.7 - 4, 2);
+    const c = straw.clone().lerp(gold, Math.min(1, Math.max(0, (fine - 0.45) * 4)));
+    c.lerp(sage, Math.max(0, Math.min(0.6, (n - 0.5) * 2.4)));
+    // Below ground the bank keeps its own shape (down to a floor), so where it meets the hill follows the terrain, not the grid.
+    return { px, pz, y: Math.max(h, g - 0.3), up, c };
+  };
+  const grid: V[][] = [];
+  for (let i = 0; i <= nx; i++) {
+    grid.push([]);
+    for (let j = 0; j <= nz; j++) grid[i]!.push(vert(i, j));
+  }
+  const tri3 = (...t: V[]) => {
+    if (!t.some((q) => q.up)) return;
+    for (const q of t) {
+      pos.push(q.px, q.y, q.pz);
+      col.push(q.c.r, q.c.g, q.c.b);
+    }
+  };
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < nz; j++) {
+      const p00 = grid[i]![j]!;
+      const p10 = grid[i + 1]![j]!;
+      const p11 = grid[i + 1]![j + 1]!;
+      const p01 = grid[i]![j + 1]!;
+      // Wound to face up (the frame is right-handed).
+      tri3(p00, p01, p10);
+      tri3(p10, p01, p11);
+    }
+  }
+  if (pos.length) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    b.raw(g, 'solid');
+  }
+  // Wing walls: out from the headwall's corners until the bank behind them has come down to the ground
+  for (const s of [-1, 1]) {
+    const du = s / Math.hypot(1, wing.k);
+    const dv = wing.k / Math.hypot(1, wing.k);
+    let len = 1.0;
+    for (; len < 3.6; len += 0.1) {
+      const u = s * wing.u + du * len;
+      const v = wing.v + dv * len;
+      const [px, pz] = world(u, v + 0.1);
+      if (surface(u, v + 0.1) < terrainHeight(px, pz) + 0.05) break;
+    }
+    const [x0, z0] = world(s * wing.u, wing.v);
+    const [x1, z1] = world(s * wing.u + du * len, wing.v + dv * len);
+    const path = road([[x0, z0], [x1, z1]], 0, () => 0, 0.12);
+    const top = (q: Sample) => {
+      const t = q.s / Math.max(0.01, len);
+      const u = s * wing.u + du * len * t;
+      const v = wing.v + dv * len * t;
+      return Math.max(terrainHeight(q.x, q.z) + 0.06, Math.min(crest + 0.05, surface(u, v + 0.1) + 0.05));
+    };
+    sweep(b, path, (q) => rect(-0.07, 0.07, terrainHeight(q.x, q.z) - 0.5, top(q)), wallColor);
+    sweep(b, path, (q) => rect(-0.09, 0.09, top(q), top(q) + 0.04), SHADE);
+  }
 }
 
 // ─── Bay Bridge ─────────────────────────────────────────────────────────────
@@ -814,25 +927,47 @@ const reversedWay = (w: Way[]): Way[] => [...w].reverse().map((q) => ({ ...q, tx
  */
 function anchorage(b: GeoBuilder, x: number, z: number, base: number) {
   const w = 1.5;
+  const recess = 0xb0a898;
+  const top = BB_UP + 1.0;
   b.box(w + 0.3, 0.3, 2.7, x, base - 0.2, z, SHADE);
   b.box(w, BB_LOW - 0.32 - base, 2.3, x, base, z, CONCRETE);
   for (const s of [-1, 1]) {
     const wz = z + s * 0.94;
-    b.box(w, BB_UP + 1.0 - base, 0.44, x, base, wz, CONCRETE);
-    // Fluting on the outer face and the ends
-    for (let k = -2; k <= 2; k++) b.box(0.1, BB_UP + 0.6 - base, 0.03, x + k * 0.28, base + 0.2, z + s * 1.165, SHADE);
-    for (const e of [-1, 1]) b.box(0.03, BB_UP + 0.6 - base, 0.12, x + e * (w / 2 + 0.01), base + 0.2, wz, SHADE);
+    const face = z + s * 1.16;
+    b.box(w, top - base, 0.44, x, base, wz, CONCRETE);
+    // Art deco piers up the outer face: proud pilasters with deep shadowed panels between,
+    // the corner piers rising past the parapet like the real anchorage's.
+    for (let k = -2; k <= 2; k++) {
+      const px = x + k * 0.33;
+      const corner = Math.abs(k) === 2;
+      b.box(corner ? 0.2 : 0.12, top - base + (corner ? 0.22 : -0.05), 0.06, px + (corner ? -Math.sign(k) * 0.04 : 0), base, face + s * 0.03, CONCRETE);
+      if (k < 2) b.box(0.18, top - base - 0.5, 0.02, px + 0.165, base + 0.3, face + s * 0.005, recess);
+    }
+    // The ends: two fluted bands either side of a recessed panel
+    for (const e of [-1, 1]) {
+      const ex = x + e * (w / 2 + 0.01);
+      b.box(0.02, top - base - 0.5, 0.16, ex, base + 0.3, wz, recess);
+      for (const d of [-0.15, 0.15]) b.box(0.05, top - base - 0.1, 0.07, ex + e * 0.015, base, wz + d, CONCRETE);
+    }
   }
+  // The lintel over the decks, a stepped crown and the cable housings the main cables bed into
   b.box(w, 0.5, 2.32, x, BB_UP + 0.5, z, CONCRETE);
-  b.box(w + 0.1, 0.07, 2.42, x, BB_UP + 1.0, z, SHADE);
-  b.box(w - 0.2, 0.12, 2.1, x, BB_UP + 1.07, z, CONCRETE);
-  // Cable housings on top, where the main cables bed into the concrete
-  for (const s of [-1, 1]) b.box(0.6, 0.16, 0.26, x, BB_UP + 1.19, z + s * 0.68, 0xb4ada0);
+  for (const e of [-1, 1]) for (let k = -2; k <= 2; k++) b.box(0.02, 0.36, 0.12, x + e * (w / 2 + 0.01), BB_UP + 0.57, z + k * 0.22, recess);
+  b.box(w + 0.1, 0.07, 2.42, x, top, z, SHADE);
+  b.box(w - 0.2, 0.14, 2.1, x, top + 0.07, z, CONCRETE);
+  b.box(w - 0.5, 0.12, 1.7, x, top + 0.21, z, CONCRETE);
+  b.box(w - 0.46, 0.03, 1.74, x, top + 0.33, z, SHADE);
+  for (const s of [-1, 1]) {
+    b.box(0.6, 0.16, 0.26, x, top + 0.19, z + s * 0.68, 0xb4ada0);
+    // Aviation lights on the corner piers
+    b.blob(0.04, x + (w / 2 - 0.12), top + 0.28, z + s * 1.2, RED_LIGHT, true);
+    b.blob(0.04, x - (w / 2 - 0.12), top + 0.28, z + s * 1.2, RED_LIGHT, true);
+  }
 }
 
 /** Runs along x at z = bayBridge.z, from Rincon Hill to Yerba Buena and on to Oakland. */
 export function bayBridge(): BayBridge {
-  const b = new GeoBuilder();
+  const b = new Kit();
   const L = bbLayout();
   const { z, xw, xe, sx, towers } = L;
   const top = 7.2;
@@ -971,10 +1106,52 @@ export function bayBridge(): BayBridge {
     }
     if (wet) b.box(0.5, 0.14, 1.5, x, SEA - 0.08, z, CONCRETE);
   }
-  // Oakland: an abutment where the skyway meets the shore
+  // Oakland: the skyway lands on an abutment with wing walls stepping down to the shore,
+  // then the decks part for the freeways, under a sign gantry, with lamps all the way.
   {
     const g = terrainHeight(L.xl, z);
-    b.box(0.4, 0.4, 1.7, L.xl - 0.1, g - 0.35, z, CONCRETE);
+    b.box(0.42, 0.5, 1.9, L.xl - 0.12, g - 0.45, z, CONCRETE);
+    b.box(0.48, 0.04, 1.96, L.xl - 0.12, g + 0.03, z, SHADE);
+    for (const s of [-1, 1]) {
+      const wz = z + s * 0.98;
+      b.box(0.9, 0.42, 0.1, L.xl + 0.2, terrainHeight(L.xl + 0.2, wz) - 0.38, wz, CONCRETE);
+      b.box(0.94, 0.03, 0.14, L.xl + 0.2, terrainHeight(L.xl + 0.2, wz) + 0.04, wz, SHADE);
+    }
+    roadLamps(b, L.wbOak, 0.36, 1.1);
+    roadLamps(b, L.ebOak, 0.36, 1.1);
+    // The gantry over both decks just before the shore: westbound signs face the traffic
+    // heading for the bridge, eastbound ones the traffic coming off it.
+    const gx = L.xl - 1.1;
+    const w = sampleAt(L.wb, L.wb.reduce((best, q) => (Math.abs(q.x - gx) < Math.abs(best.x - gx) ? q : best), L.wb[0]!).s);
+    const e = sampleAt(L.eb, L.eb.reduce((best, q) => (Math.abs(q.x - gx) < Math.abs(best.x - gx) ? q : best), L.eb[0]!).s);
+    const top = Math.max(w.y, e.y) + 0.5;
+    for (const [pz, py] of [[w.z - 0.38, w.y], [e.z + 0.38, e.y]] as const) {
+      b.box(0.04, top - py + 0.04, 0.04, gx, py - 0.04, pz, 0x7a828c);
+      b.box(0.08, 0.03, 0.08, gx, py, pz, 0x5a6068);
+    }
+    b.box(0.05, 0.05, e.z - w.z + 0.84, gx, top, (w.z + e.z) / 2, 0x8a929c);
+    b.box(0.04, 0.04, e.z - w.z + 0.8, gx, top - 0.12, (w.z + e.z) / 2, 0x8a929c);
+    const signs: [string, number, number][] = [['SAN FRANCISCO', w.z, 1], ['OAKLAND', e.z, -1]];
+    for (const [text, sz, f] of signs) {
+      const sw = textWidth(text, 0.022) + 0.06;
+      b.box(0.012, 0.2, sw, gx + f * 0.035, top - 0.17, sz, 0x1f6b45);
+      b.box(0.014, 0.21, sw + 0.01, gx + f * 0.033, top - 0.175, sz, 0xe8ece8);
+      pixelText(b, 'solid', text, gx + f * 0.043, top - 0.07, sz, f, 0, 0.022, 0xf4f4f0);
+      // A catwalk under each sign, its lamps lighting the sign at night
+      b.box(0.06, 0.012, sw, gx + f * 0.06, top - 0.285, sz, 0x5a6068);
+      b.box(0.02, 0.012, sw * 0.8, gx + f * 0.08, top - 0.275, sz, LAMP, true);
+    }
+  }
+  // The Bay Bridge Trail: a path for walkers and cyclists hung off the south side of the
+  // westbound deck, from the self-anchored span to the shore.
+  {
+    const trail = part(L.wb, (q) => q.x > sx + 2.6 && q.x < L.xl).map((q) => ({ ...q, z: q.z - q.tx * 0.5, x: q.x + q.tz * 0.5, y: q.y - 0.04 }));
+    sweep(b, trail, rect(-0.14, 0.14, -0.05, 0), 0xd9d4c8);
+    sweep(b, trail, rect(-0.15, -0.13, 0, 0.09), 0xa7b0ba);
+    for (let k = 0; k < trail.length; k += 6) {
+      const q = trail[k]!;
+      b.box(0.03, 0.03, 0.32, q.x, q.y - 0.07, q.z + 0.2, WHITE);
+    }
   }
 
   // The self-anchored suspension span: one tower of four tapered legs between the decks
@@ -1056,6 +1233,48 @@ function arch(b: GeoBuilder, w: number, h: number, x: number, y: number, z: numb
   b.raw(prepared(g, color, rand), glow);
 }
 
+/** Four open sides of a w × h × w box standing on y (no lid, so a shell never shows its top). */
+const openBox = (w: number, h: number, x: number, y: number, z: number) => new THREE.CylinderGeometry(w * Math.SQRT1_2, w * Math.SQRT1_2, h, 4, 1, true).rotateY(Math.PI / 4).translate(x, y + h / 2, z);
+
+/**
+ * Floodlighting for the landmarks the city lights at night: a shell just
+ * outside the stone, added on top of it, warmest at the foot where the lamps
+ * are and fading upward, that only shows after dusk. The shell's vertex
+ * colours carry the light; the material's colour stays white so the
+ * scenery can dim it like any other lamp when the city's lamps fail.
+ */
+let floodMaterial: THREE.MeshBasicMaterial | null = null;
+function floodlight(parts: { geo: THREE.BufferGeometry; y0: number; y1: number; k?: number }[]): THREE.Mesh {
+  const geos = parts.map(({ geo, y0, y1, k = 1 }) => {
+    const g = geo.index ? geo.toNonIndexed() : geo;
+    for (const name of Object.keys(g.attributes)) if (name !== 'position') g.deleteAttribute(name);
+    const p = g.attributes.position!;
+    const c = new Float32Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) {
+      const t = clamp((p.getY(i) - y0) / Math.max(0.01, y1 - y0), 0, 1);
+      const a = k * (0.5 - 0.38 * t);
+      c.set([a, a * 0.78, a * 0.52], i * 3);
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+    return g;
+  });
+  if (!floodMaterial) {
+    floodMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true });
+    floodMaterial.onBeforeCompile = (shader) => {
+      shader.uniforms.uNight = GLOW.night;
+      shader.fragmentShader = shader.fragmentShader
+        .replace('void main() {', 'uniform float uNight;\nvoid main() {')
+        .replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.rgb *= smoothstep(0.35, 0.85, uNight);');
+    };
+    floodMaterial.customProgramCacheKey = () => 'tinytown-flood-1';
+  }
+  const mesh = new THREE.Mesh(mergeGeometries(geos), floodMaterial);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.renderOrder = 2;
+  return mesh;
+}
+
 const tmpCol = new THREE.Color();
 /** A geometry made ready for a GeoBuilder bucket by hand, so a glowing part keeps its own moment of dusk (`rand`). */
 function prepared(src: THREE.BufferGeometry, color: ColorLike, rand: number): THREE.BufferGeometry {
@@ -1083,7 +1302,7 @@ function onFace(f: Facing, x: number, z: number, w: number, d: number, u: number
  * roof, and the clock tower rising in stages over Market Street.
  */
 export function ferryBuilding(): THREE.Group {
-  const b = new GeoBuilder();
+  const b = new Kit();
   const r = rng(11);
   const { x, z } = LANDMARKS.ferryBuilding;
   const stone = 0xece4d2;
@@ -1125,6 +1344,20 @@ export function ferryBuilding(): THREE.Group {
     b.box(W + 0.06, 0.78, 0.6, x, 0, pz, stone);
     b.box(W + 0.12, 0.05, 0.66, x, 0.76, pz, trim);
     b.hip(W + 0.06, 0.24, 0.6, x, 0.81, pz, 0x8f9a98, 0.03, 0.2);
+  }
+  // PORT OF SAN FRANCISCO along the roof on the bay side, on a light steel frame, lit at night
+  {
+    const px = 0.024;
+    const sx = x + W / 2 - 0.14;
+    const sy = 0.93;
+    const sw = textWidth('PORT OF SAN FRANCISCO', px);
+    for (const dz of [-sw / 2 + 0.06, -sw / 6, sw / 6, sw / 2 - 0.06]) {
+      b.box(0.012, sy - 0.72, 0.012, sx - 0.01, 0.72, z + dz, 0x4a4f57);
+      strut(b, new THREE.Vector3(sx - 0.01, sy - 0.02, z + dz), new THREE.Vector3(sx - 0.2, 0.86, z + dz), 0.012, 0x4a4f57);
+    }
+    b.box(0.01, 0.014, sw + 0.04, sx - 0.012, sy - 0.07, z, 0x4a4f57);
+    b.box(0.01, 0.014, sw + 0.04, sx - 0.012, sy + 0.05, z, 0x4a4f57);
+    pixelText(neonOf(b), 'glow', 'PORT OF SAN FRANCISCO', sx, sy, z, 1, 0, px, [2.5, 2.45, 2.25], { rand: 0.3 });
   }
   // Bay side: a canopy over the gates, the slips and gangways
   b.box(0.22, 0.03, L - 1.4, x + W / 2 + 0.11, 0.33, z, 0x5f6c78);
@@ -1184,6 +1417,11 @@ export function ferryBuilding(): THREE.Group {
   flag(b, tx, 4.52, tz, 0.16);
   const { group } = b.build();
   group.traverse((o) => (o.castShadow = true));
+  // The clock tower, floodlit at night
+  group.add(floodlight([
+    { geo: openBox(0.67, 1.75, tx, 0.6, tz), y0: 0.6, y1: 3.9, k: 0.6 },
+    { geo: openBox(0.55, 0.5, tx, 2.95, tz), y0: 0.6, y1: 3.9, k: 0.6 },
+  ]));
   group.userData.tip = { title: 'Ferry Building', detail: 'Market Street starts here.' };
   return group;
 }
@@ -1207,7 +1445,7 @@ export function cityHall(cx: number, cz: number): THREE.Group {
   const stone = 0xece6d6;
   const shade = 0xd9d0bc;
   const gold = 0xd4af37;
-  const dome = 0x8aa39a;
+  const dome = 0x86a097;
   const warm: ColorLike = [1.7, 1.2, 0.65];
   const x = cx - 0.75;
   const z = cz;
@@ -1216,55 +1454,107 @@ export function cityHall(cx: number, cz: number): THREE.Group {
   // Plinth, rusticated ground floor, piano nobile with colonnade, attic
   b.box(W + 0.24, 0.08, L + 0.24, x, 0, z, shade);
   b.box(W, 0.32, L, x, 0.08, z, shade);
+  // Rustication: deep joints in the ground floor's stone
+  for (const yy of [0.15, 0.23, 0.31]) b.box(W + 0.006, 0.012, L + 0.006, x, yy, z, 0xc9bfa9);
   b.box(W - 0.04, 0.42, L - 0.04, x, 0.4, z, stone);
   b.box(W + 0.03, 0.05, L + 0.03, x, 0.82, z, shade);
   b.box(W - 0.08, 0.16, L - 0.08, x, 0.87, z, stone);
   b.box(W, 0.04, L, x, 1.03, z, shade);
-  b.windows({ w: W, d: L, x, z, y0: 0.08, rows: 1, rowHeight: 0.32, cols: 16, faces: ['x+', 'x-'] }, r, 0.7, warm, { w: 0.08, h: 0.12 });
-  b.windows({ w: W, d: L, x, z, y0: 0.08, rows: 1, rowHeight: 0.32, cols: 6, faces: ['z+', 'z-'] }, r, 0.7, warm, { w: 0.08, h: 0.12 });
-  b.windows({ w: W - 0.04, d: L - 0.04, x, z, y0: 0.42, rows: 1, rowHeight: 0.38, cols: 18, faces: ['x+', 'x-'] }, r, 0.75, warm, { w: 0.07, h: 0.2 });
-  // Giant-order columns along the long façades
+  // The balustrade round the roof, and the two light courts either side of the rotunda
+  b.box(W - 0.02, 0.05, L - 0.02, x, 1.07, z, stone);
+  b.box(W, 0.015, L, x, 1.12, z, shade);
+  for (const s of [-1, 1]) {
+    b.box(0.86, 0.006, 0.46, x, 1.12, z + s * 0.9, 0xb3a991);
+    b.box(0.5, 0.05, 0.28, x, 1.12, z + s * 0.9, 0x8fa8b8, 'glass');
+  }
+  // Arched windows on the ground floor, tall windows between the columns above, small ones in the attic
+  const bays = (f: Facing, n: number, span: number, ww: number, wd: number) => {
+    for (let k = 0; k < n; k++) {
+      const u = -span / 2 + ((k + 0.5) * span) / n;
+      const [ax, az] = onFace(f, x, z, ww, wd, u, 0.006);
+      arch(b, 0.075, 0.15, ax, 0.13, az, f, warm, true, r() < 0.7 ? 0.15 + r() * 0.7 : 2);
+      const [px, pz] = onFace(f, x, z, ww - 0.04, wd - 0.04, u, 0.006);
+      const [fx, fz] = onFace(f, x, z, ww - 0.04, wd - 0.04, u, 0.003);
+      b.quad(0.1, 0.27, fx, 0.6, fz, f, 0xbdb29a, false);
+      b.quad(0.07, 0.22, px, 0.6, pz, f, warm, true, r() < 0.75 ? 0.15 + r() * 0.75 : 2);
+      const [tx, tz] = onFace(f, x, z, ww - 0.08, wd - 0.08, u, 0.006);
+      b.quad(0.06, 0.06, tx, 0.95, tz, f, warm, true, r() < 0.5 ? 0.3 + r() * 0.6 : 2);
+    }
+  };
+  for (const f of ['x+', 'x-'] as const) bays(f, 17, L - 0.24, W, L);
+  for (const f of ['z+', 'z-'] as const) bays(f, 5, W - 0.24, W, L);
+  // Giant-order columns along the long façades, with bases and capitals
   for (const side of [1, -1]) {
     for (let k = 0; k < 18; k++) {
       const zz = z - L / 2 + 0.12 + (k * (L - 0.24)) / 17;
-      b.cylinder(0.026, 0.03, 0.4, x + side * (W / 2 + 0.01), 0.42, zz, 0xf6f1e4, 6);
+      const cxx = x + side * (W / 2 + 0.01);
+      b.box(0.065, 0.03, 0.065, cxx, 0.4, zz, shade);
+      b.cylinder(0.024, 0.029, 0.37, cxx, 0.43, zz, 0xf6f1e4, 6);
+      b.box(0.065, 0.025, 0.065, cxx, 0.795, zz, 0xf6f1e4);
     }
   }
-  // Central pavilion with a pedimented portico facing the plaza (east, +x)
-  b.box(0.5, 0.95, 1.1, x + W / 2 + 0.1, 0.08, z, stone);
-  for (let k = 0; k < 6; k++) b.cylinder(0.035, 0.04, 0.62, x + W / 2 + 0.33, 0.32, z - 0.42 + k * 0.168, 0xf6f1e4, 8);
-  b.box(0.18, 0.08, 1.14, x + W / 2 + 0.3, 0.94, z, shade);
-  b.gable(1.1, 0.2, 0.22, x + W / 2 + 0.3, 1.02, z, stone, 0.03, Math.PI / 2);
-  for (let k = 0; k < 5; k++) b.box(0.42 - k * 0.04, 0.03, 0.9, x + W / 2 + 0.55 - k * 0.04, 0.08 - k * 0.0, z, shade); // grand stair
-  b.panel(0.36, 0.42, x + W / 2 + 0.355, 0.55, z, Math.PI / 2, warm, true, 0.2);
-  // End pavilions
-  for (const s of [1, -1]) {
-    b.box(W + 0.1, 1.0, 0.5, x, 0.08, z + s * (L / 2 - 0.25), stone);
-    b.box(W + 0.14, 0.05, 0.54, x, 1.08, z + s * (L / 2 - 0.25), shade);
+  // Central pavilion with a pedimented portico facing the plaza (east, +x): six columns,
+  // three arched doors behind them, sculpture in the pediment, the grand stair
+  const px0 = x + W / 2;
+  b.box(0.5, 1.0, 1.2, px0 + 0.1, 0.08, z, stone);
+  b.box(0.54, 0.05, 1.24, px0 + 0.1, 1.06, z, shade);
+  for (let k = 0; k < 6; k++) {
+    const zz = z - 0.45 + k * 0.18;
+    b.box(0.08, 0.03, 0.08, px0 + 0.33, 0.32, zz, shade);
+    b.cylinder(0.034, 0.04, 0.58, px0 + 0.33, 0.35, zz, 0xf6f1e4, 8);
+    b.box(0.08, 0.03, 0.08, px0 + 0.33, 0.92, zz, 0xf6f1e4);
   }
-  // Rotunda: square base, colonnaded drum, ribbed dome, lantern
+  b.box(0.2, 0.08, 1.2, px0 + 0.3, 0.95, z, shade);
+  b.gable(1.2, 0.22, 0.24, px0 + 0.3, 1.03, z, stone, 0.03, Math.PI / 2);
+  for (const dz of [-0.2, 0, 0.2]) b.blob(0.035, px0 + 0.43, 1.07 + (0.1 - Math.abs(dz) * 0.4), z + dz, 0xe2dccb);
+  for (const dz of [-0.27, 0, 0.27]) arch(b, 0.13, 0.3, px0 + 0.356, 0.32, z + dz, 'x+', warm, true, 0.15);
+  for (let k = 0; k < 6; k++) b.box(0.46 - k * 0.05, 0.04, 1.0, px0 + 0.58 - k * 0.025, 0.08 + k * 0.04, z, shade); // grand stair
+  // End pavilions, a little proud of the façades, with paired pilasters
+  for (const s of [1, -1]) {
+    const ez = z + s * (L / 2 - 0.25);
+    b.box(W + 0.1, 1.02, 0.5, x, 0.08, ez, stone);
+    b.box(W + 0.14, 0.05, 0.54, x, 1.1, ez, shade);
+    for (const e of [-1, 1]) for (const d of [-0.16, -0.08, 0.08, 0.16]) b.box(0.02, 0.62, 0.04, x + e * (W / 2 + 0.06), 0.4, ez + d, 0xf6f1e4);
+  }
+  // Rotunda: square base, colonnaded drum with tall windows, attic, a tall ribbed dome, the lantern
   b.box(1.0, 0.25, 1.0, x, 1.07, z, stone);
+  b.box(1.04, 0.03, 1.04, x, 1.3, z, shade);
   b.cylinder(0.5, 0.52, 0.08, x, 1.32, z, shade, 24);
-  b.cylinder(0.44, 0.44, 0.5, x, 1.4, z, stone, 24);
+  b.cylinder(0.43, 0.43, 0.5, x, 1.4, z, stone, 24);
   for (let k = 0; k < 20; k++) {
     const a = (k / 20) * Math.PI * 2;
-    b.cylinder(0.022, 0.025, 0.46, x + Math.cos(a) * 0.47, 1.42, z + Math.sin(a) * 0.47, 0xf6f1e4, 6);
+    b.cylinder(0.021, 0.025, 0.44, x + Math.cos(a) * 0.47, 1.42, z + Math.sin(a) * 0.47, 0xf6f1e4, 6);
+    b.box(0.05, 0.025, 0.05, x + Math.cos(a) * 0.47, 1.86, z + Math.sin(a) * 0.47, 0xf6f1e4);
+    const wa = a + Math.PI / 20;
+    b.panel(0.07, 0.24, x + Math.cos(wa) * 0.433, 1.63, z + Math.sin(wa) * 0.433, Math.PI / 2 - wa, warm, true, 0.15 + (k % 5) * 0.15);
   }
-  for (let k = 0; k < 12; k++) {
-    const a = (k / 12) * Math.PI * 2 + 0.13;
-    b.panel(0.08, 0.2, x + Math.cos(a) * 0.445, 1.65, z + Math.sin(a) * 0.445, Math.PI / 2 - a, warm, true, 0.15 + (k % 4) * 0.2);
-  }
-  b.cylinder(0.5, 0.5, 0.06, x, 1.9, z, gold, 24);
-  b.lathe([[0.47, 0], [0.46, 0.12], [0.42, 0.3], [0.33, 0.48], [0.2, 0.6], [0.08, 0.66], [0, 0.67]], x, 1.96, z, dome, 28);
+  b.cylinder(0.51, 0.51, 0.06, x, 1.89, z, shade, 24);
+  b.cylinder(0.45, 0.47, 0.12, x, 1.95, z, stone, 24);
+  b.cylinder(0.47, 0.47, 0.03, x, 2.07, z, gold, 24);
+  const domeH = 0.86;
+  b.lathe([[0.45, 0], [0.445, 0.14], [0.42, 0.32], [0.36, 0.5], [0.27, 0.66], [0.16, 0.78], [0.07, 0.84], [0, domeH]], x, 2.1, z, dome, 28);
+  // Gold ribs following the dome's curve
+  const prof: [number, number][] = [[0.455, 0], [0.45, 0.14], [0.425, 0.32], [0.365, 0.5], [0.275, 0.66], [0.165, 0.78], [0.075, 0.84]];
   for (let k = 0; k < 16; k++) {
     const a = (k / 16) * Math.PI * 2;
-    const rib = new THREE.TorusGeometry(0.46, 0.008, 3, 12, Math.PI / 2.1).rotateZ(0).rotateY(-a);
-    b.transformed(rib, new THREE.Matrix4().makeTranslation(x, 1.96, z), gold);
+    for (let i = 0; i < prof.length - 1; i++) {
+      const [r0, y0] = prof[i]!;
+      const [r1, y1] = prof[i + 1]!;
+      strut(b, new THREE.Vector3(x + Math.cos(a) * r0, 2.1 + y0, z + Math.sin(a) * r0), new THREE.Vector3(x + Math.cos(a) * r1, 2.1 + y1, z + Math.sin(a) * r1), 0.014, gold);
+    }
   }
-  b.cylinder(0.07, 0.08, 0.2, x, 2.62, z, stone, 10);
-  b.lathe([[0.08, 0], [0.05, 0.08], [0.0, 0.12]], x, 2.82, z, gold, 10);
-  b.cylinder(0.008, 0.012, 0.18, x, 2.92, z, gold, 4);
-  b.blob(0.03, x, 3.1, z, [3, 2.6, 1.6], true);
+  // Lantern: a little colonnaded drum, a gold cupola and the finial
+  const ly = 2.1 + domeH - 0.04;
+  b.cylinder(0.09, 0.1, 0.05, x, ly, z, stone, 10);
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    b.cylinder(0.012, 0.012, 0.16, x + Math.cos(a) * 0.085, ly + 0.05, z + Math.sin(a) * 0.085, 0xf6f1e4, 4);
+  }
+  b.cylinder(0.06, 0.06, 0.16, x, ly + 0.05, z, [1.8, 1.4, 0.8], 8, true);
+  b.cylinder(0.1, 0.1, 0.03, x, ly + 0.21, z, stone, 10);
+  b.lathe([[0.085, 0], [0.06, 0.06], [0.02, 0.1], [0, 0.11]], x, ly + 0.24, z, gold, 10);
+  b.cylinder(0.006, 0.01, 0.14, x, ly + 0.34, z, gold, 4);
+  b.blob(0.025, x, ly + 0.5, z, [3, 2.6, 1.6], true);
   // Civic Center Plaza: lawns, rows of clipped plane trees, a fountain, flagpoles
   const px = cx + 1.05;
   b.box(1.7, 0.02, L + 0.4, px, 0, z, 0xe6dfcf);
@@ -1288,6 +1578,11 @@ export function cityHall(cx: number, cz: number): THREE.Group {
     o.castShadow = true;
     o.receiveShadow = true;
   });
+  // The dome and drum, floodlit at night
+  group.add(floodlight([
+    { geo: new THREE.CylinderGeometry(0.5, 0.5, 0.56, 24, 1, true).translate(x, 1.4 + 0.28, z), y0: 1.3, y1: 3.0, k: 0.85 },
+    { geo: new THREE.LatheGeometry([[0.47, 0], [0.465, 0.14], [0.44, 0.33], [0.38, 0.52], [0.285, 0.68], [0.17, 0.8], [0.08, 0.86], [0, 0.89]].map(([r, h]) => new THREE.Vector2(r!, h!)), 28).translate(x, 2.1, z), y0: 1.3, y1: 3.0, k: 0.85 },
+  ]));
   group.userData.tip = { title: 'City Hall', detail: 'Beaux-Arts, gold-leafed dome, a little taller than the one in Washington.' };
   return group;
 }
@@ -1304,8 +1599,9 @@ export function coitTower(): THREE.Group {
   const y = terrainHeight(x, z);
   const conc = 0xf0ebdf;
   const trim = 0xe2dccd;
-  // Pioneer Park: the turning circle and its low wall
-  b.cylinder(0.92, 0.98, 0.14, x, y - 0.1, z, 0xc9c4b8, 24);
+  // Pioneer Park: the turning circle on the hilltop, a low stone kerb, and a grassy bank down into the hill
+  b.cylinder(0.95, 1.35, 0.5, x, y - 0.46, z, 0x6aa846, 24);
+  b.cylinder(0.95, 0.95, 0.08, x, y - 0.04, z, 0xc9c4b8, 24);
   b.cylinder(0.94, 0.94, 0.06, x, y + 0.02, z, 0xd9d3c5, 24);
   b.cylinder(0.86, 0.86, 0.065, x, y + 0.02, z, 0xb4aea2, 24);
   // The lobby: a square plinth with arched doorways, a cornice
@@ -1354,56 +1650,119 @@ export function coitTower(): THREE.Group {
   b.blob(0.025, cx, y + 0.33, cz, 0x6f7f6a);
   const { group } = b.build();
   group.traverse((o) => (o.castShadow = true));
+  // Floodlit from the foot of the column every night
+  group.add(floodlight([
+    { geo: new THREE.CylinderGeometry(0.3, 0.32, H + 0.5, 16, 1, true).translate(x, y0 + (H + 0.5) / 2 - 0.05, z), y0, y1: y0 + H + 0.45, k: 0.95 },
+    { geo: openBox(0.75, 0.33, x, y + 0.04, z), y0: y, y1: y + 0.6, k: 0.6 },
+  ]));
   group.userData.tip = { title: 'Coit Tower', detail: 'On Telegraph Hill.' };
   return group;
 }
 
 /**
- * The Palace of Fine Arts: an open rotunda of paired columns under a
- * terracotta dome, the long colonnade curving behind it with its planter
- * boxes, and the lagoon in front with a pair of swans.
+ * The Palace of Fine Arts: an open rotunda of paired Corinthian columns
+ * under a terracotta dome, the long colonnade curving behind it with its
+ * planter boxes, and the lagoon in front, ringed with reeds and willows,
+ * the rotunda standing upside down in it.
  */
 export function palaceOfFineArts(): THREE.Group {
   const b = new GeoBuilder();
+  const r = rng(23);
   const { x, z } = LANDMARKS.palaceOfFineArts;
   const salmon = 0xdba586;
   const stone = 0xe9c4a6;
   const deep = 0xc08a6c;
+  const dome = 0xc8805e;
   // The lagoon, its stone edge and the lawn round it
-  const lagoon = new THREE.CircleGeometry(1.5, 28).rotateX(-Math.PI / 2).scale(1.35, 1, 0.8);
-  b.transformed(lagoon.clone().scale(1.06, 1, 1.08), new THREE.Matrix4().makeTranslation(x + 0.7, 0.012, z + 1.0), 0xd8cdb8);
-  b.transformed(lagoon, new THREE.Matrix4().makeTranslation(x + 0.7, 0.03, z + 1.0), 0x3a9fb4, 'glass');
-  for (const [sx, sz] of [[x + 1.2, z + 1.4], [x + 1.35, z + 1.3]] as const) {
+  const lx = x + 0.7;
+  const lz = z + 1.0;
+  const LR = { x: 1.5 * 1.35, z: 1.5 * 0.8 };
+  const water = 0x2f8ea6;
+  const lagoon = new THREE.CircleGeometry(1.5, 36).rotateX(-Math.PI / 2).scale(1.35, 1, 0.8);
+  b.transformed(lagoon.clone().scale(1.06, 1, 1.08), new THREE.Matrix4().makeTranslation(lx, 0.012, lz), 0xd8cdb8);
+  b.transformed(lagoon, new THREE.Matrix4().makeTranslation(lx, 0.03, lz), water, 'glass');
+  // Reeds and lily pads at the water's edge, a weeping willow or two, the swans
+  for (let k = 0; k < 26; k++) {
+    const a = r() * Math.PI * 2;
+    const e = 0.9 + r() * 0.08;
+    const px = lx + Math.cos(a) * LR.x * e;
+    const pz = lz + Math.sin(a) * LR.z * e;
+    if (Math.hypot(px - x, pz - z) < 0.95) continue;
+    if (r() < 0.55) b.cylinder(0.035, 0.05, 0.07 + r() * 0.05, px, 0.03, pz, r() < 0.5 ? 0x6f9a48 : 0x83a852, 5);
+    else b.cylinder(0.05, 0.05, 0.006, px - Math.cos(a) * 0.12, 0.032, pz - Math.sin(a) * 0.12, 0x5f9a4a, 7);
+  }
+  for (const [a, s] of [[0.15, 1], [1.2, 0.85], [-0.55, 0.9]] as const) {
+    const px = lx + Math.cos(a) * LR.x * 1.16;
+    const pz = lz + Math.sin(a) * LR.z * 1.2;
+    b.cylinder(0.025 * s, 0.035 * s, 0.32 * s, px, 0, pz, 0x6a5440, 5);
+    b.lathe([[0.02, 0], [0.24 * s, 0.06 * s], [0.27 * s, 0.22 * s], [0.2 * s, 0.38 * s], [0, 0.44 * s]], px, 0.16 * s, pz, 0x8fb25a, 9);
+  }
+  for (const [sx, sz, h] of [[x + 1.25, z + 1.45, 0.4], [x + 1.42, z + 1.33, -0.3]] as const) {
     b.blob(0.04, sx, 0.05, sz, 0xfbfaf6, 'smooth');
-    b.cylinder(0.006, 0.008, 0.06, sx + 0.03, 0.05, sz, 0xfbfaf6, 4);
+    const nx = sx + Math.cos(h) * 0.035;
+    const nz = sz + Math.sin(h) * 0.035;
+    b.cylinder(0.006, 0.008, 0.06, nx, 0.05, nz, 0xfbfaf6, 4);
+    b.box(0.02, 0.008, 0.008, nx + Math.cos(h) * 0.012, 0.105, nz + Math.sin(h) * 0.012, 0xe8873a, false, -h);
   }
   // Rotunda: eight piers of paired columns on a stepped plinth, an entablature, a drum and the dome
-  b.cylinder(0.78, 0.82, 0.06, x, 0, z, 0xd9c8b0, 8, false, Math.PI / 8);
-  b.cylinder(0.72, 0.74, 0.04, x, 0.06, z, stone, 8, false, Math.PI / 8);
-  for (let k = 0; k < 8; k++) {
-    const a = (k / 8) * Math.PI * 2;
-    for (const d of [-0.07, 0.07]) {
-      const px = x + Math.cos(a) * 0.6 - Math.sin(a) * d;
-      const pz = z + Math.sin(a) * 0.6 + Math.cos(a) * d;
-      b.cylinder(0.04, 0.048, 0.78, px, 0.1, pz, salmon, 8);
-      b.box(0.1, 0.05, 0.1, px, 0.86, pz, stone);
+  const rotunda = (q: GeoBuilder, lite = false) => {
+    q.cylinder(0.78, 0.82, 0.06, x, 0, z, 0xd9c8b0, 8, false, Math.PI / 8);
+    q.cylinder(0.72, 0.74, 0.04, x, 0.06, z, stone, 8, false, Math.PI / 8);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      for (const d of [-0.07, 0.07]) {
+        const px = x + Math.cos(a) * 0.6 - Math.sin(a) * d;
+        const pz = z + Math.sin(a) * 0.6 + Math.cos(a) * d;
+        q.cylinder(0.04, 0.048, 0.7, px, 0.14, pz, salmon, lite ? 6 : 8);
+        if (lite) continue;
+        q.box(0.11, 0.04, 0.11, px, 0.1, pz, stone);
+        // Corinthian capitals: a flared bell under the abacus
+        q.cylinder(0.062, 0.042, 0.05, px, 0.84, pz, stone, 8);
+        q.box(0.11, 0.025, 0.11, px, 0.885, pz, stone);
+      }
+      // Between the piers the entablature carries an arch, as on the real rotunda.
+      const ma = a + Math.PI / 8;
+      const archM = new THREE.Matrix4().makeRotationY(Math.PI / 2 - ma).setPosition(x + Math.cos(ma) * 0.64, 0, z + Math.sin(ma) * 0.64);
+      const ring = new THREE.Shape();
+      ring.moveTo(-0.2, 0.62);
+      ring.absarc(0, 0.62, 0.2, Math.PI, 0, true);
+      ring.lineTo(0.21, 0.9);
+      ring.lineTo(-0.21, 0.9);
+      ring.closePath();
+      q.transformed(new THREE.ExtrudeGeometry(ring, { depth: 0.06, bevelEnabled: false, curveSegments: 8 }).translate(0, 0, -0.03), archM, stone);
     }
+    q.cylinder(0.7, 0.7, 0.14, x, 0.91, z, stone, 8, false, Math.PI / 8);
+    q.cylinder(0.74, 0.74, 0.04, x, 1.04, z, deep, 8, false, Math.PI / 8);
+    if (lite) {
+      q.cylinder(0.56, 0.58, 0.18, x, 1.07, z, salmon, 16);
+      q.lathe([[0.56, 0], [0.54, 0.14], [0.46, 0.32], [0.32, 0.46], [0.14, 0.54], [0, 0.56]], x, 1.25, z, dome, 16);
+      return;
+    }
+    // Statues on the cornice over each pier
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      q.cylinder(0.025, 0.035, 0.09, x + Math.cos(a) * 0.66, 1.08, z + Math.sin(a) * 0.66, 0xd9b496, 5);
+    }
+    q.cylinder(0.56, 0.58, 0.18, x, 1.07, z, salmon, 16);
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2;
+      q.box(0.05, 0.12, 0.02, x + Math.cos(a) * 0.575, 1.1, z + Math.sin(a) * 0.575, deep, false, -a + Math.PI / 2);
+    }
+    q.lathe([[0.56, 0], [0.54, 0.14], [0.46, 0.32], [0.32, 0.46], [0.14, 0.54], [0, 0.56]], x, 1.25, z, dome, 24);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      const rib = new THREE.TorusGeometry(0.55, 0.012, 3, 10, Math.PI / 2.05).rotateY(-a);
+      q.transformed(rib, new THREE.Matrix4().makeTranslation(x, 1.25, z), deep);
+    }
+    q.cylinder(0.06, 0.08, 0.12, x, 1.78, z, stone, 8);
+    q.lathe([[0.07, 0], [0.04, 0.06], [0, 0.08]], x, 1.9, z, deep, 8);
+  };
+  rotunda(b);
+  // Uplights round the rotunda's floor, warm at night
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + Math.PI / 8;
+    b.box(0.05, 0.04, 0.05, x + Math.cos(a) * 0.3, 0.1, z + Math.sin(a) * 0.3, WARM, true);
   }
-  b.cylinder(0.7, 0.7, 0.14, x, 0.9, z, stone, 8, false, Math.PI / 8);
-  b.cylinder(0.73, 0.73, 0.04, x, 1.03, z, deep, 8, false, Math.PI / 8);
-  b.cylinder(0.56, 0.58, 0.18, x, 1.07, z, salmon, 16);
-  for (let k = 0; k < 16; k++) {
-    const a = (k / 16) * Math.PI * 2;
-    b.box(0.05, 0.12, 0.02, x + Math.cos(a) * 0.575, 1.1, z + Math.sin(a) * 0.575, deep, false, -a + Math.PI / 2);
-  }
-  b.lathe([[0.56, 0], [0.54, 0.14], [0.46, 0.32], [0.32, 0.46], [0.14, 0.54], [0, 0.56]], x, 1.25, z, 0xc8805e, 24);
-  for (let k = 0; k < 8; k++) {
-    const a = (k / 8) * Math.PI * 2;
-    const rib = new THREE.TorusGeometry(0.55, 0.012, 3, 10, Math.PI / 2.05).rotateY(-a);
-    b.transformed(rib, new THREE.Matrix4().makeTranslation(x, 1.25, z), deep);
-  }
-  b.cylinder(0.06, 0.08, 0.12, x, 1.78, z, stone, 8);
-  b.lathe([[0.07, 0], [0.04, 0.06], [0, 0.08]], x, 1.9, z, deep, 8);
   // The colonnade: paired columns on a curve behind, an entablature, planter boxes on top
   const R = 2.2;
   const ox = x + 0.4;
@@ -1414,9 +1773,18 @@ export function palaceOfFineArts(): THREE.Group {
   for (let k = 0; k <= n; k++) {
     const a = a0 + (k / n) * (a1 - a0);
     for (const dr of [-0.09, 0.09]) {
-      b.cylinder(0.032, 0.038, 0.56, ox + Math.cos(a) * (R + dr), 0.02, oz + Math.sin(a) * (R + dr), salmon, 6);
+      b.cylinder(0.032, 0.038, 0.52, ox + Math.cos(a) * (R + dr), 0.02, oz + Math.sin(a) * (R + dr), salmon, 6);
+      b.cylinder(0.05, 0.035, 0.04, ox + Math.cos(a) * (R + dr), 0.54, oz + Math.sin(a) * (R + dr), stone, 6);
     }
-    if (k % 3 === 0) b.box(0.18, 0.16, 0.16, ox + Math.cos(a) * R, 0.7, oz + Math.sin(a) * R, deep, false, -a);
+    // The planter boxes, with the weeping maidens leaning on their corners and greenery spilling over
+    if (k % 3 === 0) {
+      const px = ox + Math.cos(a) * R;
+      const pz = oz + Math.sin(a) * R;
+      b.box(0.18, 0.16, 0.16, px, 0.71, pz, deep, false, -a);
+      b.box(0.2, 0.025, 0.18, px, 0.87, pz, stone, false, -a);
+      b.blob(0.07, px, 0.92, pz, 0x6f9a52, 'smooth');
+      for (const s of [-1, 1]) b.cylinder(0.014, 0.02, 0.13, px - Math.sin(a) * s * 0.08, 0.71, pz + Math.cos(a) * s * 0.08, 0xd9b496, 4);
+    }
   }
   for (const [rr, h, y, c] of [[R, 0.1, 0.58, stone], [R, 0.03, 0.68, deep]] as const) {
     const ring = new THREE.Shape();
@@ -1427,8 +1795,114 @@ export function palaceOfFineArts(): THREE.Group {
   }
   const { group } = b.build();
   group.traverse((o) => (o.castShadow = true));
+  // The rotunda reflected in the still lagoon (a mesh of its own: see `reflection`).
+  // The rotunda, floodlit at night
+  group.add(floodlight([
+    { geo: new THREE.CylinderGeometry(0.6, 0.6, 0.2, 16, 1, true).translate(x, 1.07 + 0.1, z), y0: 0.2, y1: 1.9, k: 0.65 },
+    { geo: new THREE.LatheGeometry([[0.585, 0], [0.565, 0.145], [0.48, 0.335], [0.335, 0.48], [0.145, 0.565], [0, 0.585]].map(([r, h]) => new THREE.Vector2(r!, h!)), 24).translate(x, 1.25, z), y0: 0.2, y1: 1.9, k: 0.65 },
+  ]));
+  const rb = new GeoBuilder();
+  rotunda(rb, true);
+  // Tinted like the lagoon as the sun lights it, which is paler than its base colour
+  group.add(reflection(rb, 0.034, { x: lx, z: lz, rx: LR.x * 0.97, rz: LR.z * 0.95 }, 0x5cbcd4));
   group.userData.tip = { title: 'Palace of Fine Arts', detail: 'Rotunda, colonnade and lagoon.' };
   return group;
+}
+
+/**
+ * A building's reflection in still water, for any camera: its geometry
+ * mirrored in the water plane, then slid along the view ray back up onto
+ * the surface, so it draws as a flat picture exactly where the reflection
+ * would be seen, hidden behind anything that stands in front of the water.
+ * Faces that look away from the camera in the mirror are dropped, the
+ * picture is clipped to the pond's ellipse, tinted toward the water and
+ * rippled, and it dims with the daylight.
+ */
+function reflection(src: GeoBuilder, waterY: number, pond: { x: number; z: number; rx: number; rz: number }, water: ColorLike): THREE.Mesh {
+  const { group } = src.build();
+  const parts: THREE.BufferGeometry[] = [];
+  group.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const g = (o.geometry as THREE.BufferGeometry).clone();
+    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'color') g.deleteAttribute(name);
+    parts.push(g);
+    o.geometry.dispose();
+  });
+  const geo = mergeGeometries(parts);
+  for (const g of parts) g.dispose();
+  const tint = new THREE.Color();
+  if (typeof water === 'number') tint.setHex(water);
+  else tint.setRGB(water[0], water[1], water[2]);
+  const material = new THREE.ShaderMaterial({
+    fog: true,
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    // The mirror turns every triangle's winding inside out: faces are kept or dropped by their normals instead.
+    side: THREE.DoubleSide,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      { uWater: { value: tint }, uPond: { value: new THREE.Vector4(pond.x, pond.z, pond.rx, pond.rz) }, uY: { value: waterY } },
+    ]),
+    vertexShader: /* glsl */ `
+      #include <fog_pars_vertex>
+      uniform float uY;
+      varying vec3 vColor;
+      varying vec3 vNormal;
+      varying vec2 vWorld;
+      void main() {
+        vColor = color;
+        // The camera's forward direction, from the view matrix.
+        vec3 f = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+        float h = position.y - uY;
+        vec3 mirrored = vec3(position.x, uY - h, position.z);
+        vec3 p = mirrored + f * (h / min(f.y, -0.05));
+        vNormal = vec3(normal.x, -normal.y, normal.z);
+        vWorld = p.xz;
+        vec4 mvPosition = viewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */ `
+      #include <fog_pars_fragment>
+      uniform vec3 uWater;
+      uniform vec4 uPond;
+      uniform float uNight;
+      uniform float uTime;
+      varying vec3 vColor;
+      varying vec3 vNormal;
+      varying vec2 vWorld;
+      void main() {
+        vec3 f = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+        if (dot(normalize(vNormal), -f) < 0.0) discard;
+        vec2 d = (vWorld - uPond.xy) / uPond.zw;
+        float e = dot(d, d);
+        if (e > 1.0) discard;
+        // Seen from the water, the sunlit side is the underside: shade softly by the mirrored normal.
+        float lit = 0.62 + 0.3 * max(0.0, dot(normalize(vNormal), normalize(vec3(0.35, -0.6, 0.45)))) ;
+        float ripple = 0.9 + 0.1 * sin((vWorld.x - vWorld.y) * 38.0 + uTime * 1.3);
+        // By day the stone, darkened and tinted by the water; at night the floodlit rotunda as a warm shimmer.
+        vec3 day = mix(uWater, vColor * lit * 0.85, 0.5);
+        vec3 night = vec3(0.24, 0.17, 0.09) * lit * vColor;
+        vec3 c = mix(day, night, uNight) * ripple;
+        // Laid over the lagoon itself, fading out toward its banks and thinner at night.
+        float a = mix(0.85, 0.32, uNight) * (1.0 - smoothstep(0.5, 1.0, e));
+        gl_FragColor = vec4(c, a);
+        #include <fog_fragment>
+      }`,
+  });
+  material.uniforms.uNight = GLOW.night;
+  material.uniforms.uTime = GLOW.time;
+  material.polygonOffset = true;
+  material.polygonOffsetFactor = -2;
+  material.polygonOffsetUnits = -2;
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  // The picture lies on the water wherever the camera stands, so its bounds don't follow the geometry.
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 1;
+  return mesh;
 }
 
 /**
@@ -1616,7 +2090,7 @@ export function conservatory(x: number, z: number): THREE.Group {
  * the terrace below, Seal Rocks offshore and the ruins of the Sutro Baths.
  */
 export function cliffHouse(): THREE.Group {
-  const b = new GeoBuilder();
+  const b = new Kit();
   const { x, z } = LANDMARKS.cliffHouse;
   const y = Math.max(0.2, terrainHeight(x, z));
   const white = 0xf2eee6;
@@ -1632,7 +2106,7 @@ export function cliffHouse(): THREE.Group {
   }
   // The red sign on the roof
   b.box(0.08, 0.16, 0.7, x - 0.3, y + 0.73, z + 0.1, 0xc8302a);
-  b.box(0.085, 0.02, 0.62, x - 0.3, y + 0.8, z + 0.1, 0xf4f0e6);
+  for (const f of [1, -1]) pixelText(neonOf(b), 'glow', 'CLIFF HOUSE', x - 0.3 + f * 0.042, y + 0.81, z + 0.1, f, 0, 0.016, [2.6, 2.5, 2.3], { rand: 0.4 });
   // Lower wing toward the sea
   b.box(0.55, 0.32, 0.9, x - 0.62, y + 0.08, z + 0.05, white);
   b.box(0.6, 0.04, 0.95, x - 0.62, y + 0.4, z + 0.05, trim);
@@ -1661,6 +2135,262 @@ export function cliffHouse(): THREE.Group {
   const { group } = b.build();
   group.traverse((o) => (o.castShadow = true));
   group.userData.tip = { title: 'Cliff House', detail: 'Lands End, above Seal Rocks.' };
+  return group;
+}
+
+// ─── The airport's buildings ────────────────────────────────────────────────
+
+/** The terminal hall on the airport fill (centre, east–west depth, north–south length). */
+const TERMINAL = { x: 16.3, z: -43.0, w: 2.6, l: 10.6 } as const;
+/** The boarding piers off the terminal's airfield side, and the gates along them. */
+const PIERS = [
+  { z: -37.2, side: 1, gates: [18.9] },
+  { z: -49.0, side: -1, gates: [18.9, 21.3] },
+] as const;
+/** Every gate: where its airliner parks, nose in to the pier (`side` is the way it faces out). */
+export const AIRPORT_GATES: readonly { x: number; pier: number; side: 1 | -1 }[] = PIERS.flatMap((p) => p.gates.map((x) => ({ x, pier: p.z, side: p.side })));
+/** How far an airliner's centre stands off its pier. */
+export const GATE_OFFSET = 0.28 + 1.33;
+
+/**
+ * The airport's buildings, SFO-style: the terminal, a glass hall under a
+ * roof of shallow vaults with lit lunettes at their ends and the name along
+ * the airfield side; two boarding piers with jet bridges that reach the
+ * airliners' forward doors and the ground crews round them; the control
+ * tower, a slender torch with a canted glass cab and the airport beacon;
+ * and the lights that make the airfield read at night (runway and taxiway
+ * centrelines, PAPIs and threshold strobes) on top of the edge lights.
+ */
+export function airportBuildings(seed: number): THREE.Group {
+  const r = rng(seed);
+  const b = new Kit();
+  const y = 0;
+  const { x: tx, z: tz, w, l } = TERMINAL;
+  const white = 0xf2f4f6;
+  const frame = 0xc9d0d8;
+  const glass = 0x7f9cb4;
+  const cool = PALETTE.windowCool;
+  const yellow = PALETTE.roadYellow;
+  const paint = (pw: number, pd: number, px: number, pz: number, color: ColorLike, lift = 0.019) => b.box(pw, 0.003, pd, px, y + lift, pz, color);
+
+  // ── The terminal: a forecourt, a solid lower storey, a glass hall above
+  b.box(w + 0.6, 0.012, l + 0.8, tx, y, tz, 0xd8d2c4);
+  b.box(w, 0.26, l, tx, y, tz, 0xdfe3e7);
+  b.box(w + 0.04, 0.03, l + 0.04, tx, y + 0.25, tz, frame);
+  b.box(w - 0.12, 0.42, l - 0.12, tx, y + 0.28, tz, glass, 'glass');
+  b.windows({ w: w - 0.12, d: l - 0.12, x: tx, z: tz, y0: y + 0.28, rows: 1, rowHeight: 0.42, cols: 30, faces: ['x+', 'x-'] }, r, 0.96, cool, { w: 0.3, h: 0.36 });
+  b.windows({ w: w - 0.12, d: l - 0.12, x: tx, z: tz, y0: y + 0.28, rows: 1, rowHeight: 0.42, cols: 7, faces: ['z+', 'z-'] }, r, 0.96, cool, { w: 0.3, h: 0.36 });
+  // Mullions on the long faces, and the arrivals level's doors and baggage-hall glass below
+  for (let k = 0; k <= 30; k++) {
+    const zk = tz - (l - 0.12) / 2 + (k * (l - 0.12)) / 30;
+    for (const s of [-1, 1]) b.box(0.02, 0.42, 0.025, tx + s * ((w - 0.12) / 2 + 0.008), y + 0.28, zk, white);
+  }
+  b.windows({ w, d: l, x: tx, z: tz, y0: y + 0.02, rows: 1, rowHeight: 0.2, cols: 22, faces: ['x-'] }, r, 0.85, cool, { w: 0.3, h: 0.14 });
+  // The name along the airfield side
+  pixelText(neonOf(b), 'glow', 'TINYTOWN INTL', tx + w / 2 + 0.012, y + 0.115, tz, 1, 0, 0.034, [2.2, 2.0, 1.6]);
+  b.box(0.012, 0.21, 2.0, tx + w / 2 + 0.004, y + 0.025, tz, 0x2e3640);
+  // The roof: five shallow vaults spanning across the hall, overhanging both sides,
+  // gutters between them, and a lit lunette of glass under each vault's ends.
+  const N = 5;
+  const span = (l + 0.6) / N;
+  const rise = 0.22;
+  const spring = y + 0.7;
+  const depth = w + 0.8;
+  const arc = (half: number, k: number) => {
+    const a = (k / 12) * Math.PI;
+    return [-Math.cos(a) * half, Math.sin(a) * rise] as const;
+  };
+  for (let i = 0; i < N; i++) {
+    const zc = tz - (l + 0.6) / 2 + span * (i + 0.5);
+    const half = span / 2 - 0.03;
+    const shell = new THREE.Shape();
+    for (let k = 0; k <= 12; k++) {
+      const [u, v] = arc(half, k);
+      if (k === 0) shell.moveTo(u, v);
+      else shell.lineTo(u, v);
+    }
+    for (let k = 12; k >= 0; k--) {
+      const [u, v] = arc(half - 0.05, k);
+      shell.lineTo(u, v - 0.04);
+    }
+    shell.closePath();
+    b.transformed(new THREE.ExtrudeGeometry(shell, { depth, bevelEnabled: false, curveSegments: 1 }).rotateY(Math.PI / 2), new THREE.Matrix4().makeTranslation(tx + 0.1 - depth / 2, spring, zc), 0xeef1f4);
+    // Standing seams over the vault, and a skylight down its crown
+    for (const k of [2, 4, 8, 10]) {
+      const [u, v] = arc(half, k);
+      b.box(depth, 0.012, 0.025, tx + 0.1, spring + v, zc - u, 0xd2d9df);
+    }
+    // (glass by day, the hall's light showing through it at night)
+    b.box(depth - 0.3, 0.012, 0.1, tx + 0.1, spring + rise, zc, [0.55, 0.62, 0.75], true);
+    // Ribs on the underside, seen under the eaves
+    for (const e of [-1, 1]) {
+      const fx = tx + e * (w / 2 - 0.06);
+      const lun = new THREE.Shape();
+      for (let k = 0; k <= 12; k++) {
+        const [u, v] = arc(half - 0.06, k);
+        if (k === 0) lun.moveTo(u, -0.02);
+        lun.lineTo(u, v - 0.05);
+      }
+      lun.closePath();
+      const g = new THREE.ShapeGeometry(lun, 1).rotateY(e > 0 ? Math.PI / 2 : -Math.PI / 2).translate(fx, spring, zc);
+      b.raw(prepared(g, [1.25, 1.35, 1.5], 0.2 + r() * 0.5), true);
+    }
+    if (i > 0) {
+      const zg = tz - (l + 0.6) / 2 + span * i;
+      b.box(depth, 0.05, 0.08, tx + 0.1, spring - 0.02, zg, frame);
+      b.box(depth - 0.4, 0.02, 0.05, tx + 0.1, spring + 0.03, zg, 0x8fb8d8, 'glass');
+    }
+  }
+  // A roof deck under the vaults, closing the hall
+  b.box(w - 0.1, 0.02, l - 0.1, tx, spring - 0.02, tz, frame);
+  // Columns under the airfield-side eaves
+  for (let k = 0; k < 9; k++) b.cylinder(0.022, 0.026, spring - y - 0.02, tx + w / 2 + 0.3, y, tz - l / 2 + 0.6 + k * 1.18, frame, 6);
+  // Landside: the kerb and the departures canopy over it
+  b.box(0.4, 0.06, l - 0.4, tx - w / 2 - 0.25, y, tz, 0xe8e2d6);
+  for (let k = 0; k < 8; k++) b.box(0.014, 0.42, 0.014, tx - w / 2 - 0.4, y, tz - l / 2 + 0.8 + k * 1.3, 0x8a929c);
+  b.box(0.5, 0.03, l - 0.4, tx - w / 2 - 0.4, y + 0.42, tz, 0xd4dbe2);
+  b.box(0.5, 0.01, l - 0.4, tx - w / 2 - 0.4, y + 0.415, tz, [1.6, 1.5, 1.25], true);
+
+  // ── Boarding piers: a glazed concourse under a barrel roof, a jet bridge at each gate
+  for (const pier of PIERS) {
+    const px0 = tx + w / 2;
+    const px1 = pier.gates[pier.gates.length - 1]! + 0.9;
+    const pl = px1 - px0;
+    const pc = (px0 + px1) / 2;
+    b.box(pl, 0.14, 0.56, pc, y, pier.z, 0xd9dee3);
+    b.box(pl - 0.04, 0.2, 0.5, pc, y + 0.14, pier.z, glass, 'glass');
+    b.windows({ w: pl - 0.04, d: 0.5, x: pc, z: pier.z, y0: y + 0.14, rows: 1, rowHeight: 0.2, cols: Math.round(pl * 5), faces: ['z+', 'z-'] }, r, 0.95, cool, { w: 0.15, h: 0.16 });
+    b.box(pl + 0.06, 0.03, 0.6, pc, y + 0.34, pier.z, frame);
+    const vault = new THREE.CylinderGeometry(0.3, 0.3, pl + 0.06, 14, 1, false, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).scale(1, 0.38, 1);
+    b.transformed(vault, new THREE.Matrix4().makeTranslation(pc, y + 0.37, pier.z), 0xeef1f4, 'smooth');
+    b.box(0.03, 0.34, 0.6, px1, y, pier.z, frame);
+    // The apron the airliners stand on, with its expansion joints
+    {
+      const ax0 = px0;
+      const ax1 = pier.gates[pier.gates.length - 1]! + 1.3;
+      const az0 = pier.z + pier.side * 0.28;
+      const az1 = pier.z + pier.side * 3.3;
+      b.box(ax1 - ax0, 0.014, Math.abs(az1 - az0), (ax0 + ax1) / 2, y, (az0 + az1) / 2, 0xc6c1b5);
+      for (let k = 1; k < 4; k++) paint(ax1 - ax0, 0.01, (ax0 + ax1) / 2, az0 + (az1 - az0) * (k / 4), 0xb3aea2, 0.016);
+    }
+    pier.gates.forEach((gx, i) => {
+      const s = pier.side;
+      const face = pier.z + s * 0.28;
+      // Gate number over the bridge door, lit
+      pixelText(neonOf(b), 'glow', `${s > 0 ? 'A' : 'B'}${i + 1}`, gx - 0.62, y + 0.27, face + s * 0.012, 0, s, 0.018, [2.4, 1.9, 0.9]);
+      // The jet bridge: a rotunda on its column, a two-section telescoping tunnel sloping down
+      // to the cab, which turns to meet the forward door; a drive column with its wheels.
+      const rx = gx - 0.62;
+      const rz = face + s * 0.1;
+      const doorX = gx - 0.15;
+      const doorZ = pier.z + s * (GATE_OFFSET - 0.86);
+      const cabX = doorX - 0.08;
+      b.cylinder(0.075, 0.075, 0.12, rx, y + 0.2, rz, 0xd8dde2, 12);
+      b.cylinder(0.08, 0.08, 0.02, rx, y + 0.32, rz, frame, 12);
+      b.cylinder(0.025, 0.03, 0.2, rx, y, rz, 0x6a7078, 6);
+      b.box(0.08, 0.1, 0.1, rx, y + 0.21, face + s * 0.03, 0xd8dde2);
+      const a = new THREE.Vector3(rx, y + 0.27, rz);
+      const c = new THREE.Vector3(cabX, y + 0.24, doorZ);
+      const yaw = Math.atan2(c.x - a.x, c.z - a.z);
+      const len = a.distanceTo(c);
+      const tunnel = (t0: number, t1: number, size: number, color: ColorLike) => {
+        const p = a.clone().lerp(c, (t0 + t1) / 2);
+        const g = new THREE.BoxGeometry(size, size, len * (t1 - t0));
+        const pitch = Math.atan2(a.y - c.y, Math.hypot(c.x - a.x, c.z - a.z));
+        b.transformed(g, new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ')).setPosition(p.x, p.y, p.z), color);
+        // A band of glass down each side
+        for (const e of [-1, 1]) {
+          const gg = new THREE.BoxGeometry(0.004, size * 0.32, len * (t1 - t0) * 0.9).translate(e * (size / 2 + 0.002), size * 0.08, 0);
+          b.transformed(gg, new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ')).setPosition(p.x, p.y, p.z), 0x4a6a86, 'glass');
+        }
+      };
+      tunnel(0.08, 0.55, 0.11, 0xd4d9de);
+      tunnel(0.5, 0.92, 0.125, 0xc4cad2);
+      // The cab: square to the fuselage, with a canopy hood over the door
+      b.box(0.15, 0.13, 0.16, cabX, y + 0.17, doorZ, 0xbfc6ce);
+      b.box(0.04, 0.11, 0.14, doorX - 0.005, y + 0.18, doorZ, 0x3a3f47);
+      const dp = a.clone().lerp(c, 0.8);
+      b.box(0.03, dp.y - 0.06 - y, 0.03, dp.x, y, dp.z, 0x6a7078);
+      b.box(0.1, 0.035, 0.06, dp.x, y, dp.z, 0x2a2e34, false, yaw);
+      // The stand: lead-in line, stop bar, and the red line the ground crew keeps clear of
+      paint(0.03, 2.6, gx, pier.z + s * 1.6, yellow);
+      paint(0.22, 0.03, gx, face + s * 0.22, yellow);
+      paint(1.5, 0.025, gx + 0.15, face + s * 3.05, 0xc8402e);
+      paint(0.025, 2.75, gx + 0.9, pier.z + s * 1.67, 0xc8402e);
+      // The turnaround: a tug and its baggage carts aft on the left, a catering truck
+      // at the right rear door, a fuel truck under the wing.
+      const cz = pier.z + s * (GATE_OFFSET + 0.55);
+      b.box(0.08, 0.05, 0.12, gx - 0.42, y, cz - s * 0.18, yellow);
+      for (let k = 0; k < 3; k++) {
+        const kz = cz + s * k * 0.15;
+        b.box(0.08, 0.025, 0.12, gx - 0.42, y + 0.015, kz, 0x6a7078);
+        b.box(0.075, 0.05, 0.11, gx - 0.42, y + 0.04, kz, pick(r, [0x3a6ab0, 0x4a7ac0, 0x8a929c] as const));
+      }
+      b.box(0.1, 0.06, 0.1, gx + 0.3, y, cz + s * 0.05, white);
+      b.box(0.1, 0.03, 0.2, gx + 0.3, y + 0.06, cz - s * 0.1, 0x8a929c);
+      b.box(0.11, 0.1, 0.18, gx + 0.3, y + 0.12, cz - s * 0.1, white);
+      b.box(0.1, 0.07, 0.24, gx + 0.68, y, pier.z + s * (GATE_OFFSET - 0.15), 0xe6e2d8);
+      b.cylinder(0.04, 0.04, 0.2, gx + 0.68, y + 0.065, pier.z + s * (GATE_OFFSET - 0.2), 0xd8dde2, 8, false);
+    });
+  }
+
+  // ── The control tower: a pavilion, a slender flared shaft, a canted glass cab, the beacon
+  const cx = 17.1;
+  const cz = -35.4;
+  b.rbox(0.8, 0.3, 0.7, cx + 0.12, y, cz, 0xe4e8ec, 0.04, 'smooth');
+  b.windows({ w: 0.8, d: 0.7, x: cx + 0.12, z: cz, y0: y + 0.04, rows: 1, rowHeight: 0.22, cols: 5, faces: ['x+', 'z+', 'z-'] }, r, 0.7, cool, { w: 0.12, h: 0.12 });
+  b.lathe([[0.27, 0], [0.24, 0.4], [0.18, 1.4], [0.15, 2.3], [0.16, 2.7], [0.26, 2.95], [0.4, 3.08], [0, 3.08]], cx, y + 0.3, cz, 0xeef1f3, 16);
+  // Fins up the shaft, catching the light
+  for (let k = 0; k < 3; k++) {
+    const a = (k / 3) * Math.PI * 2 + 0.4;
+    strut(b, new THREE.Vector3(cx + Math.cos(a) * 0.26, y + 0.3, cz + Math.sin(a) * 0.26), new THREE.Vector3(cx + Math.cos(a) * 0.16, y + 2.9, cz + Math.sin(a) * 0.16), 0.05, 0xdfe4e8);
+  }
+  const cab = y + 3.38;
+  b.cylinder(0.47, 0.38, 0.34, cx, cab, cz, 0x47708f, 16, 'glass');
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2;
+    strut(b, new THREE.Vector3(cx + Math.cos(a) * 0.385, cab, cz + Math.sin(a) * 0.385), new THREE.Vector3(cx + Math.cos(a) * 0.47, cab + 0.34, cz + Math.sin(a) * 0.47), 0.016, white);
+    // The controllers' consoles glow through the glass at night
+    b.panel(0.13, 0.08, cx + Math.cos(a) * 0.4, cab + 0.08, cz + Math.sin(a) * 0.4, Math.PI / 2 - a, [0.8, 1.6, 1.4], true, 0.3 + (k % 3) * 0.15);
+  }
+  b.cylinder(0.52, 0.5, 0.06, cx, cab + 0.34, cz, white, 16);
+  b.cylinder(0.3, 0.42, 0.08, cx, cab + 0.4, cz, 0xdfe4e8, 16);
+  b.cylinder(0.015, 0.02, 0.42, cx, cab + 0.48, cz, 0x8a9098, 5);
+  b.box(0.16, 0.012, 0.012, cx, cab + 0.72, cz, 0x8a9098);
+  b.blob(0.05, cx, cab + 0.94, cz, RED_LIGHT, true);
+  // The airport beacon: green and white, the sign of a lit airfield
+  b.blob(0.045, cx + 0.2, cab + 0.52, cz, [0.5, 3, 1.2], true);
+  b.blob(0.045, cx - 0.2, cab + 0.52, cz, [3, 3, 2.6], true);
+
+  // ── Night lights on the airfield
+  const rwx = RUNWAY.x;
+  // Runway centreline: white, then alternating red and white, then red toward each end
+  for (let zz = RUNWAY.z0 + 0.25; zz < RUNWAY.z1 - 0.2; zz += 0.5) {
+    const toEnd = Math.min(zz - RUNWAY.z0, RUNWAY.z1 - zz);
+    const k = Math.round((zz - RUNWAY.z0) / 0.5);
+    const color: ColorLike = toEnd < 1.0 ? [3, 0.5, 0.35] : toEnd < 2.2 && k % 2 ? [3, 0.5, 0.35] : [2.6, 2.5, 2.2];
+    b.decal(0.035, 0.07, rwx, y + 0.021, zz, color, true);
+  }
+  // Taxiway A's green centreline
+  for (let zz = -48.6; zz <= -37.8; zz += 0.45) b.decal(0.03, 0.06, rwx - 2.1, y + 0.02, zz, [0.4, 2.6, 1.0], true);
+  // PAPIs beside each touchdown zone (two white over two red: on the glide path), and threshold strobes
+  for (const [end, dir] of [[RUNWAY.z0, 1], [RUNWAY.z1, -1]] as const) {
+    for (let k = 0; k < 4; k++) {
+      const px = rwx - 1.25 - k * 0.14;
+      const pz = end + dir * 2.6;
+      b.box(0.1, 0.05, 0.06, px, y, pz, 0x3a3f47);
+      b.box(0.08, 0.035, 0.012, px, y + 0.012, pz + dir * 0.034, k < 2 ? [3, 2.9, 2.6] : [3, 0.4, 0.3], true);
+    }
+    for (const s of [-1, 1]) b.blob(0.035, rwx + s * 1.05, y + 0.05, end - dir * 0.05, [3, 3, 3], true);
+  }
+  const { group } = b.build();
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  group.userData.tip = { title: 'Airport', detail: 'Free infrastructure for every city. Planes are what you buy.' };
   return group;
 }
 

@@ -4,7 +4,7 @@ import { PALETTE } from './palette.ts';
 import { palm, tree, type TreeKind } from './buildings.ts';
 import { airliner } from './models.ts';
 import { FogBanks, smoothGround, type FogSpec } from './fog.ts';
-import { Kit, cypress, neonOf, pixelText, put, rod, shade, tower, wall, winOf } from './towers.ts';
+import { Kit, cypress, put, rod, shade, tower, wall, winOf } from './towers.ts';
 import { gum, hillsHouse, hillsLots, hillsStreets, oak, pine, rock, scrub, strip, type HillsStyle, type LampSpot } from './hills.ts';
 import { Batch } from './batch.ts';
 import {
@@ -24,6 +24,7 @@ import {
   type Windmill,
 } from './landmarks.ts';
 import { Terrain } from './terrain.ts';
+import { AIRPORT_GATES, GATE_OFFSET, airportBuildings } from './landmarks.ts';
 import { hash, pick, rng } from '../world/rng.ts';
 import {
   AIRPORT_FILL,
@@ -1004,7 +1005,6 @@ export class Scenery {
     const EDGE: ColorLike = [2.6, 2.3, 1.5];
     const BLUE: ColorLike = [0.5, 1.0, 2.8];
     const GREEN: ColorLike = [0.5, 2.6, 0.9];
-    const RED: ColorLike = [2.8, 0.35, 0.25];
     const paint = (w: number, d: number, x: number, z: number, color: ColorLike, lift = 0.018, rot = 0) => b.box(w, 0.003, d, x, y + lift, z, color, false, rot);
     // Seawall: riprap where the fill meets the bay, a concrete coping along the top.
     seawall(b, r, AIRPORT_FILL);
@@ -1061,73 +1061,15 @@ export class Scenery {
       b.box(0.08, 0.14, 0.08, 18.15, y, slot.z + 0.85, 0x3a3f4a);
       b.blob(0.025, 18.15, y + 0.16, slot.z + 0.85, [1.6, 2.4, 1.2], true);
     }
-    // The terminal: a long hall under a wing of a roof, glass to the airfield, a lit name along the top.
-    const tw = 2.6;
-    const tl = 10.6;
-    const tcx = 16.3;
-    const tcz = -43.0;
-    b.box(tw + 0.6, 0.012, tl + 0.8, tcx, y, tcz, 0xd8d2c4);
-    b.box(tw, 0.62, tl, tcx, y, tcz, 0xe9eef2);
-    b.windows({ w: tw, d: tl, x: tcx, z: tcz, y0: y + 0.04, rows: 2, rowHeight: 0.28, cols: 30, faces: ['x+', 'x-'] }, r, 0.92, PALETTE.windowCool, { w: 0.3, h: 0.22 });
-    b.windows({ w: tw, d: tl, x: tcx, z: tcz, y0: y + 0.04, rows: 2, rowHeight: 0.28, cols: 7, faces: ['z+', 'z-'] }, r, 0.92, PALETTE.windowCool, { w: 0.28, h: 0.22 });
-    // The roof: a shallow vault along the hall, overhanging the glass on the airfield side, ribbed, with skylights.
-    const R = 3.4;
-    const half = 0.5;
-    const roof = new THREE.CylinderGeometry(R, R, tl + 0.6, 28, 1, true, Math.PI - half, half * 2).rotateX(Math.PI / 2).translate(0, -R, 0).scale(1, 0.55, 1);
-    const lift = y + 0.62 + R * (1 - Math.cos(half)) * 0.55;
-    b.transformed(roof, new THREE.Matrix4().makeTranslation(tcx + 0.25, lift, tcz), 0xdfe5ea, 'smooth');
-    const under = roof.clone().scale(1, 1, 1);
-    b.transformed(under.applyMatrix4(new THREE.Matrix4().makeScale(-1, 1, 1)), new THREE.Matrix4().makeTranslation(tcx + 0.25, lift - 0.02, tcz), 0x9aa4ae, 'smooth');
-    for (let k = 0; k < 12; k++) {
-      const zk = tcz - tl / 2 + 0.4 + k * ((tl - 0.8) / 11);
-      b.box(R * 2 * Math.sin(half) + 0.04, 0.025, 0.05, tcx + 0.25, lift + 0.005, zk, 0xb8c2cc);
-      if (k % 3 === 1) b.box(0.5, 0.02, 0.6, tcx + 0.25, lift + 0.01, zk + 0.45, 0x8fb8d8, 'glass');
-    }
-    for (let k = 0; k < 9; k++) b.box(0.04, 0.05, 0.04, tcx + tw / 2 + 0.25, y + 0.62, tcz - tl / 2 + 0.6 + k * 1.18, 0xb8c0c8);
-    pixelText(neonOf(b), 'glow', 'TINYTOWN INTL', tcx + tw / 2 + 0.012, y + 0.48, tcz, 1, 0, 0.034, [2.2, 2.0, 1.6]);
-    // Two boarding piers with gates, jet bridges and airliners nosed in.
-    const piers: { z: number; side: number; gates: number[] }[] = [
-      { z: -37.2, side: 1, gates: [18.9] },
-      { z: -49.0, side: -1, gates: [18.9, 21.3] },
-    ];
-    for (const pier of piers) {
-      const px0 = tcx + tw / 2;
-      const px1 = pier.gates.at(-1)! + 0.9;
-      b.box(px1 - px0, 0.34, 0.56, (px0 + px1) / 2, y, pier.z, 0xe4e9ee);
-      b.box(px1 - px0 + 0.06, 0.04, 0.62, (px0 + px1) / 2, y + 0.34, pier.z, 0xb8c0c8);
-      b.windows({ w: px1 - px0, d: 0.56, x: (px0 + px1) / 2, z: pier.z, y0: y + 0.06, rows: 1, rowHeight: 0.22, cols: Math.round((px1 - px0) * 4), faces: ['z+', 'z-'] }, r, 0.95, PALETTE.windowCool, { w: 0.18, h: 0.16 });
-      for (const gx of pier.gates) {
-        // The airliner: nose to the pier, on its stand line.
-        const plane = airliner(hash(this.seed, 'gate', gx, pier.z));
-        plane.group.position.set(gx, y + 0.02, pier.z + pier.side * (0.28 + 1.33));
-        plane.group.rotation.y = pier.side > 0 ? -Math.PI / 2 : Math.PI / 2;
-        plane.group.userData.tip = { title: 'At the gate', detail: 'Boarding for the other founders’ cities. Flights are coming soon.' };
-        this.fix(plane.group);
-        paint(0.03, 2.4, gx, pier.z + pier.side * 1.5, yellow, 0.017);
-        // Jet bridge: a rotunda on the pier, a telescoping tunnel to the forward door.
-        const fz = pier.z + pier.side * 0.28;
-        const doorZ = pier.z + pier.side * (0.28 + 0.62);
-        const rxx = gx - 0.55;
-        b.cylinder(0.1, 0.1, 0.3, rxx, y, fz + pier.side * 0.12, 0xd8dde2, 10);
-        const bl = Math.hypot(gx - 0.16 - rxx, doorZ - (fz + pier.side * 0.12));
-        const ang = Math.atan2(gx - 0.16 - rxx, doorZ - (fz + pier.side * 0.12));
-        b.box(0.1, 0.1, bl, (rxx + gx - 0.16) / 2, y + 0.17, (fz + pier.side * 0.12 + doorZ) / 2, 0xc8ced6, false, ang);
-        b.box(0.04, 0.17, 0.04, (rxx + gx - 0.16) / 2, y, (fz + pier.side * 0.12 + doorZ) / 2, 0x6a7078);
-      }
-    }
-    // Control tower: a slender shaft, a flared cab with tinted glass, a beacon.
-    const cx = 17.1;
-    const cz = -35.4;
-    b.cylinder(0.32, 0.38, 0.3, cx, y, cz, 0xd8dde2, 12);
-    b.cylinder(0.16, 0.22, 2.9, cx, y, cz, 0xe8ecef, 12);
-    b.cylinder(0.42, 0.24, 0.22, cx, y + 2.9, cz, 0xd8dde2, 12);
-    b.cylinder(0.44, 0.4, 0.3, cx, y + 3.12, cz, 0x5a8ab0, 12, 'glass');
-    b.cylinder(0.48, 0.48, 0.05, cx, y + 3.42, cz, 0xd8dde2, 12);
-    b.cylinder(0.02, 0.02, 0.3, cx, y + 3.47, cz, 0x8a9098, 4);
-    b.blob(0.06, cx, y + 3.8, cz, RED, true);
-    for (let k = 0; k < 10; k++) {
-      const a = (k / 10) * Math.PI * 2;
-      b.quad(0.2, 0.18, cx + Math.cos(a) * 0.43, y + 3.27, cz + Math.sin(a) * 0.43, Math.abs(Math.cos(a)) > Math.abs(Math.sin(a)) ? (Math.cos(a) > 0 ? 'x+' : 'x-') : Math.sin(a) > 0 ? 'z+' : 'z-', [0.9, 1.5, 1.4], true, 0.5);
+    // The terminal, its boarding piers and jet bridges, the control tower and the airfield's
+    // night lights (landmarks.ts), and an airliner nosed in at every gate.
+    this.fix(airportBuildings(hash(this.seed, 'terminal')));
+    for (const gate of AIRPORT_GATES) {
+      const plane = airliner(hash(this.seed, 'gate', gate.x, gate.pier));
+      plane.group.position.set(gate.x, y + 0.02, gate.pier + gate.side * GATE_OFFSET);
+      plane.group.rotation.y = gate.side > 0 ? Math.PI / 2 : -Math.PI / 2;
+      plane.group.userData.tip = { title: 'At the gate', detail: 'Boarding for the other founders’ cities. Flights are coming soon.' };
+      this.fix(plane.group);
     }
     // Hangars across the runway: barrel roofs, big doors to the airfield, a fire station between.
     for (const hz of [-47.2, -44.0]) {
@@ -1150,9 +1092,6 @@ export class Scenery {
     // Landside: the road in from the city, the kerb, a parking garage full of cars.
     const land: Pt[] = [AIRPORT_ROAD.at(-1)!, [15.2, -37.0], [14.6, -38.4], [14.6, -47.8], [15.2, -48.8], [16.0, -49.0]];
     ribbon(b, land, 0.6, PALETTE.road, 0.02, 0, true);
-    b.box(0.4, 0.06, tl - 0.4, tcx - tw / 2 - 0.25, y, tcz, 0xe8e2d6);
-    for (let k = 0; k < 8; k++) b.box(0.012, 0.42, 0.012, tcx - tw / 2 - 0.4, y, tcz - tl / 2 + 0.8 + k * 1.3, 0x8a929c);
-    b.box(0.5, 0.03, tl - 0.4, tcx - tw / 2 - 0.4, y + 0.42, tcz, 0xd4dbe2);
     const gx0 = 12.5;
     const gz0 = -46.4;
     for (let lvl = 0; lvl < 3; lvl++) {
@@ -1442,7 +1381,8 @@ export class Scenery {
     const chunks = new Chunks();
     this.towns(chunks, r);
     // Downtown Oakland across the bay: real towers (the same families as ours), each on the ground.
-    const spots: [number, number, number][] = [[59, -9, 6], [61.2, -8.6, 4], [59.4, -6.6, 4], [61.6, -6.2, 6], [63.6, -7.8, 4], [60, -4, 4], [62.4, -3.6, 4]];
+    // Inland of the Bay Bridge's landing (x ≈ 59) and the freeways it splits into along x ≈ 60.2.
+    const spots: [number, number, number][] = [[61.7, -9.4, 6], [63.3, -8.0, 4], [62.0, -4.2, 4], [63.5, -6.0, 6], [64.8, -9.4, 4], [62.6, -10.9, 4], [64.3, -3.4, 4]];
     for (const [x, z, tier] of spots) {
       const k = new Kit();
       tower(k, r, 0, 0, tier, [2.4, 1.8, 1.0]);
@@ -2508,5 +2448,7 @@ function hidesCliffHouse(x: number, z: number): boolean {
   const dz = z - LANDMARKS.cliffHouse.z;
   const along = (dx + dz) / Math.SQRT2;
   const across = (dx - dz) / Math.SQRT2;
-  return Math.hypot(dx, dz) < 1.8 || (along > 0 && along < 4.5 && Math.abs(across) < 1.6);
+  // The default camera looks down from the north-east: its line of sight to the house climbs
+  // 0.71 for every unit it runs back, so a tall tree well up the slope can still stand in front.
+  return Math.hypot(dx, dz) < 1.8 || (along > 0 && Math.abs(across) < 1.6 && terrainHeight(x, z) + 1.8 > 0.2 + along * 0.71);
 }
