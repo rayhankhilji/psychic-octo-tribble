@@ -1,6 +1,6 @@
 import { formatMoney, runningPeak, type Snapshot, type Timeline } from '../data/types.ts';
 import type { Tip } from '../render/city.ts';
-import { HOME_TIERS, REGIONS } from '../game/catalog.ts';
+import { CATALOG, HOME_TIERS, REGIONS } from '../game/catalog.ts';
 import type { AwaySummary } from '../game/away.ts';
 import { describeGame, money, RATE, type GameEvent } from '../game/economy.ts';
 import { lazyThumbnail } from './thumbnails.ts';
@@ -56,7 +56,7 @@ const LEGEND: { icon: IconName; tone: Tone; title: string; text: string }[] = [
   { icon: 'coin', tone: 'brand', title: 'Every $1 you earn is $10,000 to spend.', text: 'Paid daily into your treasury. Build offices, parks, towers, rides and planes on your plots.' },
   { icon: 'users', tone: 'info', title: 'Your users live here.', text: 'Each needs $0.20 of MRR to be housed: 1,000 users need $200. Short of that, people end up in tents.' },
   { icon: 'bulbOff', tone: 'bad', title: 'Upkeep keeps the lights on.', text: "Buildings cost upkeep. Short of it, the TINYTOWN sign goes dark first, then lamps fail, the bridge rusts and the train stops." },
-  { icon: 'home', tone: 'brand', title: 'Your home moves up', text: 'with every extra digit of MRR: hacker house, studio, the Hills, an island, the moon.' },
+  { icon: 'home', tone: 'brand', title: 'Your home moves up', text: `as MRR grows: a studio at ${shortMrr(HOME_TIERS[1]!.mrr)}, the Hills at ${shortMrr(HOME_TIERS[3]!.mrr)}, an island at ${shortMrr(HOME_TIERS[5]!.mrr)}, the moon at ${shortMrr(HOME_TIERS[6]!.mrr)}.` },
   { icon: 'map', tone: 'good', title: 'Land opens', text: 'as you fill your plots and grow MRR: the fog lifts over new blocks, the Hills, the pier, the marina and your island.' },
   { icon: 'cloudRain', tone: 'info', title: 'Rain', text: 'when MRR falls more than 1% in a week. HQ gains a floor per release; the train speeds up with commits.' },
 ];
@@ -459,12 +459,14 @@ export class Hud {
     const s = t.snapshots;
     const peaks = runningPeak(s);
     const out: Milestone[] = [];
-    const thresholds = [1, 10, 100, 1_000, 3_000, 10_000, 100_000, 1_000_000];
+    // The game's own unlock moments, read from its tables, plus the real round numbers.
+    const gates = [...HOME_TIERS.map((h) => h.mrr), ...Object.values(REGIONS).map((r) => r.gate), ...CATALOG.map((c) => c.unlock)];
+    const thresholds = [...new Set([1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, ...gates])].filter((m) => m > 0).sort((a, b) => a - b);
     for (const th of thresholds) {
       const i = peaks.findIndex((p) => p >= th);
       if (i < 0) continue;
       const label = th === 1 ? 'First revenue' : `${shortMrr(th)} MRR`;
-      out.push({ i, label, detail: th === 1 ? 'The treasury starts filling up' : unlocksAt(th) || 'New things to build', kind: 'mrr' });
+      out.push({ i, label, detail: th === 1 ? 'The treasury starts filling up' : unlocksAt(th) || (gates.includes(th) ? 'New things to build' : 'A round number, and a real one'), kind: 'mrr' });
     }
     const firstCustomer = s.findIndex((x) => x.customers > 0);
     if (firstCustomer >= 0) out.push({ i: firstCustomer, label: 'First customer', detail: 'Someone paid for the thing you made', kind: 'customer' });

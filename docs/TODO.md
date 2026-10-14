@@ -91,7 +91,7 @@ All in `docs/GAME_DESIGN.md` and HANDOFF §7.
 - [x] **Celebrations, part 2:** when the TINYTOWN sign relights on the live day, the camera flies to the hillside for the fireworks and the feed offers "Share this" (a postcard). Feed toasts can carry an action button.
 - [x] **Moon scene:** a ~30 s cinematic: lift-off from the island, a tilt up into space, the founder's moon house (a lit geodesic dome, Earth with the bay's lights, a rover, a TinyTown flag, a sign with the city's name), and the return. Skippable (Esc), with a reduced-motion version. `?moon` / `?moon=<seconds>` in dev or `?debug`; `window.__moonTrip.seek(t)`. Left: on portrait screens the moon shots are wide and the house reads small; sailboats can show behind the climbing rocket.
 - [x] **Sound:** synthesised in the browser (`src/audio/`), off by default, speaker button or M. Left: someone should listen and tune levels; no volume slider yet.
-- [ ] **More $1B-a-month projects:** a second bridge, a new district across the bay (Oakland side), an international airport upgrade, "launch a venture" from the venture studio.
+- [ ] **More big-ticket projects:** a second bridge, a new district across the bay (Oakland side), an international airport upgrade, "launch a venture" from the venture studio.
 
 ## P4: Hosted product (the next big phase)
 

@@ -34,7 +34,7 @@ To keep a dev server running in the background in a cloud session:
 |---|---|
 | `?demo` | Force the demo world (the fictional *Nightjar*, 540 days). It's the default when no integrations are configured. |
 | `&fresh` | Reset saved actions to the scripted demo founder. |
-| `&boost=40` | Multiply demo metrics (see the island, launch site and the $1B projects). |
+| `&boost=40` | Multiply demo metrics (the plain demo reaches the moon on day 404; boosted, by day 57). |
 | `&replay` | Start the replay from day one. |
 | `&time=13:00` (or `7pm`, `22:00`) | Pin the time of day. Otherwise it follows the local clock. |
 | `&quality=low\|medium\|high` | Force render quality (high enables GTAO). |

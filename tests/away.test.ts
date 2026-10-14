@@ -28,7 +28,7 @@ describe('while you were away', () => {
   });
 
   it('lists what unlocked and the land that opened', () => {
-    const tl = days(40, (d) => ({ mrr: d < 20 ? 50 : 1_500, customers: d < 20 ? 1 : 15 }));
+    const tl = days(40, (d) => ({ mrr: d < 20 ? 5 : 300, customers: d < 20 ? 1 : 3 }));
     const s = awaySummary(simulate(tl, [], 10), simulate(tl, [], 39), tl[10]!, tl[39]!)!;
     const ids = s.unlocked.map((i) => i.id);
     expect(ids).toContain('cafe');

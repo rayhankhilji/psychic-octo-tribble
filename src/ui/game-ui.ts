@@ -771,11 +771,11 @@ export class GameUI {
     return `
         <header class="dialog-head">
           <span class="tile tone-brand">${ICON.home}</span>
-          <div><h2 id="home-title">Your home</h2><p>You live in your <b>${escape(curName)}</b>. Every extra digit of MRR moves you up; peak MRR counts, so a bad month never evicts you.</p></div>
+          <div><h2 id="home-title">Your home</h2><p>You live in your <b>${escape(curName)}</b>. Each MRR milestone moves you up, all the way to the moon at ${shortMrr(HOME_TIERS[HOME_TIERS.length - 1]!.mrr)} MRR; peak MRR counts, so a bad month never evicts you.</p></div>
           <button class="btn ghost icon-only close" type="button" data-act="close" data-key="close" aria-label="Close">${ICON.close}</button>
         </header>
         ${nextHtml}
         ${this.homeStatus ? `<p class="home-status">${ICON.check}<span>${escape(this.homeStatus)}</span></p>` : ''}
-        <ol class="ladder" aria-label="Your house, one rung per digit of MRR">${rows}</ol>`;
+        <ol class="ladder" aria-label="Your house, one rung per MRR milestone">${rows}</ol>`;
   }
 }

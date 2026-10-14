@@ -23,11 +23,11 @@ describe('checkAction', () => {
   });
 
   it('refuses with the game’s own reason: locked, unaffordable, taken, unknown', () => {
-    expect(checkAction(days(100), [], { t: today, kind: 'build', item: 'hq-campus' }, {})).toEqual({ ok: false, reason: 'Unlocks at $1,000 MRR' });
-    expect(checkAction(days(1_000), [], { t: today, kind: 'build', item: 'hq-campus' }, {})).toEqual({ ok: false, reason: 'Not enough money' });
+    expect(checkAction(days(100), [], { t: today, kind: 'build', item: 'hq-tower' }, {})).toEqual({ ok: false, reason: 'Unlocks at $1,000 MRR' });
+    expect(checkAction(days(1_000), [], { t: today, kind: 'build', item: 'hq-tower' }, {})).toEqual({ ok: false, reason: 'Not enough money' });
     expect(checkAction(days(100), [park('market:0')], park('market:0'), {})).toEqual({ ok: false, reason: 'That plot is taken' });
     expect(checkAction(days(100), [], { t: today, kind: 'build', item: 'gold-plated-tower' }, {})).toEqual({ ok: false, reason: 'Unknown item' });
-    expect(checkAction(days(100), [], { t: today, kind: 'home', tier: 3, choice: 'hills-modern' }, {})).toEqual({ ok: false, reason: 'Not unlocked yet' });
+    expect(checkAction(days(100), [], { t: today, kind: 'home', tier: 4, choice: 'villa' }, {})).toEqual({ ok: false, reason: 'Not unlocked yet' });
   });
 
   it('counts money the same way as the browser, back-pay window included', () => {
@@ -37,9 +37,10 @@ describe('checkAction', () => {
     const pricey: Action = { t: today, kind: 'build', item: 'cafe', plot: 'market:0' };
     expect(checkAction(days(100), [], pricey, joinedToday)).toEqual({ ok: true });
     expect(checkAction(days(100), [], pricey, { incomeFrom: today + DAY })).toEqual({ ok: true });
-    // With no income credited, the starting grant pays for one café but not two.
-    const twoCafes = [pricey, { ...pricey, plot: 'market:1' }];
-    expect(checkAction(days(100), twoCafes.slice(0, 1), twoCafes[1]!, { incomeFrom: today + DAY })).toEqual({ ok: false, reason: 'Not enough money' });
+    // With no income credited, the starting grant pays for three cafés but not four.
+    const cafes = [0, 1, 2, 3].map((q) => ({ ...pricey, plot: `market:${q}` }));
+    expect(checkAction(days(100), cafes.slice(0, 2), cafes[2]!, { incomeFrom: today + DAY })).toEqual({ ok: true });
+    expect(checkAction(days(100), cafes.slice(0, 3), cafes[3]!, { incomeFrom: today + DAY })).toEqual({ ok: false, reason: 'Not enough money' });
   });
 
   it('only allows today or yesterday, and never before an already-saved action', () => {
@@ -100,7 +101,7 @@ describe('POST /api/world/actions', () => {
   });
 
   it('refuses with 409 and the reason, and saves nothing', async () => {
-    const res = await post({ t: TODAY, kind: 'build', item: 'hq-campus' });
+    const res = await post({ t: TODAY, kind: 'build', item: 'hq-tower' });
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: 'Unlocks at $1,000 MRR', code: 'rejected' });
     expect(await (await call('GET', '/api/world/actions')).json()).toEqual({ actions: [] });

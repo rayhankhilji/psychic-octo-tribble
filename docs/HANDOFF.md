@@ -12,7 +12,7 @@ This is everything a new session needs to continue without the original conversa
 - **The game (added on day one, at the owner's request).**
   - Every real **$1 of MRR = $10,000** of in-game money, paid daily, to spend on the city: offices, parks, towers, a stadium, a university, planes, yachts, a rocket.
   - Your **active users live in the city**. Each needs **$0.20 of MRR** to be housed (1,000 users need $200 MRR). Below that, people end up homeless in tents and the city decays: the TINYTOWN sign goes dark, lamps fail, the bridge rusts, the train stops, shops board up. This pushes the founder toward a real conversion rate.
-  - **The founder's own house** moves up one rung for each extra digit of MRR: Hacker House → studio ($10) → bungalow or loft ($100) → TinyTown Hills house ($1k) → one of three estates ($10k) → island estate and superyacht ($100k) → **a house on the moon** ($1M, reached by a rocket you buy).
+  - **The founder's own house** moves up as MRR grows (the owner's ladder of 2026-10-14): Hacker House → studio ($10) → bungalow or loft ($50) → a TinyTown Hills house ($250) → one of three estates ($1k) → island estate and superyacht ($5k) → a house on the moon ($10k; buy a rocket to visit).
   - **Land is under cloud.** Regions open at MRR milestones, and within a region more plots clear as you fill the ones you have.
   - **Satisfaction (0–100)** comes from housing, upkeep, amenities and momentum. Nothing in the game can raise it except growing the business.
   - **The one rule:** the only way to grow the city is to grow the startup. We never sell in-game money, speed-ups or unlocks.
@@ -57,17 +57,17 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
 
 | Decision | Why | Status |
 |---|---|---|
-| **$1 MRR = $10,000** in game | At $100k MRR the city earns $1B a month, so you become a billionaire exactly when you unlock the island. A Gulfstream (~$70M) is reachable around $10k MRR. At $1 = $1M, nothing feels earned. | Built |
+| **$1 MRR = $10,000** in game | At $10k MRR the city earns $100M a month (the ladder was made easier on 2026-10-14; it was $1B a month at $100k). At $1 = $1M, nothing feels earned. | Built |
 | **Income once a day**, with a "while you were away" summary | Monthly is too slow to bring anyone back; real-time ticking is invisible. Daily gives a reason to open the app each morning. Absence is never punished. | Daily income built; the summary isn't |
 | **Housing costs $0.20 MRR per active user**; the first 100 users are always housed | The owner's idea, kept: it makes conversion rate visible. Count monthly actives, not all-time signups. | Built (the demo uses its own user numbers; PostHog not connected yet) |
 | **Homelessness stays**, shown with dignity (tents under the bridge and by the tracks, never a joke) | Claude suggested softening it to vacancies and campers. The owner kept it: it plainly tells you you're not converting. | Built |
 | **Decay in stages:** sign dark → lamps fail → bridge rusts → train stops → shops board up → housing fails. Nothing is destroyed; it all recovers | The sign going dark is the Hollywood-sign reference. Comebacks ("we fixed churn and the sign came back on") are shareable moments. | Built (the relit-sign celebration and share prompt aren't) |
 | **House ladder** (see §1), one rung per digit | The owner's design, shifted down one rung at their request. Old houses stay as landmarks. Picks can be swapped for a 25% renovation fee in game money. | Built (swap fee: check the game UI) |
-| **$1M MRR = house on the moon**; the clouded end of your island clears to a launch site, and you buy a rocket that flies there and back | The owner's idea. | Rocket launch and landing built; the moon appears in the sky during flights. **A moon scene (landing, visiting the house) isn't built.** |
+| **$10k MRR = house on the moon** (was $1M before 2026-10-14); the clouded end of your island clears to a launch site, and you buy a rocket that flies there and back | The owner's idea. | Rocket launch and landing built; the moon appears in the sky during flights. **A moon scene (landing, visiting the house) isn't built.** |
 | **The airport is free infrastructure; planes are bought** | The owner's call. | Built |
 | **Flights visit other founders' cities.** Every city has an airport, and any plane can fly anywhere once bought. Cinematic: zoom to your airport, take off, 5–10 s over the ocean, land in their city. Visitors can look but not touch, and can leave a postcard. You can't move cities. | Turns the jet into the social and viral feature. | **Not built** (needs hosting) |
 | **Build on fixed plots** (four per downtown block, some items take a whole block), not free placement | Free placement is months of work and makes ugly cities. Plots keep every city beautiful and work on phones. | Built |
-| **Land clears as you grow:** regions open at MRR gates (Hills $1k, pier $3k, marina $10k, island $100k, launch site $1M); downtown blocks clear when every plot is built **and** MRR reaches the gate | The owner's idea: "after u use every allocated space more lots open… clouds clear". | Built |
+| **Land clears as you grow:** regions open at MRR gates (Hills $250, pier $500, marina $1k, island $5k, launch site $10k); downtown blocks clear when every plot is built **and** MRR reaches the gate | The owner's idea: "after u use every allocated space more lots open… clouds clear". | Built |
 | **Satisfaction score** | The owner wanted an addictive score where the only way up is growing the real startup. | Built |
 | **Wealth-based cars:** taxis downtown, convertibles in the Hills, more luxury cars as the city gets richer | The owner's request. | Built in traffic (`setLuxury`) |
 | **Your brand on HQ:** sign up with name and URL; we pull the logo and colour, and HQ wears a rooftop logo sign | The owner's idea. | Name sign built; **URL and logo import aren't** |
@@ -202,7 +202,7 @@ Lessons:
 - **Brand import:** sign up with name and URL, pull the logo and brand colour onto HQ.
 - **Public world page** (opt-in, metrics hidden by default), a **growth recap video** (15 s clip of the replay), **desktop mode** (small always-on window or wallpaper).
 - **PostHog** (active users become people on the streets) and **Supabase** (signups).
-- **More big-ticket builds** for $1B/month cities: a second bridge, a new district across the bay, an international airport, launching your own ventures.
+- **More big-ticket builds** for big cities ($5k+ MRR): a second bridge, a new district across the bay, an international airport, launching your own ventures.
 - **More regions, then more cities and themes** (Miami, Tokyo…), only after the first world is exquisite.
 - **Leaderboards** on satisfaction or MRR (opt-in); a public score.
 - **Sound design** (ambient city, waves, gulls, construction, fireworks).

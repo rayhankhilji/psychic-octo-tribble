@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Snapshot } from '../src/data/types.ts';
-import { CATALOG, HOME_TIERS, ITEMS } from '../src/game/catalog.ts';
+import { CATALOG, EASE_ANCHORS, HOME_TIERS, ITEMS, REGIONS, easeMrr } from '../src/game/catalog.ts';
 import {
   FREE_HOUSED,
   RATE,
@@ -48,7 +48,7 @@ describe('building', () => {
     const tl = days(5, () => ({}));
     const g = simulate(tl, [build(1, 'park', 'market:0')], 4);
     expect(g.plots.find((p) => p.id === 'market:0')?.item).toBe('park');
-    expect(g.treasury).toBeLessThan(STARTING_GRANT - 50_000 + 1);
+    expect(g.treasury).toBeLessThan(STARTING_GRANT - ITEMS.get('park')!.price + 1);
     expect(g.rejected).toEqual([]);
   });
 
@@ -59,23 +59,23 @@ describe('building', () => {
       [build(1, 'office-tower', 'market:0'), build(1, 'park', 'techpark:0'), build(1, 'park', 'market:0'), build(2, 'garden', 'market:0')],
       4,
     );
-    expect(g.rejected.map((r) => r.reason)).toEqual(['Unlocks at $1,000 MRR', 'Pick an open plot', 'That plot is taken']);
+    expect(g.rejected.map((r) => r.reason)).toEqual(['Unlocks at $250 MRR', 'Pick an open plot', 'That plot is taken']);
     expect(g.owned).toHaveLength(1);
   });
 
   it('opens the next block only once the current land is full and MRR allows', () => {
-    const tl = days(10, (d) => ({ mrr: d >= 8 ? 150 : 0, customers: 1 }));
+    const tl = days(10, (d) => ({ mrr: d >= 8 ? 60 : 0, customers: 1 }));
     const fill = ['market:0', 'market:1', 'market:2', 'market:3'].map((p, i) => build(1 + i, 'garden', p));
     expect(simulate(tl, fill.slice(0, 3), 9).openBlocks).toEqual(['market']);
     expect(simulate(tl, fill, 6).openBlocks).toEqual(['market', 'arcade']);
     const arcade = ['arcade:0', 'arcade:1', 'arcade:2', 'arcade:3'].map((p) => build(6, 'garden', p));
-    // Tech Park needs $100 MRR: closed on day 7, open from day 8.
+    // SoMa (techpark) needs $50 MRR: closed on day 7, open from day 8.
     expect(simulate(tl, [...fill, ...arcade], 7).openBlocks).toEqual(['market', 'arcade']);
     expect(simulate(tl, [...fill, ...arcade], 9).openBlocks).toContain('techpark');
   });
 
   it('puts whole-block items on an empty block only', () => {
-    const tl = days(400, () => ({ mrr: 20_000, customers: 300 }));
+    const tl = days(400, () => ({ mrr: 2_000, customers: 300 }));
     const ok = simulate(tl, [build(390, 'stadium', 'market:2')], 399);
     expect(ok.plots.filter((p) => p.block === 'market').every((p) => p.item === 'stadium')).toBe(true);
     const blocked = simulate(tl, [build(380, 'park', 'market:0'), build(390, 'stadium', 'market:2')], 399);
@@ -83,17 +83,17 @@ describe('building', () => {
   });
 
   it('upgrades HQ one level at a time or more, never down', () => {
-    const tl = days(100, () => ({ mrr: 2_000, customers: 40 }));
+    const tl = days(100, () => ({ mrr: 300, customers: 4 }));
     const g = simulate(tl, [build(80, 'hq-campus'), build(90, 'hq-office')], 99);
     expect(g.hqLevel).toBe(2);
     expect(g.rejected).toHaveLength(1);
   });
 
   it('keeps the airport free and pier rides behind the pier opening', () => {
-    const tl = days(300, () => ({ mrr: 2_000, customers: 40 }));
+    const tl = days(300, () => ({ mrr: 300, customers: 4 }));
     const g = simulate(tl, [build(280, 'prop-plane'), build(281, 'ferris-wheel')], 299);
     expect(g.owned.map((o) => o.item)).toEqual(['prop-plane']);
-    expect(g.rejected[0]?.reason).toBe('Unlocks at $3,000 MRR');
+    expect(g.rejected[0]?.reason).toBe('Unlocks at $500 MRR');
   });
 });
 
@@ -124,7 +124,7 @@ describe('housing and decay', () => {
 
   it('decays when upkeep outruns income and the treasury is empty', () => {
     // Spend almost everything, then revenue disappears: savings cover upkeep for a while, then decay.
-    const tl = days(400, (d) => ({ mrr: d < 34 ? 1_000 : 0, customers: 1 }));
+    const tl = days(400, (d) => ({ mrr: d < 34 ? 250 : 0, customers: 1 }));
     const spend = [build(33, 'library', 'market:0'), build(33, 'coworking', 'market:1'), build(33, 'cafe', 'market:2'), build(33, 'courts', 'market:3')];
     expect(simulate(tl, spend, 100).maintenance).toBe(100);
     const g = simulate(tl, spend, 399);
@@ -154,21 +154,23 @@ describe('satisfaction', () => {
 });
 
 describe('the founder home ladder', () => {
-  it('moves you up a home with every extra digit of peak MRR, and keeps it after a dip', () => {
+  it('moves you up a home at each peak-MRR milestone, and keeps it after a dip', () => {
     const at = (mrr: number) => simulate(days(2, () => ({ mrr, customers: 1 })), [], 1).home;
     expect(at(0).option).toBe('hacker-house');
     expect(at(10).option).toBe('studio');
-    expect(at(100).option).toBe('bungalow');
-    expect(at(1_000).option).toBe('hills-modern');
-    expect(at(10_000).option).toBe('villa');
-    expect(at(100_000).option).toBe('island-estate');
-    expect(at(1_000_000).option).toBe('moon-house');
-    const dip = simulate(days(3, (d) => ({ mrr: d === 0 ? 1_000 : 50, customers: 1 })), [], 2);
+    expect(at(50).option).toBe('bungalow');
+    expect(at(250).option).toBe('hills-modern');
+    expect(at(1_000).option).toBe('villa');
+    expect(at(4_999).option).toBe('villa');
+    expect(at(5_000).option).toBe('island-estate');
+    expect(at(9_999).option).toBe('island-estate');
+    expect(at(10_000).option).toBe('moon-house');
+    const dip = simulate(days(3, (d) => ({ mrr: d === 0 ? 250 : 5, customers: 1 })), [], 2);
     expect(dip.home.option).toBe('hills-modern');
   });
 
   it('makes the first pick free and charges 25% to swap later', () => {
-    const tl = days(40, () => ({ mrr: 150, customers: 3 }));
+    const tl = days(40, () => ({ mrr: 60, customers: 3 }));
     const first = simulate(tl, [{ t: 5 * DAY, kind: 'home', tier: 2, choice: 'loft' }], 39);
     const free = simulate(tl, [], 39);
     expect(first.home.option).toBe('loft');
@@ -178,7 +180,7 @@ describe('the founder home ladder', () => {
   });
 
   it('lets you rebuild your Hills house and your island estate, for a renovation fee', () => {
-    for (const [tier, mrr, a, b] of [[3, 1_500, 'hills-spanish', 'hills-canyon'], [5, 150_000, 'island-modern', 'island-tropical']] as const) {
+    for (const [tier, mrr, a, b] of [[3, 300, 'hills-spanish', 'hills-canyon'], [5, 7_500, 'island-modern', 'island-tropical']] as const) {
       const tl = days(40, () => ({ mrr, customers: 3 }));
       const pick = { t: 5 * DAY, kind: 'home' as const, tier, choice: a };
       const once = simulate(tl, [pick], 39);
@@ -192,9 +194,39 @@ describe('the founder home ladder', () => {
 });
 
 describe('catalogue', () => {
+  it('opens each region with the rung of the ladder that lives there', () => {
+    const moon = HOME_TIERS.find((h) => h.where === 'moon')!;
+    expect(moon.mrr).toBe(10_000);
+    expect(HOME_TIERS.find((h) => h.where === 'island')!.mrr).toBe(5_000);
+    expect(REGIONS.launchpad.gate).toBe(moon.mrr);
+    expect(REGIONS.island.gate).toBe(HOME_TIERS.find((h) => h.where === 'island')!.mrr);
+    expect(REGIONS.hills.gate).toBe(HOME_TIERS.find((h) => h.where === 'hills')!.mrr);
+    expect(ITEMS.get('rocket')!.unlock).toBe(moon.mrr);
+    // Rungs climb, and so do their values (the renovation fee is a quarter of it).
+    for (let i = 1; i < HOME_TIERS.length; i++) expect(HOME_TIERS[i]!.mrr).toBeGreaterThan(HOME_TIERS[i - 1]!.mrr);
+  });
+
+  it('eases every old gate along the owner’s curve, one rung per old digit', () => {
+    for (const [old, now] of EASE_ANCHORS) expect(easeMrr(old)).toBeCloseTo(now, 6);
+    // The house ladder is the curve itself: studio $10, then one rung per old digit.
+    HOME_TIERS.slice(1).forEach((h, i) => expect(h.mrr).toBe(easeMrr(10 ** (i + 1))));
+    // In between, it's log-linear: the old $3k pier gate lands near $484 (shown as $500).
+    expect(easeMrr(3_000)).toBeCloseTo(484, 0);
+    expect(REGIONS.pier.gate).toBe(500);
+    for (let k = 1; k < 1e6; k *= 3) expect(easeMrr(k * 3)).toBeGreaterThan(easeMrr(k));
+  });
+
+  it('never makes a better plane cheaper than the one below it, and the rocket a few weeks of moon income at most', () => {
+    const planes = CATALOG.filter((i) => i.placement.kind === 'site' && i.placement.site === 'airport').sort((a, b) => a.unlock - b.unlock);
+    for (let i = 1; i < planes.length; i++) expect(planes[i]!.price).toBeGreaterThan(planes[i - 1]!.price);
+    const rocket = ITEMS.get('rocket')!;
+    expect(rocket.price).toBeLessThanOrEqual(rocket.unlock * RATE);
+    expect(rocket.price).toBeGreaterThan(planes.at(-1)!.price);
+  });
+
   it('has unique ids, sensible prices and something to buy at every tier', () => {
     expect(new Set(CATALOG.map((i) => i.id)).size).toBe(CATALOG.length);
-    for (const tier of [0, 100, 1_000, 10_000, 100_000, 1_000_000]) {
+    for (const tier of [0, 50, 250, 500, 1_000, 2_000, 5_000, 10_000]) {
       expect(CATALOG.some((i) => i.unlock === tier)).toBe(true);
     }
     // Every item at a tier costs at most ~2 years of that tier's income.
@@ -204,16 +236,21 @@ describe('catalogue', () => {
   it('explains why something cannot be bought yet', () => {
     const g = simulate(days(2, () => ({})), [], 1);
     expect(canBuy(g, ITEMS.get('park')!)).toBeNull();
-    expect(canBuy(g, ITEMS.get('skyscraper')!)).toBe('Unlocks at $10,000 MRR');
-    expect(canBuy(g, ITEMS.get('prop-plane')!)).toBe('Unlocks at $1,000 MRR');
+    expect(canBuy(g, ITEMS.get('skyscraper')!)).toBe('Unlocks at $1,000 MRR');
+    expect(canBuy(g, ITEMS.get('prop-plane')!)).toBe('Unlocks at $250 MRR');
     expect(freePlots(g, 1)).toHaveLength(4);
   });
 
-  it('runs the scripted demo founder without a single rejected action', () => {
+  it('runs the scripted demo founder without a single rejected action, all the way to the moon', () => {
     const t = demoTimeline({ end: Date.UTC(2026, 9, 11) });
-    const g = simulate(t.snapshots, demoActions(t.snapshots), t.snapshots.length - 1);
+    const actions = demoActions(t.snapshots);
+    const g = simulate(t.snapshots, actions, t.snapshots.length - 1);
     expect(g.rejected).toEqual([]);
-    expect(g.owned.length).toBeGreaterThan(15);
+    // Every scripted build is unlocked and affordable in the plain demo, not only a boosted one.
+    expect(g.owned.length).toBe(actions.length);
+    expect(g.owned.length).toBeGreaterThan(25);
+    expect(g.home.option).toBe('moon-house');
+    expect(g.owned.some((o) => o.item === 'rocket' && o.site === 'launchpad')).toBe(true);
     expect(FREE_HOUSED).toBe(100);
   });
 
