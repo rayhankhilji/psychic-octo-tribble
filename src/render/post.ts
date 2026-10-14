@@ -45,6 +45,8 @@ export class Post {
   private bloom: UnrealBloomPass;
   private grade: ShaderPass;
   quality: Quality;
+  /** The visitor can turn the miniature blur off in Settings; Battery saver skips it anyway. */
+  private tiltShift = true;
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, quality: Quality) {
     this.quality = quality;
@@ -72,7 +74,7 @@ export class Post {
   setQuality(q: Quality) {
     this.quality = q;
     this.ao.enabled = q === 'high';
-    this.grade.uniforms.uTiltSamples!.value = q === 'low' ? 0 : 1;
+    this.grade.uniforms.uTiltSamples!.value = q === 'low' || !this.tiltShift ? 0 : 1;
     // Multisampling is the costliest part of the scene pass on big screens.
     const samples = q === 'high' ? 4 : q === 'medium' ? 2 : 0;
     for (const t of [this.composer.renderTarget1, this.composer.renderTarget2]) {
@@ -80,6 +82,11 @@ export class Post {
       t.samples = samples;
       t.dispose();
     }
+  }
+
+  setTiltShift(on: boolean) {
+    this.tiltShift = on;
+    this.setQuality(this.quality);
   }
 
   /**

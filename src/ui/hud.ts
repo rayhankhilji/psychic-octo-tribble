@@ -21,6 +21,8 @@ export interface HudHandlers {
   onShare(): void;
   onRename(name: string): void;
   onCycleTime(): void;
+  /** Settings: hold the city at a `TIME_PREVIEWS` label, or follow the local clock (null). Without it, Settings leaves time out. */
+  onSetTime?(label: string | null): void;
   /** Hosted: accounts replace the local `.env` connect dialog (no plug button; the city name opens this). */
   onConnect?(): void;
 }
@@ -80,6 +82,23 @@ const AWAY_THUMBS = AWAY_UNLOCKS_SHOWN;
 /** Paying-customer counts worth a moment of their own. */
 const CUSTOMER_MILESTONES = [10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000];
 
+/**
+ * The settings cog, drawn in the icon family's hand (20-unit grid, 1.6
+ * strokes): eight squared-off teeth around a hub.
+ */
+export const GEAR_ICON = (() => {
+  const pt = (r: number, deg: number) => {
+    const a = (deg * Math.PI) / 180;
+    return `${(10 + r * Math.cos(a)).toFixed(2)} ${(10 + r * Math.sin(a)).toFixed(2)}`;
+  };
+  let d = '';
+  for (let i = 0; i < 8; i++) {
+    const c = i * 45 - 90;
+    d += `${i ? 'L' : 'M'}${pt(5.5, c - 15)}L${pt(7.4, c - 9)}L${pt(7.4, c + 9)}L${pt(5.5, c + 15)}A5.5 5.5 0 0 1 ${pt(5.5, c + 30)}`;
+  }
+  return `<svg class="ico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}Z"/><circle cx="10" cy="10" r="2.3"/></svg>`;
+})();
+
 const SUNRISE = 6.1;
 const SUNSET = 19.7;
 
@@ -121,6 +140,9 @@ export class Hud {
   private clockLabel: HTMLElement;
   private clockArc: SVGSVGElement;
   private soundBtn: HTMLButtonElement;
+  private settingsBtn: HTMLButtonElement;
+  /** The clock chip's preview label, if it's showing one (Settings mentions it). */
+  private previewLabel: string | null = null;
   private metrics = new Map<string, { value: HTMLElement; delta: HTMLElement; tween: Tween; row: HTMLElement }>();
   private sourceBadge: HTMLElement;
   private asOf: HTMLElement;
@@ -201,6 +223,9 @@ export class Hud {
     this.sound.onChange = (on) => this.renderSound(on, true);
     this.renderSound(this.sound.on, false);
     tools.append(this.soundBtn);
+    this.settingsBtn = el('button', { class: 'btn ghost icon-only settings-btn', type: 'button', 'aria-label': 'Settings (,)', 'data-tip': 'Settings (,)', 'aria-haspopup': 'dialog' }, `${GEAR_ICON}<span class="label">Settings</span>`);
+    this.settingsBtn.addEventListener('click', () => this.openSettings());
+    tools.append(this.settingsBtn);
     top.append(brand, this.clockBtn, el('div', { class: 'grow' }), tools);
     this.topEl = top;
 
@@ -278,7 +303,7 @@ export class Hud {
       <p class="help-lede">The only way to grow your city is to grow your startup.</p>
       <ul>${LEGEND.map((l) => `<li><span class="tile tone-${l.tone}">${ICON[l.icon]}</span><span><b>${l.title}</b> ${l.text}</span></li>`).join('')}</ul>
       <div class="keys">
-        <span><kbd>Space</kbd> play</span><span><kbd>←</kbd><kbd>→</kbd> day</span><span><kbd>B</kbd> build</span><span><kbd>Q</kbd><kbd>E</kbd> rotate</span><span><kbd>+</kbd><kbd>−</kbd> zoom</span><span><kbd>M</kbd> sound</span>
+        <span><kbd>Space</kbd> play</span><span><kbd>←</kbd><kbd>→</kbd> day</span><span><kbd>B</kbd> build</span><span><kbd>Q</kbd><kbd>E</kbd> rotate</span><span><kbd>+</kbd><kbd>−</kbd> zoom</span><span><kbd>M</kbd> sound</span><span><kbd>,</kbd> settings</span>
       </div>`;
 
     // One polite live region for the whole feed: new toasts are read out without interrupting.
@@ -393,7 +418,22 @@ export class Hud {
     }
     if (e.key === '?') this.help.open = !this.help.open;
     if ((e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat) this.sound.toggle();
+    if (e.key === ',' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat) {
+      e.preventDefault();
+      this.openSettings();
+    }
     if (e.key === 'Escape' && this.help.open) this.help.open = false;
+  }
+
+  /** The settings panel, loaded the first time it's asked for (most visits never open it). */
+  openSettings() {
+    void import('./settings.ts').then(({ openSettings }) =>
+      openSettings({
+        sound: this.sound,
+        setTime: this.h.onSetTime ? (label) => this.h.onSetTime!(label) : null,
+        previewing: () => this.previewLabel,
+      }),
+    );
   }
 
   // ── Data ─────────────────────────────────────────────────────────────
@@ -480,6 +520,7 @@ export class Hud {
   /** Shows the world's time of day; `preview` is the label when not following the local clock. */
   setClock(hour: number, phase: string, preview: string | null) {
     this.sound.setHour(hour);
+    this.previewLabel = preview;
     const h = Math.floor(hour);
     const m = Math.floor((hour - h) * 60);
     const time = new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });

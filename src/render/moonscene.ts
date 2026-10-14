@@ -6,6 +6,7 @@ import { BRAND, drawMark } from '../ui/brand.ts';
 import { rng } from '../world/rng.ts';
 import { ROCKET_IGNITION, ROCKET_LANDING, type City } from './city.ts';
 import type { Cinematic, Shot, Stage } from './stage.ts';
+import { prefersReducedMotion } from '../ui/dom.ts';
 
 /**
  * The founder's house on the moon: a little lunar set, built the first time
@@ -1163,7 +1164,7 @@ export class MoonTrip implements Cinematic {
   done = false;
   private o: MoonTripOptions;
   private t = 0;
-  private still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private still = prefersReducedMotion();
   private ending: { t: number; cut: boolean } | null = null;
   /** Which part of the trip is showing. */
   private act: 'start' | 'bay' | 'moon' | 'home' = 'start';

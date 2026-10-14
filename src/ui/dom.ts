@@ -1,4 +1,5 @@
 /** Small DOM, motion and formatting helpers shared by the HUD. */
+import { motionReduced, onSettings, settings } from './settings-store.ts';
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -22,8 +23,23 @@ export function setHtml(e: Element, html: string) {
 
 const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 
-export function reducedMotion(): boolean {
-  return motionQuery?.matches ?? false;
+/**
+ * Reduced motion: the Motion setting (System, Reduce or Full), and with
+ * System, what the operating system asks for. Every JS check goes through
+ * here; CSS reads `html.reduce-motion` (kept in step below) alongside the
+ * prefers-reduced-motion media query.
+ */
+export function prefersReducedMotion(): boolean {
+  return motionReduced(settings().motion, motionQuery?.matches ?? false);
+}
+
+/** The older name, kept for the HUD's callers. */
+export const reducedMotion = prefersReducedMotion;
+
+if (typeof document !== 'undefined') {
+  const sync = () => document.documentElement.classList.toggle('reduce-motion', settings().motion === 'reduce');
+  sync();
+  onSettings((_, changed) => changed.includes('motion') && sync());
 }
 
 export const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;

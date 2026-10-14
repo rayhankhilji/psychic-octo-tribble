@@ -5,6 +5,8 @@ import type { City, Pick, Tip } from './city.ts';
 import { Post, type Quality } from './post.ts';
 import { setEnvironment } from './geo.ts';
 import { WORLD } from '../world/map.ts';
+import { onSettings, reportGraphics, settings, startQuality, type QualityMode } from '../ui/settings-store.ts';
+import { prefersReducedMotion } from '../ui/dom.ts';
 
 /** Isometric: looking down 35.26° from the horizontal. */
 const ISO_POLAR = Math.acos(1 / Math.sqrt(3));
@@ -63,6 +65,15 @@ export class Stage {
   private city: City;
   /** Adaptive quality: frame times are sampled in windows for the whole session. */
   private perf: { frames: number; time: number; locked: boolean; calm: number; stepsDown: number; stepsUp: number };
+  /** `?quality=` pins the level for screenshots until the visitor picks one in Settings. */
+  private forced: Quality | null;
+  /** A touch screen: Automatic starts a level lower. */
+  private coarse: boolean;
+  /** Bumped when shadows turn on or off; each scene remembers the last one it was brought in line with. */
+  private shadowEpoch = 0;
+  private shadowBuilt = new WeakMap<THREE.Scene, number>();
+  /** Lights we stopped casting (shadows off), to switch back on later. */
+  private muted = new WeakSet<THREE.Light>();
   private maxPixelRatio = 2;
   /** Something is playing (the replay): keep the full frame rate. Set by the app. */
   active = false;
@@ -124,11 +135,22 @@ export class Stage {
     this.controls.addEventListener('end', () => (this.dragging = false));
     this.controls.addEventListener('change', () => this.clampTarget());
 
-    const forced = requestedQuality();
-    const quality: Quality = forced ?? (matchMedia('(pointer: coarse)').matches ? 'medium' : 'high');
-    this.perf = { frames: 0, time: 0, locked: forced !== null, calm: 0, stepsDown: 0, stepsUp: 0 };
-    this.post = new Post(this.renderer, city.scene, this.camera, quality);
-    this.applyQuality(quality);
+    // The visitor's settings apply before the first frame, so the pipeline is built once at the right level.
+    const prefs = settings();
+    this.forced = requestedQuality();
+    this.coarse = matchMedia('(pointer: coarse)').matches;
+    const start = startQuality(prefs.quality, { coarse: this.coarse, forced: this.forced });
+    this.perf = { frames: 0, time: 0, locked: !start.adaptive, calm: 0, stepsDown: 0, stepsUp: 0 };
+    this.renderer.shadowMap.enabled = prefs.shadows;
+    this.post = new Post(this.renderer, city.scene, this.camera, start.level);
+    this.post.setTiltShift(prefs.tiltShift);
+    this.applyQuality(start.level);
+    onSettings((s, changed) => {
+      if (changed.includes('quality')) this.setQualityMode(s.quality);
+      if (changed.includes('tiltShift')) this.post.setTiltShift(s.tiltShift);
+      if (changed.includes('shadows')) this.setShadows(s.shadows);
+      this.wake();
+    });
 
     const el = this.renderer.domElement;
     el.addEventListener('pointermove', (e) => {
@@ -187,6 +209,47 @@ export class Stage {
     const size = q === 'high' ? 4096 : q === 'medium' ? 2048 : 1536;
     this.city.setShadowQuality(size);
     this.resize();
+    reportGraphics({ level: q, forced: this.forced, coarse: this.coarse });
+  }
+
+  /**
+   * A choice from Settings, live: Automatic starts over from the device's
+   * level and adapts as it always has; a fixed level stays put. Either way
+   * the visitor's pick now outranks a `?quality=` in the address.
+   */
+  private setQualityMode(mode: QualityMode) {
+    this.forced = null;
+    const start = startQuality(mode, { coarse: this.coarse, forced: null });
+    Object.assign(this.perf, { frames: 0, time: 0, locked: !start.adaptive, calm: 0, stepsDown: 0, stepsUp: 0 });
+    this.applyQuality(start.level);
+  }
+
+  /** The sun's shadow pass on or off: a real saving (one less pass over the city), at the cost of a one-off shader rebuild. */
+  private setShadows(on: boolean) {
+    if (this.renderer.shadowMap.enabled === on) return;
+    this.renderer.shadowMap.enabled = on;
+    this.shadowEpoch++;
+  }
+
+  /**
+   * Brings a scene's lights in line with the shadow setting before it's drawn.
+   * With shadows off, its shadow-casting lights stop casting: that changes the
+   * renderer's light state, so three.js rebuilds every lit shader without the
+   * shadow lookups by itself, including models that are off stage right now.
+   * Each scene is checked once per change (the moon set is built later).
+   */
+  private syncShadows(scene: THREE.Scene) {
+    if (this.shadowBuilt.get(scene) === this.shadowEpoch) return;
+    this.shadowBuilt.set(scene, this.shadowEpoch);
+    const on = this.renderer.shadowMap.enabled;
+    scene.traverse((o) => {
+      const light = o as THREE.DirectionalLight;
+      if (!light.isLight || !light.shadow) return;
+      if (!on && light.castShadow) {
+        light.castShadow = false;
+        this.muted.add(light);
+      } else if (on && this.muted.delete(light)) light.castShadow = true;
+    });
   }
 
   /**
@@ -201,7 +264,7 @@ export class Stage {
   attract(on: boolean, inset?: (w: number, h: number) => { left: number; bottom: number }, opts: { settle?: boolean } = {}) {
     if (on) {
       this.attractInset = inset ?? null;
-      const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const still = prefersReducedMotion();
       this.drift = { home: this.snapAzimuth(this.controls.getAzimuthalAngle()), t: 0, on: !still };
       return;
     }
@@ -483,6 +546,7 @@ export class Stage {
     // Ground visible on screen: the frame's width, and its height stretched by the iso tilt.
     this.city.setView(this.controls.target, Math.hypot(VIEW * aspect, VIEW * 1.75) / this.camera.zoom / 2, DISTANCE, this.camera);
     this.city.update(dt, time);
+    this.syncShadows(shot ? shot.scene : this.city.scene);
     if (shot) {
       this.renderer.toneMappingExposure = shot.exposure;
       this.post.setView(shot.scene, shot.camera);

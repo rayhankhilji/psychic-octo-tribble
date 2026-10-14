@@ -4412,3 +4412,40 @@ code {
     opacity: 1;
   }
 }
+
+/* ── Settings: reduced motion by choice, and the cog (hud.ts, settings.ts) ─ */
+
+/*
+ * "Reduce" in Settings puts html.reduce-motion on the page: the same cut to
+ * the end state as the prefers-reduced-motion block above, for people whose
+ * system doesn't ask for it. (Panels' own media blocks still follow the system.)
+ */
+:root.reduce-motion *,
+:root.reduce-motion *::before,
+:root.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0s !important;
+}
+
+:root.reduce-motion .toast-timer {
+  display: none;
+}
+
+/* The cog turns a few degrees under the pointer, a hint that it opens something. */
+.settings-btn .ico {
+  transition: rotate var(--dur-3) var(--ease-out);
+}
+
+.settings-btn:hover .ico {
+  rotate: 30deg;
+}
+
+/* Phones have no M key and little room in the bar: sound lives in Settings there. */
+@media (max-width: 760px) {
+  .toolbar .sound-toggle {
+    display: none;
+  }
+}

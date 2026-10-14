@@ -3,6 +3,7 @@
  * runs. This module narrates progress, and lifts it once the world has
  * actually drawn a few frames.
  */
+import { prefersReducedMotion } from './dom.ts';
 
 const LINES = ['Pouring the foundations', 'Planting palms', 'Rolling in the fog', 'Painting the bridge', 'Counting your customers', 'Lighting the sign'];
 
@@ -25,7 +26,7 @@ export function bootStatus(text: string) {
   const b = boot();
   const s = b?.querySelector('.boot-status');
   if (!b || !s) return;
-  const calm = b.classList.contains('failed') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const calm = b.classList.contains('failed') || prefersReducedMotion();
   if (calm) {
     s.textContent = text;
     return;

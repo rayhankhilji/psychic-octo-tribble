@@ -74,6 +74,27 @@ export class Sound {
     return this.stored.on;
   }
 
+  /**
+   * The volume slider, 0–1. Full is the level the soundscape was mixed at
+   * (`VOLUME`); the slider follows a square law, so halfway sounds about half
+   * as loud. The stored field is the master gain itself, so older saves
+   * (which always held `VOLUME`) read as full.
+   */
+  get volume(): number {
+    return Math.sqrt(Math.min(1, this.stored.volume / VOLUME));
+  }
+
+  setVolume(level: number) {
+    const v = Math.max(0, Math.min(1, level));
+    this.stored.volume = VOLUME * v * v;
+    this.save();
+    const c = this.ctx;
+    if (!this.stored.on || !c || c.state !== 'running') return;
+    // A short glide, so dragging the slider never clicks.
+    this.master!.gain.cancelScheduledValues(c.currentTime);
+    this.master!.gain.setTargetAtTime(this.stored.volume, c.currentTime, 0.04);
+  }
+
   /** Turns sound on or off. Call from a click or key press, so the browser allows audio. */
   toggle(on = !this.stored.on) {
     this.stored.on = on;
