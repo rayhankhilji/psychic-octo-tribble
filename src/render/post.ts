@@ -33,6 +33,25 @@ class SolidAO extends GTAOPass {
   }
 }
 
+/** Half the width of the bloom threshold's soft knee. */
+const BLOOM_KNEE = 0.25;
+
+/**
+ * Bloom that holds still while the camera moves. The stock pass picks out the
+ * bright parts at half resolution: each of its pixels averages four of the
+ * frame's, and only then meets the threshold. A light two pixels wide is one
+ * bright average in one camera position and two dim ones (under the threshold)
+ * a pixel later, so as the view pans or drifts every halo in the city pumps on
+ * and off. Picking out the bright parts at full resolution first, and only
+ * then averaging, keeps each light's glow the same wherever it falls.
+ */
+class SteadyBloom extends UnrealBloomPass {
+  override setSize(width: number, height: number) {
+    super.setSize(width, height);
+    this.renderTargetBright.setSize(width, height);
+  }
+}
+
 /**
  * The final look: a miniature you could pick up. Soft contact shadows
  * (GTAO), bloom on lights after dark, a tilt-shift blur at the top and
@@ -42,7 +61,7 @@ export class Post {
   readonly composer: EffectComposer;
   private ao: SolidAO;
   private scenePass: RenderPass;
-  private bloom: UnrealBloomPass;
+  private bloom: SteadyBloom;
   private grade: ShaderPass;
   quality: Quality;
   /** The visitor can turn the miniature blur off in Settings; Battery saver skips it anyway. */
@@ -62,7 +81,10 @@ export class Post {
     this.ao.blendIntensity = 0.85;
     this.composer.addPass(this.ao);
 
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.85, 0.55, 0.92);
+    this.bloom = new SteadyBloom(new THREE.Vector2(256, 256), 0.85, 0.55, 0.92);
+    // A soft knee either side of the threshold (see `update`) rather than a hard cut, so a light
+    // that sits at the threshold, or straddles a pixel edge, fades in and out of the glow instead of blinking.
+    (this.bloom.highPassUniforms as Record<string, THREE.IUniform>).smoothWidth!.value = BLOOM_KNEE * 2;
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
@@ -121,7 +143,9 @@ export class Post {
   update(time: number, look: { bloom: number; night: number; tilt: number; focusY: number; warmth: number }) {
     // Daylight barely blooms (just glints); night lights glow properly.
     this.bloom.strength = look.bloom * (0.2 + 0.8 * look.night);
-    this.bloom.threshold = 0.9 + (1 - look.night) * 0.6;
+    // At night the knee is centred just above 1: picking out the bright parts at full resolution
+    // catches small lit windows the half-resolution pick used to average away, and they shouldn't haze.
+    this.bloom.threshold = 0.9 + look.night * 0.1 - BLOOM_KNEE + (1 - look.night) * 0.6;
     this.bloom.radius = 0.5 + look.night * 0.2;
     const u = this.grade.uniforms;
     u.uTime!.value = time;

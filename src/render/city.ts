@@ -1142,12 +1142,12 @@ export class City {
         if (f.target === 0 && f.level === 0) this.fades.delete(f);
         continue;
       }
-      // Lights come on with a flicker, go off smoothly.
+      // Lights ease on and off. (They used to come on with a random dip on some frames, which at
+      // night, with dozens of homes lighting up through a replay, read as faulty wiring.)
       const step = f.target > f.level ? dt * 1.4 : -dt * 2;
       f.level = f.target > f.level ? Math.min(f.target, f.level + step) : Math.max(f.target, f.level + step);
-      const flicker = f.target > f.level && f.level > 0.2 && Math.random() < 0.15 ? 0.3 : 1;
-      if (f.apply) f.apply(f.level * flicker);
-      else f.mat!.color.copy(f.base!).multiplyScalar(f.level * flicker);
+      if (f.apply) f.apply(f.level);
+      else f.mat!.color.copy(f.base!).multiplyScalar(f.level);
     }
 
     // HQ beacon: a slow heartbeat, flaring on pushes and releases.

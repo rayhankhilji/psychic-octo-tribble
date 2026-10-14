@@ -104,7 +104,7 @@ Primitives:
 
 Colours are hex or linear RGB triples; values above 1 glow under bloom. `build()` returns `{ group, glow }`.
 
-**Glow:** shared uniforms `GLOW.night`, `GLOW.time` and `GLOW.day`. A per-vertex `winRand` attribute staggers which windows light first at dusk and adds flicker. (It was renamed from `rand`, which clashed with a GLSL built-in name; the shader cache key is `tinytown-glow-3`.)
+**Glow:** shared uniforms `GLOW.night`, `GLOW.time` and `GLOW.day`. A per-vertex `winRand` attribute staggers which windows light first at dusk; a few switch off and on again slowly (`lightsOut`, a 2 s fade every 131 s). Night light points never shrink below ~1.6 px (they grow and dim instead), and bloom picks out bright parts at full resolution with a soft threshold (`SteadyBloom`), so nothing pumps as the camera moves. (It was renamed from `rand`, which clashed with a GLSL built-in name; the shader cache key is `tinytown-glow-3`.)
 
 **Environment map:** `setEnvironment(tex, k)` applies it only to glass (1.25·k) and smooth (0.18·k). **Don't use `scene.environment`**: it overrides per-material intensity and washes everything out.
 

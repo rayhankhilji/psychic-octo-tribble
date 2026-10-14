@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GeoBuilder, GLOW, type ColorLike } from './geo.ts';
+import { FLAT_RAND, GeoBuilder, GLOW, LIGHT_POINTS, LIGHTS_OUT, pointRand, trackViewport, type ColorLike } from './geo.ts';
 import { PALETTE } from './palette.ts';
 import { bright, palm, tree, warmth, type Built } from './buildings.ts';
 import { pick, rng } from '../world/rng.ts';
@@ -26,20 +26,28 @@ export const TINT = { sky: 0, bronze: 1, teal: 2, silver: 3, blue: 4, smoke: 5, 
 /** Neon behaviours, encoded in a quad's rand: add a phase in [0, 1). */
 export const FX = { steady: 0, chase: 3, blink: 4, shimmer: 6 } as const;
 
-function lit(key: string, decl: string, body: string, params: THREE.MeshBasicMaterialParameters = {}): THREE.MeshBasicMaterial {
+/**
+ * `parts`: the rand is one value per part (a window, a bulb), so it is passed
+ * flat (see FLAT_RAND) and light points keep a minimum size (LIGHT_POINTS).
+ */
+function lit(key: string, decl: string, body: string, params: THREE.MeshBasicMaterialParameters = {}, parts = true): THREE.MeshBasicMaterial {
   const m = new THREE.MeshBasicMaterial({ vertexColors: true, ...params });
+  const rand = parts ? FLAT_RAND : 'varying float vRand;';
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uNight = GLOW.night;
     shader.uniforms.uTime = GLOW.time;
     shader.uniforms.uDay = GLOW.day;
-    shader.vertexShader = shader.vertexShader.replace(
-      'void main() {',
-      'attribute float winRand;\nvarying float vRand;\nvarying vec3 vP;\nvoid main() {\n\tvRand = winRand;\n\tvP = position;',
-    );
+    shader.uniforms.uViewH = GLOW.viewH;
+    shader.vertexShader = parts
+      ? shader.vertexShader
+          .replace('void main() {', `attribute float winRand;\n${rand}\n${LIGHT_POINTS.decl}\nvarying vec3 vP;\nvoid main() {\n\tvP = position;`)
+          .replace('#include <begin_vertex>', LIGHT_POINTS.vertex)
+      : shader.vertexShader.replace('void main() {', `attribute float winRand;\n${rand}\nvarying vec3 vP;\nvoid main() {\n\tvRand = winRand;\n\tvP = position;`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', `uniform float uNight;\nuniform float uTime;\nuniform vec3 uDay;\nvarying float vRand;\nvarying vec3 vP;\n${decl}\nvoid main() {`)
-      .replace('#include <color_fragment>', `#include <color_fragment>\n${body}`);
+      .replace('void main() {', `uniform float uNight;\nuniform float uTime;\nuniform vec3 uDay;\n${rand}\nvarying vec3 vP;\n${parts ? 'varying float vDim;' : ''}\n${LIGHTS_OUT}\n${decl}\nvoid main() {`)
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${body}${parts ? '\ndiffuseColor.rgb *= vDim;' : ''}`);
   };
+  if (parts) trackViewport(m);
   m.customProgramCacheKey = () => key;
   return m;
 }
@@ -56,9 +64,7 @@ export function windowMaterial(): THREE.MeshBasicMaterial {
     `float k = floor(vRand / 10.0);
     float f = vRand - k * 10.0;
     float on = smoothstep(f - 0.04, f + 0.04, uNight * 1.12 - 0.06);
-    float cycle = floor(uTime / 23.0 + f * 17.0);
-    float flick = step(0.93, fract(sin(cycle * 12.9898 + f * 78.233) * 43758.5453));
-    on *= 1.0 - flick * step(0.1, f) * step(f, 1.5);
+    on *= 1.0 - lightsOut(f, uTime) * step(0.1, f) * step(f, 1.5);
     vec3 tint = k < 0.5 ? uDay : TINTS[int(clamp(k, 0.0, 7.0))];
     float shade = 0.8 + 0.34 * fract(f * 7.31 + k * 0.37);
     vec3 dayGlass = tint * shade * (0.9 + 0.22 * smoothstep(0.0, 7.0, vP.y));
@@ -76,9 +82,18 @@ export function neonMaterial(): THREE.MeshBasicMaterial {
     vec3 dayTone = vc / max(peak, 1.0) * 0.9;
     float ph = fract(vRand);
     float on = 1.0;
-    if (vRand > 2.5 && vRand < 4.0) on = 0.2 + 0.8 * step(0.62, fract(uTime * 2.2 + ph));
-    else if (vRand >= 4.0 && vRand < 6.0) on = 0.08 + 0.92 * step(0.84, fract(uTime * 0.55 + ph));
-    else if (vRand >= 6.0) on = 0.72 + 0.28 * sin(uTime * 2.6 + ph * 40.0);
+    // Nothing here switches hard: a light that jumps between two levels from one frame to the
+    // next reads as a fault, and at 30 fps a short flash lands on one frame or none.
+    if (vRand > 2.5 && vRand < 4.0) {
+      // Chase: a soft wave running along the bulbs (each carries its place in the run as phase).
+      float wave = 0.5 + 0.5 * cos(6.2832 * (uTime * 0.7 - ph));
+      on = 0.35 + 0.65 * wave * wave;
+    } else if (vRand >= 4.0 && vRand < 6.0) {
+      // Aviation lights: one slow beat across the city (every two seconds, two groups half a beat
+      // apart), a quick rise and a slower fade like a real lamp, never a strobe.
+      float x = fract(uTime * 0.5 + step(0.5, ph) * 0.5);
+      on = 0.06 + 0.94 * smoothstep(0.0, 0.05, x) * (1.0 - smoothstep(0.2, 0.42, x));
+    } else if (vRand >= 6.0) on = 0.88 + 0.12 * sin(uTime * 1.3 + ph * 40.0);
     diffuseColor.rgb = mix(dayTone, diffuseColor.rgb * on, uNight);`,
   );
 }
@@ -100,6 +115,8 @@ export function screenMaterial(): THREE.MeshBasicMaterial {
     vec3 col = mix(vec3(0.12, 0.24, 0.75), vec3(1.7, 1.55, 1.3), v) * (0.08 + 0.95 * v) * led;
     diffuseColor.rgb = mix(vColor.rgb, col * diffuse, uNight);`,
     { side: THREE.DoubleSide },
+    // The screen's rand runs across each panel (it is the LED column), so it must interpolate.
+    false,
   );
 }
 
@@ -697,17 +714,16 @@ export function quadBlob(b: GeoBuilder, x: number, y: number, z: number, r: numb
   const [cr, cg, cb] = rgb(color);
   const P = [[r, 0, 0], [-r, 0, 0], [0, r, 0], [0, -r, 0], [0, 0, r], [0, 0, -r]];
   const F = [[0, 2, 4], [4, 2, 1], [1, 2, 5], [5, 2, 0], [4, 3, 0], [1, 3, 4], [5, 3, 1], [0, 3, 5]];
+  // A light point: each vertex's normal points out from the centre and the rand carries the
+  // radius, so the shader can keep it from shrinking below a pixel (see LIGHT_POINTS).
+  const w = pointRand(r, rand);
   for (const f of F) {
-    const [a, bb, c] = f.map((i) => P[i]!) as [number[], number[], number[]];
-    const nx = a[0]! + bb[0]! + c[0]!;
-    const ny = a[1]! + bb[1]! + c[1]!;
-    const nz = a[2]! + bb[2]! + c[2]!;
-    const nl = Math.hypot(nx, ny, nz);
-    for (const v of [a, bb, c]) {
+    for (const i of f) {
+      const v = P[i]!;
       q.p.push(x + v[0]!, y + v[1]!, z + v[2]!);
-      q.n.push(nx / nl, ny / nl, nz / nl);
+      q.n.push(v[0]! / r, v[1]! / r, v[2]! / r);
       q.c.push(cr, cg, cb);
-      q.w.push(rand);
+      q.w.push(w);
     }
   }
 }

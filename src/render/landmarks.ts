@@ -1206,7 +1206,7 @@ export function bayBridge(): BayBridge {
       void main() {
         float d = length(gl_PointCoord - 0.5);
         float a = smoothstep(0.5, 0.0, d) * vI * uNight;
-        gl_FragColor = vec4(vec3(1.0, 0.97, 0.9) * 2.4, a);
+        gl_FragColor = vec4(vec3(1.0, 0.97, 0.9) * 2.0, a);
       }`,
   });
   group.add(new THREE.Points(geo, lights));

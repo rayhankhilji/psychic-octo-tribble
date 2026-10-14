@@ -26,6 +26,7 @@ import {
 import { Terrain } from './terrain.ts';
 import { AIRPORT_GATES, GATE_OFFSET, airportBuildings } from './landmarks.ts';
 import { hash, pick, rng } from '../world/rng.ts';
+import { REGIONS, type Region } from '../game/catalog.ts';
 import {
   AIRPORT_FILL,
   AIRPORT_SLOTS,
@@ -73,6 +74,9 @@ import {
   type Pt,
 } from '../world/map.ts';
 import type { Atmosphere } from '../world/daylight.ts';
+
+/** "$1,000 MRR": a region's gate as the tooltips quote it, read from the game so a retune can't leave stale copy. */
+const gateOf = (r: Region) => `$${REGIONS[r].gate.toLocaleString('en-US')} MRR`;
 
 export { AIRPORT_SLOTS, DOWNTOWN_HOME, HILLS_HOME, MARINA_SLOTS, SUPERYACHT } from '../world/map.ts';
 export const hillHeight = terrainHeight;
@@ -646,7 +650,7 @@ export class Scenery {
         for (let l = 0; l < 3; l++) onSign(new THREE.PlaneGeometry(0.1, 0.02).rotateZ(cx * (0.4 + l * 0.35)).rotateY(side < 0 ? Math.PI : 0).translate(cx * 0.18, -0.02 - l * 0.045, 0), 0xc8441f, 'solid', z);
       }
     }
-    g.add(this.add(b, { title: "Fisherman's Wharf", detail: 'Buy a Ferris wheel and a roller coaster for the pier from $3k MRR.' }));
+    g.add(this.add(b, { title: "Fisherman's Wharf", detail: `Buy a Ferris wheel and a roller coaster for the pier from ${gateOf('pier')}.` }));
 
     // Sea lions: little brown blobs that occasionally shuffle
     const lionMat = new THREE.MeshStandardMaterial({ color: 0x6b4a32, roughness: 0.6 });
@@ -973,7 +977,7 @@ export class Scenery {
         if (r() < 0.82) slipBoat(b, r, x, bz, row.dir > 0 ? Math.PI / 2 : -Math.PI / 2, len);
       }
     }
-    return this.add(b, { title: 'The Marina', detail: 'Yacht berths open at $10k MRR.' });
+    return this.add(b, { title: 'The Marina', detail: `Yacht berths open at ${gateOf('marina')}.` });
   }
 
   /**
@@ -1305,7 +1309,7 @@ export class Scenery {
         else oak(b, r, x, y, z, 0.8);
       } else if (r() < 0.08) scrub(b, r, x, y, z, 1);
     }
-    // Launch site (revealed at $1M MRR): the pad and flame trench, the service tower, tanks, the bunker.
+    // Launch site (revealed with the moon rung of the house ladder): the pad and flame trench, the service tower, tanks, the bunker.
     const L = ISLANDS.launch;
     const pad = new Kit();
     const py = terrainHeight(L.x, L.z);
@@ -1358,7 +1362,7 @@ export class Scenery {
     this.launchKey = this.fix(launch);
     this.batch.setVisible(this.launchKey, false);
     const { group } = b.build();
-    group.userData.tip = { title: 'Your island', detail: 'Clears at $100k MRR: an estate and a superyacht.' };
+    group.userData.tip = { title: 'Your island', detail: `Clears at ${gateOf('island')}: an estate and a superyacht.` };
     return group;
   }
 
@@ -1490,7 +1494,7 @@ export class Scenery {
    * TinyTown Hills: Twin Peaks Boulevard up from the end of Market, avenues
    * along the contours, hairpins and turning circles, and a house on a
    * terrace on every lot (see `hillsPlan`). Everything here clears with the
-   * cloud at $1k MRR; the wild slopes around it are always there.
+   * cloud at the Hills gate; the wild slopes around it are always there.
    */
   private buildHood() {
     const r = rng(hash(this.seed, 'hood'));
@@ -1510,7 +1514,7 @@ export class Scenery {
       strip(b, [[HILLS_HOME.x + ux * 0.6, HILLS_HOME.z + uz * 0.6, edge[2]], [edge[0] + ux * 0.05, edge[1] + uz * 0.05, edge[2]]], 0.26, 0xd6cfc0, 0.035);
     }
     const group = this.add(b);
-    group.userData.tip = { title: 'TinyTown Hills', detail: 'Opens at $1k MRR, when you move into your first Hills house.' };
+    group.userData.tip = { title: 'TinyTown Hills', detail: `Opens at ${gateOf('hills')}, when you move into your first Hills house.` };
     this.hillKeys.push(this.fix(group));
     this.placeHillHouses();
     this.wildHills();
@@ -1835,19 +1839,19 @@ export class Scenery {
         sd -= 0.3 * Math.sin(x * 0.7 + 1.3) * Math.sin(z * 0.6 + 0.4);
         return (1 - THREE.MathUtils.smoothstep(sd, -0.9, 0.3)) * clearOfSign(x, z);
       };
-      bank('hills', (x0 + x1) / 2, (z0 + z1) / 2, x1 - x0 + 1, z1 - z0 + 1, 0.5, 'hills', 'The fog over TinyTown Hills lifts at $1k MRR', {
+      bank('hills', (x0 + x1) / 2, (z0 + z1) / 2, x1 - x0 + 1, z1 - z0 + 1, 0.5, 'hills', `The fog over TinyTown Hills lifts at ${gateOf('hills')}`, {
         // One broad lie of the land for the whole bank: it follows the valleys, and the highest tops poke through.
         floor: smoothGround(ground, x0 - 3, z0 - 3, x1 + 3, z1 + 3),
         keep: shape,
         picks: cells,
       });
     }
-    bank('island', ISLANDS.founder.x - 0.3, ISLANDS.founder.z - 0.2, 10.0, 9.8, 0.6, 'island', 'The fog over your island lifts at $100k MRR');
+    bank('island', ISLANDS.founder.x - 0.3, ISLANDS.founder.z - 0.2, 10.0, 9.8, 0.6, 'island', `The fog over your island lifts at ${gateOf('island')}`);
     // Offset away from the estate, so the fog never sits on the house or its helipad.
     const away = Math.hypot(ISLANDS.launch.x - ISLANDS.founder.x, ISLANDS.launch.z - ISLANDS.founder.z) || 1;
     const ax = ((ISLANDS.launch.x - ISLANDS.founder.x) / away) * 0.5;
     const az = ((ISLANDS.launch.z - ISLANDS.founder.z) / away) * 0.5;
-    bank('launch', ISLANDS.launch.x + ax, ISLANDS.launch.z + az, 5.6, 5.6, 0.5, 'launch', 'The fog over the launch site lifts at $1M MRR');
+    bank('launch', ISLANDS.launch.x + ax, ISLANDS.launch.z + az, 5.6, 5.6, 0.5, 'launch', `The fog over the launch site lifts at ${gateOf('launchpad')}`);
     for (const region of ['hills', 'island', 'launch'] as const) this.setFog(region, true, false);
   }
 
@@ -1865,6 +1869,11 @@ export class Scenery {
         this.fog.remove(b.key, animate);
       }
     }
+  }
+
+  /** The sign's lights straight to on or off, without the sputter (the grand opening switches them on on cue). */
+  snapSign(lit: boolean) {
+    this.signFade = lit ? 1 : 0;
   }
 
   /** A region's fog is burning off right now. */
@@ -1903,10 +1912,12 @@ export class Scenery {
     this.rockLions(time);
     void this.flags;
 
-    // The sign is the first thing cut when upkeep runs short: it sputters, then goes dark.
+    // The sign is the first thing cut when upkeep runs short: it browns out, wavering, then goes
+    // dark. The waver is slow and smooth: a random dip on single frames read as a rendering fault.
     this.signFade += (this.state.signLit ? 1 : -0.35) * dt;
     this.signFade = Math.min(1, Math.max(0, this.signFade));
-    const sputter = this.signFade > 0 && this.signFade < 1 && Math.random() < 0.35 ? 0.4 : 1;
+    const fading = this.signFade > 0 && this.signFade < 1 ? 1 : 0;
+    const sputter = 1 - fading * 0.3 * (1 + Math.sin(time * 7.1) * Math.sin(time * 3.3 + 1));
     this.sign.material.emissiveIntensity = 0.65 * night * this.signFade * sputter;
     this.sign.floodlights.color.setScalar(2.4 * this.signFade * sputter);
     for (const m of this.glows) if (m !== this.sign.floodlights) m.color.setScalar(this.state.lampsFailing ? 0.35 : 1);

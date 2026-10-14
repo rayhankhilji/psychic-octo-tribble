@@ -28,6 +28,11 @@ const CABIN: ColorLike = [1.7, 1.2, 0.65];
 /** Powell Street cable car: from the turntable at Market up to the wharf. */
 const CABLE_LINE = { x: -2.5, z0: -11.9, z1: 7.2 };
 
+/** A lamp's flash over one beat (0–1): up in 0.05, gone by 0.2, smooth both ways. */
+function flash(t: number): number {
+  return THREE.MathUtils.smoothstep(t, 0, 0.05) * (1 - THREE.MathUtils.smoothstep(t, 0.08, 0.2));
+}
+
 interface Mover {
   obj: THREE.Object3D;
   wake?: Wake;
@@ -269,9 +274,12 @@ export class Life {
           const pitch = flat > 0.004 ? Math.atan2(q.y - p.y, flat) : 0;
           obj.rotation.set(bank, heading, pitch, 'YZX');
           obj.visible = t < cycle - 4;
-          const blink = (time * 1.1 + offset) % 1;
-          strobe.color.setScalar(blink < 0.06 ? 3 : 0);
-          beacon.color.setRGB(3, 0.2, 0.15).multiplyScalar(blink > 0.5 && blink < 0.58 ? 1 : 0);
+          // Strobes and beacon flash once a second, offset by half a beat. Each flash rises and
+          // falls over a few frames: a one-frame flash lands on a frame or misses it entirely at
+          // 30 fps, which reads as a glitch rather than a light.
+          const blink = (time + offset) % 1;
+          strobe.color.setScalar(3 * flash(blink));
+          beacon.color.setRGB(3, 0.2, 0.15).multiplyScalar(flash((blink + 0.5) % 1));
         },
       });
     }

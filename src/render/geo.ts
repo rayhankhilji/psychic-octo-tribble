@@ -42,7 +42,89 @@ export const GLOW = {
   night: { value: 1 },
   time: { value: 0 },
   day: { value: new THREE.Color(...PALETTE.dayGlass) },
+  /** Height in pixels of whatever is being drawn into (see `LIGHT_POINTS`). */
+  viewH: { value: 900 },
 };
+
+/**
+ * Light points (bulbs, aviation lights, lanterns) are often far smaller than
+ * a pixel. A point that small is either caught by a pixel's samples or
+ * missed, so as the camera drifts or the light moves it pops on and off, and
+ * bloom turns each pop into a flash: the city twinkles like a fault. So a lit
+ * point carries its radius (in its rand, see `pointRand`) and a normal
+ * pointing out from its centre; at night the vertex shader grows any point
+ * under LIGHT_POINT_PX pixels across to that size and dims it to match, so
+ * it shows much the same light, steadily.
+ */
+const LIGHT_POINT_PX = 1.6;
+/** Rand values at or above this carry a light point's radius, in units of `POINT_UNIT`. */
+const POINT_FLAG = 1000;
+const POINT_UNIT = 0.0005;
+
+/** The rand for a light point of radius r: `rand` as usual, plus its radius when it can be smaller than a pixel. */
+export function pointRand(r: number, rand = 0): number {
+  return r < 0.06 ? rand + POINT_FLAG * Math.max(1, Math.round(r / POINT_UNIT)) : rand;
+}
+
+/** GLSL pieces for `LIGHT_POINTS`: declarations, and the code that replaces `#include <begin_vertex>`. */
+export const LIGHT_POINTS = {
+  decl: `uniform float uViewH;\nuniform float uNight;\nvarying float vDim;`,
+  vertex: `#include <begin_vertex>
+  vDim = 1.0;
+  float pointK = floor(winRand / ${POINT_FLAG.toFixed(1)});
+  vRand = winRand - pointK * ${POINT_FLAG.toFixed(1)};
+  if (pointK > 0.5 && uNight > 0.0) {
+    float r = pointK * ${POINT_UNIT};
+    mat4 toWorld = modelMatrix;
+    #ifdef USE_BATCHING
+      toWorld = toWorld * batchingMatrix;
+    #endif
+    #ifdef USE_INSTANCING
+      toWorld = toWorld * instanceMatrix;
+    #endif
+    vec4 c = projectionMatrix * viewMatrix * toWorld * vec4(transformed - normal * r, 1.0);
+    // World units per pixel at the point (c.w is 1 for the iso camera), then into model units.
+    float px = 2.0 * c.w / (abs(projectionMatrix[1][1]) * uViewH) / max(length(toWorld[0].xyz), 1e-5);
+    float want = mix(r, ${(LIGHT_POINT_PX / 2).toFixed(2)} * px, uNight);
+    if (want > r) {
+      transformed += normal * (want - r);
+      // Dimmed by the width it gained rather than the area: steady, but a string of bulbs still sparkles.
+      vDim = r / want;
+    }
+  }`,
+};
+
+/** Lit materials keep GLOW.viewH set to the height of the target they are drawn into. */
+const tmpSize = new THREE.Vector2();
+export function trackViewport(m: THREE.Material) {
+  m.onBeforeRender = (renderer) => {
+    const rt = renderer.getRenderTarget();
+    GLOW.viewH.value = rt ? rt.height : renderer.getDrawingBufferSize(tmpSize).y;
+  };
+}
+
+/**
+ * Each window's switch-on time, passed flat: every vertex of a window carries
+ * the same value, but interpolating it can still wobble in the last bit from
+ * pixel to pixel, and the hash in `lightsOut` turns that wobble into speckle
+ * that crawls whenever the camera moves.
+ */
+export const FLAT_RAND = 'flat varying float vRand;';
+
+/**
+ * GLSL: 1 while a lit window has been switched off for a while, else 0.
+ * Every couple of minutes each window gets a fresh one-in-sixteen chance of
+ * being dark, and a change cross-fades over about two seconds, so across the
+ * city a few lights go off and on at a calm pace. (It used to be a hard
+ * switch every 23 seconds, which read as flickering.)
+ */
+export const LIGHTS_OUT = `float lightsOut(float key, float t) {
+  float ct = t / 131.0 + key * 17.0;
+  float c0 = floor(ct);
+  float a = step(0.94, fract(sin(c0 * 12.9898 + key * 78.233) * 43758.5453));
+  float b = step(0.94, fract(sin((c0 + 1.0) * 12.9898 + key * 78.233) * 43758.5453));
+  return mix(a, b, smoothstep(0.985, 1.0, fract(ct)));
+}`;
 
 /** A MeshBasicMaterial that looks like glass by day and glows at night. */
 export function glowMaterial(params: THREE.MeshBasicMaterialParameters = { vertexColors: true }): THREE.MeshBasicMaterial {
@@ -51,21 +133,22 @@ export function glowMaterial(params: THREE.MeshBasicMaterialParameters = { verte
     shader.uniforms.uNight = GLOW.night;
     shader.uniforms.uDay = GLOW.day;
     shader.uniforms.uTime = GLOW.time;
+    shader.uniforms.uViewH = GLOW.viewH;
     shader.vertexShader = shader.vertexShader
-      .replace('void main() {', 'attribute float winRand;\nvarying float vRand;\nvoid main() {\n\tvRand = winRand;')
+      .replace('void main() {', `attribute float winRand;\n${FLAT_RAND}\n${LIGHT_POINTS.decl}\nvoid main() {`)
+      .replace('#include <begin_vertex>', LIGHT_POINTS.vertex);
     shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', 'uniform float uNight;\nuniform float uTime;\nuniform vec3 uDay;\nvarying float vRand;\nvoid main() {')
+      .replace('void main() {', `uniform float uNight;\nuniform float uTime;\nuniform vec3 uDay;\n${FLAT_RAND}\nvarying float vDim;\n${LIGHTS_OUT}\nvoid main() {`)
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
         float lit = smoothstep(vRand - 0.04, vRand + 0.04, uNight * 1.12 - 0.06);
-        float cycle = floor(uTime / 23.0 + vRand * 17.0);
-        float flick = step(0.93, fract(sin(cycle * 12.9898 + vRand * 78.233) * 43758.5453));
-        lit *= 1.0 - flick * step(0.1, vRand) * step(vRand, 1.5);
+        lit *= 1.0 - lightsOut(vRand, uTime) * step(0.1, vRand) * step(vRand, 1.5);
         vec3 dayGlass = uDay * (0.78 + 0.4 * fract(vRand * 7.31));
-        diffuseColor.rgb = mix(dayGlass, diffuseColor.rgb * max(lit, 0.035), uNight);`,
+        diffuseColor.rgb = mix(dayGlass, diffuseColor.rgb * max(lit, 0.035), uNight) * vDim;`,
       );
   };
+  trackViewport(m);
   m.customProgramCacheKey = () => 'tinytown-glow-3';
   return m;
 }
@@ -175,8 +258,15 @@ export class GeoBuilder {
 
   blob(r: number, x: number, y: number, z: number, color: ColorLike, glow: boolean | Bucket = false, detail = 0) {
     const g = new THREE.IcosahedronGeometry(r, detail);
+    const lit = glow === true || glow === 'glow';
+    if (lit) {
+      // A light point: normals out from the centre, so the shader can grow it (see LIGHT_POINTS).
+      const p = g.attributes.position!;
+      const n = g.attributes.normal!;
+      for (let i = 0; i < p.count; i++) n.setXYZ(i, p.getX(i) / r, p.getY(i) / r, p.getZ(i) / r);
+    }
     g.translate(x, y, z);
-    this.add(g, color, glow);
+    this.add(g, color, glow, lit ? pointRand(r) : 0);
   }
 
   /** A flat quad on the face of a box, facing outward. */
