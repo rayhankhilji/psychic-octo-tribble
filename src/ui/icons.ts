@@ -71,6 +71,9 @@ export const ICON = {
   calendar: s('<rect x="3" y="4.5" width="14" height="12" rx="2"/><path d="M3 8.5h14M7 2.8v3.2M13 2.8v3.2"/>'),
   refresh: s('<path d="M15.8 8.4A6 6 0 0 0 4.6 7"/><path d="M4.2 3.6V7h3.4"/><path d="M4.2 11.6A6 6 0 0 0 15.4 13"/><path d="M15.8 16.4V13h-3.4"/>'),
   unlink: s('<path d="M8.4 6.2 9.6 5a3.5 3.5 0 0 1 5 5l-1.2 1.2M11.6 13.8 10.4 15a3.5 3.5 0 0 1-5-5l1.2-1.2"/><path d="M4 4l12 12"/>'),
+  // Sound: the waves carry a class and a unit path length so the toggle can draw them in.
+  sound: s('<path d="M3.5 8.1v3.8c0 .5.3.8.8.8h2.5l3.7 3c.4.3 1 0 1-.5V4.8c0-.5-.6-.8-1-.5l-3.7 3H4.3c-.5 0-.8.3-.8.8Z"/><path class="wave" pathLength="1" d="M14 7.4a3.6 3.6 0 0 1 0 5.2"/><path class="wave" pathLength="1" d="M16.3 5.2a6.8 6.8 0 0 1 0 9.6"/>'),
+  soundOff: s('<path d="M3.5 8.1v3.8c0 .5.3.8.8.8h2.5l3.7 3c.4.3 1 0 1-.5V4.8c0-.5-.6-.8-1-.5l-3.7 3H4.3c-.5 0-.8.3-.8.8Z"/><path d="m14.2 8.1 3.8 3.8M18 8.1l-3.8 3.8"/>'),
   arrowRight: s('<path d="M4 10h11.5M11 5.5l4.5 4.5-4.5 4.5"/>'),
 } as const;
 

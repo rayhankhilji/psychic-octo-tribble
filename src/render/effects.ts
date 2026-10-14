@@ -84,6 +84,8 @@ export class Fireworks {
   private bursts: Burst[] = [];
   private queue: { delay: number; at: THREE.Vector3; colour: number }[] = [];
   private material: THREE.ShaderMaterial;
+  /** Called as each shell bursts (the sound listens). */
+  onBurst: (() => void) | null = null;
 
   constructor() {
     this.material = new THREE.ShaderMaterial({
@@ -199,6 +201,7 @@ export class Fireworks {
         if (b.rocket.y >= b.apex) {
           for (let i = 0; i < SPARKS; i++) arr.set([b.rocket.x, b.rocket.y, b.rocket.z], i * 3);
           b.rocket = null;
+          this.onBurst?.();
         }
       } else {
         b.age += dt;

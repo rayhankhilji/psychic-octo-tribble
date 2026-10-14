@@ -7,6 +7,7 @@ import { lazyThumbnail } from './thumbnails.ts';
 import { markSvg } from './brand.ts';
 import { compact, dateLabel, el, escape, flip, reducedMotion, replayAnimation, returnFocusOnClose, setHtml, setText, shortMrr, showModal, Tint, Tween } from './dom.ts';
 import { ICON, type IconName } from './icons.ts';
+import { Sound } from '../audio/engine.ts';
 
 export { el, escape } from './dom.ts';
 
@@ -106,6 +107,8 @@ export class Hud {
   /** The top bar and its city button, for the hosted shell's call to action and account button. */
   readonly topEl: HTMLElement;
   readonly brandButton: HTMLButtonElement;
+  /** The soundscape: off until the visitor turns it on (the speaker button or M). */
+  readonly sound = new Sound();
   private root: HTMLElement;
   private h: HudHandlers;
   private timeline: Timeline | null = null;
@@ -117,6 +120,7 @@ export class Hud {
   private clockTime: HTMLElement;
   private clockLabel: HTMLElement;
   private clockArc: SVGSVGElement;
+  private soundBtn: HTMLButtonElement;
   private metrics = new Map<string, { value: HTMLElement; delta: HTMLElement; tween: Tween; row: HTMLElement }>();
   private sourceBadge: HTMLElement;
   private asOf: HTMLElement;
@@ -192,6 +196,11 @@ export class Hud {
     this.toolsEl = tools;
     if (!h.onConnect) tools.append(this.button('plug', 'Connect', () => this.openConnect(false), 'ghost icon-only', 'Connect your startup: Stripe, GitHub, your city name'));
     tools.append(this.button('share', 'Share', () => h.onShare(), 'ghost', 'Share a snapshot of your city'));
+    this.soundBtn = el('button', { class: 'btn ghost icon-only sound-toggle', type: 'button' });
+    this.soundBtn.addEventListener('click', () => this.sound.toggle());
+    this.sound.onChange = (on) => this.renderSound(on, true);
+    this.renderSound(this.sound.on, false);
+    tools.append(this.soundBtn);
     top.append(brand, this.clockBtn, el('div', { class: 'grow' }), tools);
     this.topEl = top;
 
@@ -269,7 +278,7 @@ export class Hud {
       <p class="help-lede">The only way to grow your city is to grow your startup.</p>
       <ul>${LEGEND.map((l) => `<li><span class="tile tone-${l.tone}">${ICON[l.icon]}</span><span><b>${l.title}</b> ${l.text}</span></li>`).join('')}</ul>
       <div class="keys">
-        <span><kbd>Space</kbd> play</span><span><kbd>←</kbd><kbd>→</kbd> day</span><span><kbd>B</kbd> build</span><span><kbd>Q</kbd><kbd>E</kbd> rotate</span><span><kbd>+</kbd><kbd>−</kbd> zoom</span>
+        <span><kbd>Space</kbd> play</span><span><kbd>←</kbd><kbd>→</kbd> day</span><span><kbd>B</kbd> build</span><span><kbd>Q</kbd><kbd>E</kbd> rotate</span><span><kbd>+</kbd><kbd>−</kbd> zoom</span><span><kbd>M</kbd> sound</span>
       </div>`;
 
     // One polite live region for the whole feed: new toasts are read out without interrupting.
@@ -326,6 +335,7 @@ export class Hud {
     document.body.append(this.tip, this.uitip, this.connect, this.share);
 
     this.wireTooltips();
+    this.wireUiSounds();
     window.addEventListener('keydown', (e) => this.onKey(e));
     new ResizeObserver(() => this.drawChart()).observe(this.scrubWrap);
   }
@@ -382,6 +392,7 @@ export class Hud {
       this.h.onSeek(Math.max(0, Math.min(Number(this.scrub.max), this.index + step)));
     }
     if (e.key === '?') this.help.open = !this.help.open;
+    if ((e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat) this.sound.toggle();
     if (e.key === 'Escape' && this.help.open) this.help.open = false;
   }
 
@@ -468,6 +479,7 @@ export class Hud {
 
   /** Shows the world's time of day; `preview` is the label when not following the local clock. */
   setClock(hour: number, phase: string, preview: string | null) {
+    this.sound.setHour(hour);
     const h = Math.floor(hour);
     const m = Math.floor((hour - h) * 60);
     const time = new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -514,6 +526,7 @@ export class Hud {
    * `action` puts a small button on it (e.g. "Share this" for a moment worth a postcard).
    */
   feed(kind: string, text: string, t: number, action?: { label: string; icon?: IconName; run: () => void }) {
+    this.sound.cue(kind, text, this.root.classList.contains('is-scrubbing'));
     const date = dateLabel(t, { month: 'short', day: 'numeric' });
     const first = kind === 'customers.joined' && /first/i.test(text);
     const spec = first ? { icon: 'sparkle' as const, tone: 'brand' as const, kicker: 'Milestone', linger: 8000 } : (FEED[kind] ?? { icon: 'sparkle', tone: 'info', kicker: 'News' });
@@ -593,6 +606,52 @@ export class Hud {
 
   clearFeed() {
     this.feedEl.innerHTML = '';
+  }
+
+  // ── Sound ──────────────────────────────────────────────────────────
+
+  /** The speaker shows the state it's in; turning it on draws the waves in. */
+  private renderSound(on: boolean, animate: boolean) {
+    const b = this.soundBtn;
+    const tip = on ? 'Sound on (M)' : 'Sound off (M)';
+    b.innerHTML = `${on ? ICON.sound : ICON.soundOff}<span class="label">Sound</span>`;
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', 'Sound (M)');
+    b.dataset.tip = tip;
+    b.classList.toggle('on', on);
+    if (animate && on) replayAnimation(b, 'sound-in');
+    // Keep an open tooltip in step with the new state (the first render runs before the tooltip exists).
+    const open = this.uitip as HTMLElement | undefined;
+    if (open && !open.hidden && open.textContent?.startsWith('Sound')) setText(open, tip);
+  }
+
+  /**
+   * Interface sounds, at the edge of hearing: a tick for any press in the HUD
+   * or a dialog, a breath of air when a dialog or the build drawer opens.
+   */
+  private wireUiSounds() {
+    document.addEventListener(
+      'click',
+      (e) => {
+        const t = (e.target as HTMLElement | null)?.closest?.('button, summary, [role=tab], [role=switch], [role=menuitem], input[type=checkbox]');
+        if (t && t !== this.soundBtn && !(t as HTMLButtonElement).disabled && t.getAttribute('aria-disabled') !== 'true') this.sound.ui('tick');
+      },
+      true,
+    );
+    const opened = new MutationObserver((records) => {
+      for (const r of records) {
+        const n = r.target as HTMLElement;
+        const dialog = n instanceof HTMLDialogElement && n.open && r.oldValue === null;
+        const drawer = r.attributeName === 'hidden' && !n.hidden && r.oldValue !== null;
+        if (dialog || drawer) return this.sound.ui('whoosh');
+      }
+    });
+    opened.observe(document.body, { subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['open'] });
+    // The build drawer is a panel, not a dialog; the game UI mounts it just after the HUD.
+    setTimeout(() => {
+      const drawer = this.root.querySelector('.drawer');
+      if (drawer) opened.observe(drawer, { attributes: true, attributeOldValue: true, attributeFilter: ['hidden'] });
+    });
   }
 
   // ── Tooltips ───────────────────────────────────────────────────────
