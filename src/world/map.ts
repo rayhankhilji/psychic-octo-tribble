@@ -112,7 +112,7 @@ export const AIRPORT_FILL: readonly Pt[] = [
   [14.6, -33.6], [22.9, -33.6], [23.9, -34.4], [28.9, -34.4], [29.5, -35.0], [29.5, -53.0], [28.9, -53.6], [15.6, -53.6], [14.6, -52.6],
 ];
 
-/** Your island's outline: a rough circle, a cove on one side (the west, classically) for the superyacht's jetty. */
+/** Your island's outline: a rough circle, a cove on one side (the east, classically, facing the camera) for the superyacht's jetty. */
 export let ISLAND_COVE: { readonly x: number; readonly z: number; readonly r: number };
 
 const wobble = (a: number, seed: number) => 0.32 * Math.sin(3 * a + seed) + 0.18 * Math.sin(5 * a + seed * 2.1) + 0.1 * Math.sin(9 * a + seed * 0.7);
@@ -1730,8 +1730,8 @@ function assign(spec: WorldSpec): boolean {
   EAST_BAY = spec.eastBay;
   ISLANDS = spec.islands;
   const F = spec.islands.founder;
-  ISLAND_COVE = spec.classic ? { x: 7.25, z: 37.85, r: 1.75 } : { x: F.x + spec.estate.cove.dx, z: F.z + spec.estate.cove.dz, r: spec.estate.cove.r };
-  SUPERYACHT = spec.classic ? { x: 6.9, z: 37.6 } : { x: F.x + spec.estate.yacht.dx, z: F.z + spec.estate.yacht.dz };
+  ISLAND_COVE = spec.classic ? { x: 16.75, z: 37.85, r: 1.75 } : { x: F.x + spec.estate.cove.dx, z: F.z + spec.estate.cove.dz, r: spec.estate.cove.r };
+  SUPERYACHT = spec.classic ? { x: 17.1, z: 37.6 } : { x: F.x + spec.estate.yacht.dx, z: F.z + spec.estate.yacht.dz };
   TWIN_PEAKS = { x: spec.peaks.centre.x, z: spec.peaks.centre.z, r: 14, h: 7.5 };
   TWIN_PEAKS_SUMMITS = spec.peaks.summits;
   HILLS_LEVELS = spec.levels;

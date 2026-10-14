@@ -190,17 +190,18 @@ export function classicWorld(): WorldSpec {
     islands: {
       // Your island sits well out in the bay, north of the shipping lane: you fly there (helicopter or jet).
       founder: { id: 'founder', x: 12, z: 39, r: 4.5, h: 1.2 },
-      // South-east of the estate, so from the north-east camera the rocket never stands in front of the house.
-      launch: { id: 'launch', x: 16.3, z: 34.5, r: 2.6, h: 0.25 },
+      // South-west of the estate, behind it from the north-east camera, so the rocket never stands in front of the house.
+      launch: { id: 'launch', x: 7.7, z: 34.5, r: 2.6, h: 0.25 },
       yerba: { id: 'yerba', x: 33, z: -7, r: 3.6, h: 3.2 },
       treasure: { id: 'treasure', x: 35.5, z: -0.5, r: 3.2, h: 0.25 },
       angel: { id: 'angel', x: -16, z: 38, r: 6.5, h: 6 },
     },
     estate: {
-      flip: 1,
+      // The cove faces east, towards the camera, so the jetty and the superyacht are in view.
+      flip: -1,
       wobble: 1.3,
-      cove: { dx: -4.75, dz: -1.15, r: 1.75 },
-      yacht: { dx: -5.1, dz: -1.4 },
+      cove: { dx: 4.75, dz: -1.15, r: 1.75 },
+      yacht: { dx: 5.1, dz: -1.4 },
       knolls: [
         [-3.0, 2.9, 1.9, 0.75],
         [-1.4, 3.6, 1.6, 0.35],
