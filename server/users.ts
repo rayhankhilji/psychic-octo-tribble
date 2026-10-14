@@ -5,6 +5,7 @@ import { encrypt, openSecret } from './crypto.ts';
 import { decryptionKeys } from './env.ts';
 import { badRequest, notConfigured } from './http.ts';
 import { PERSONAL_KEY, PROJECT_ID, monthlyActiveUsers, posthogOrigin } from './posthog.ts';
+import { userState } from './state.ts';
 import { connectionsOf, ensureProfile, type ConnectionRow, type ProfileRow } from './store.ts';
 import type { AuthUser } from './supabase.ts';
 
@@ -19,7 +20,7 @@ const MANUAL_HISTORY = 400;
 
 /** `PUT /api/connect/users` */
 export async function setUsersSource(ctx: Hosted, user: AuthUser, body: Record<string, unknown>): Promise<Connections> {
-  const profile = await ensureProfile(ctx.db, user.id);
+  const profile = (await userState(ctx, user)).profile;
   const stamp = new Date(ctx.now).toISOString();
   switch (body.source) {
     case 'customers':

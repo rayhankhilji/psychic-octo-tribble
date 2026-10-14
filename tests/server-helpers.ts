@@ -27,6 +27,8 @@ export class FakeSupabase {
   rateHits = new Map<string, number>();
   /** Called before each PATCH; lets a test change the row underneath (a race). */
   beforePatch: ((table: string) => void) | null = null;
+  /** Act like a database without migration 0007: public.user_state() answers 404. */
+  noUserState = false;
 
   url: string;
   constructor(url: string) {
@@ -35,6 +37,35 @@ export class FakeSupabase {
 
   row(table: string, where: Row): Row | undefined {
     return this.tables[table]!.find((r) => Object.entries(where).every(([k, v]) => r[k] === v));
+  }
+
+  /**
+   * public.user_state() (migration 0007). The profile insert goes back through
+   * `handle`, so a subclass's insert rules (0006's guard for deleted users) apply.
+   */
+  async userState(b: UserStateArgs): Promise<Row> {
+    const where = { user_id: b.p_user };
+    let profile = this.row('profiles', where);
+    let created = false;
+    if (!profile) {
+      const res = await this.handle(new URL(`${this.url}/rest/v1/profiles?on_conflict=user_id`), {
+        method: 'POST',
+        headers: { apikey: 'service', Prefer: 'resolution=ignore-duplicates,return=representation' },
+        body: JSON.stringify({ user_id: b.p_user, seed: b.p_seed }),
+      });
+      created = ((await res!.json()) as Row[]).length > 0;
+      profile = this.row('profiles', where);
+    }
+    const out: Row = { profile: profile ?? null, created, subscription: this.row('subscriptions', where) ?? null };
+    if (b.p_rate_key) {
+      const n = (this.rateHits.get(b.p_rate_key) ?? 0) + 1;
+      this.rateHits.set(b.p_rate_key, n);
+      out.rate = { allowed: n <= b.p_rate_max, retry_after_s: b.p_rate_window_s };
+    }
+    if (b.p_parts.includes('connections')) out.connections = this.tables.connections!.filter((r) => r.user_id === b.p_user);
+    if (b.p_parts.includes('world')) out.world = this.row('worlds', where) ?? null;
+    if (b.p_parts.includes('timeline')) out.timeline = this.row('timelines', where) ?? null;
+    return out;
   }
 
   async handle(url: URL, init: RequestInit): Promise<Response | undefined> {
@@ -50,6 +81,11 @@ export class FakeSupabase {
       const n = (this.rateHits.get(b.p_key) ?? 0) + 1;
       this.rateHits.set(b.p_key, n);
       return Response.json([{ allowed: n <= b.p_max, retry_after_s: b.p_window_s }]);
+    }
+    if (url.pathname === '/rest/v1/rpc/user_state') {
+      if (new Headers(init.headers).get('apikey') !== 'service') return Response.json({ message: 'no' }, { status: 401 });
+      if (this.noUserState) return Response.json({ code: 'PGRST202', message: 'Could not find the function public.user_state' }, { status: 404 });
+      return Response.json(await this.userState(JSON.parse(String(init.body)) as UserStateArgs));
     }
     const m = /^\/rest\/v1\/(\w+)$/.exec(url.pathname);
     if (!m) return Response.json({}, { status: 404 });
@@ -89,6 +125,15 @@ export class FakeSupabase {
     }
     return Response.json({}, { status: 405 });
   }
+}
+
+interface UserStateArgs {
+  p_user: string;
+  p_seed: number;
+  p_parts: string[];
+  p_rate_key: string | null;
+  p_rate_window_s: number;
+  p_rate_max: number;
 }
 
 export type Route = (url: URL, init: RequestInit) => Response | undefined | Promise<Response | undefined>;

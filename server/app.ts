@@ -2,7 +2,7 @@ import { ROUTES, type ConfigResponse, type Provider } from '../src/api/contract.
 import type { Timeline } from '../src/data/types.ts';
 import { checkAccess, resetAccessCaches } from './access.ts';
 import { appUrl, checkout, plans, portal, resetBillingCaches, webhook } from './billing.ts';
-import { hosted, rateLimit, requirePaid, requireUser, resetContextCaches, type Ctx, type Hosted } from './context.ts';
+import { hosted, rateLimit, requireUser, resetContextCaches, type Ctx, type Hosted } from './context.ts';
 import { settings, type Env } from './env.ts';
 import { EXTENSIONS } from './extensions.ts';
 import * as github from './github-app.ts';
@@ -10,7 +10,8 @@ import { userTimeline, resetTimelineCaches } from './hosted-timeline.ts';
 import { HttpError, errorResponse, json, notConfigured, readJson } from './http.ts';
 import { finishRequest, log, reportError } from './log.ts';
 import { backHome } from './oauth.ts';
-import { ensureProfile, type ProfileRow } from './store.ts';
+import { requirePaid, resetStateCaches, userState, type Part } from './state.ts';
+import { worldInfo } from './store.ts';
 import * as stripeApp from './stripe-app.ts';
 import { buildTimeline, readConfig } from './timeline.ts';
 import { setUsersSource } from './users.ts';
@@ -86,8 +87,7 @@ async function route(ctx: Ctx): Promise<Response> {
   const user = await requireUser(h);
   await checkAccess(h, user);
   if (connectDelete && method === 'DELETE') {
-    await requirePaid(h, user);
-    await rateLimit(`connect:${user.id}`, 20, ctx.now, { ctx: h });
+    await requirePaid(h, user, { rate: { key: `connect:${user.id}`, max: 20 } });
     return json(await disconnect(h, user.id, connectDelete[1] as Provider));
   }
   const fn = handler![method];
@@ -97,14 +97,20 @@ async function route(ctx: Ctx): Promise<Response> {
 
 type Handler = (ctx: Hosted, user: { id: string; email: string | null }) => Promise<Response>;
 
-/** Every signed-in route. `paid` ones answer 402 without an active plan. */
+/**
+ * Every signed-in route. `paid` ones answer 402 without an active plan.
+ * `parts` are the rows the handler will need, read in the same round trip
+ * as the plan (server/state.ts).
+ */
 const paid =
-  (limit: number | null, fn: Handler): Handler =>
+  (limit: number | null, fn: Handler, parts: Part[] = []): Handler =>
   async (ctx, user) => {
-    await requirePaid(ctx, user);
-    // Writes are counted in Postgres across every instance; reads only in this
-    // instance's memory, which stops a loop without a database call per page load.
-    if (limit !== null) await rateLimit(`${ctx.req.method} ${ctx.url.pathname}:${user.id}`, limit, ctx.now, ctx.req.method === 'GET' ? {} : { ctx });
+    const key = `${ctx.req.method} ${ctx.url.pathname}:${user.id}`;
+    // Writes are counted in Postgres across every instance (in the same call
+    // as the plan); reads only in this instance's memory, which stops a loop
+    // without a database call per page load.
+    if (limit !== null && ctx.req.method === 'GET') await rateLimit(key, limit, ctx.now);
+    await requirePaid(ctx, user, { parts, ...(limit !== null && ctx.req.method !== 'GET' ? { rate: { key, max: limit } } : {}) });
     return fn(ctx, user);
   };
 
@@ -123,15 +129,23 @@ const ROUTE_TABLE: Record<string, Record<string, Handler>> = {
     },
   },
   [ROUTES.world]: {
-    GET: paid(null, async (ctx, user) => json((await me(ctx, user)).world)),
+    GET: paid(null, async (ctx, user) => json(worldInfo((await userState(ctx, user)).profile))),
     PATCH: paid(30, async (ctx, user) => json(await patchWorld(ctx, user, await readJson(ctx.req)))),
   },
   [ROUTES.actions]: {
-    GET: paid(null, async (ctx, user) => json(await getActions(ctx, user))),
-    POST: paid(60, async (ctx, user) => json(await postAction(ctx, user, await readJson(ctx.req)))),
+    GET: paid(null, async (ctx, user) => json(await getActions(ctx, user)), ['world']),
+    POST: paid(60, async (ctx, user) => json(await postAction(ctx, user, await readJson(ctx.req))), ['world', 'timeline']),
   },
   [ROUTES.timeline]: {
-    GET: paid(30, async (ctx, user) => json(await userTimeline(ctx, await ensureProfile(ctx.db, user.id)))),
+    // Connections too: a stale copy is rebuilt from them, so a cold build needs no second read.
+    GET: paid(
+      30,
+      async (ctx, user) => {
+        const state = await userState(ctx, user);
+        return json(await userTimeline(ctx, state.profile, state));
+      },
+      ['timeline', 'connections'],
+    ),
   },
   [ROUTES.connectStripe]: {
     POST: paid(10, async (ctx, user) => {
@@ -153,9 +167,8 @@ const ROUTE_TABLE: Record<string, Record<string, Handler>> = {
 /** `DELETE /api/connect/:provider`. The provider-side app stays installed; the founder can remove it there. */
 async function disconnect(ctx: Hosted, userId: string, provider: Provider): Promise<{ ok: true }> {
   await ctx.db.remove('connections', { user_id: userId, provider });
-  if (provider === 'posthog') {
-    const profile = await ctx.db.one<ProfileRow>('profiles', { user_id: userId });
-    if (profile?.users_source === 'posthog') await ctx.db.update('profiles', { user_id: userId }, { users_source: 'customers' });
+  if (provider === 'posthog' && ctx.userState?.state.profile.users_source === 'posthog') {
+    await ctx.db.update('profiles', { user_id: userId }, { users_source: 'customers' });
   }
   await ctx.db.remove('timelines', { user_id: userId });
   return { ok: true };
@@ -209,6 +222,7 @@ async function localTimeline(ctx: Ctx): Promise<Response> {
 export function resetCaches() {
   localCache = undefined;
   resetContextCaches();
+  resetStateCaches();
   resetAccessCaches();
   resetBillingCaches();
   resetTimelineCaches();

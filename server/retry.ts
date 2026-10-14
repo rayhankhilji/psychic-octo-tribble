@@ -26,6 +26,8 @@ export interface RetryOptions {
   baseMs?: number;
   /** The longest wait we'll do, whether from backoff or `Retry-After`. */
   maxDelayMs?: number;
+  /** Overrides the method-based rule, for a POST the caller knows is safe to repeat (a read-mostly database function). */
+  idempotent?: boolean;
 }
 
 export const DEFAULT_TIMEOUT_MS = 8_000;
@@ -88,7 +90,7 @@ const isTimeout = (err: unknown) => err instanceof DOMException && (err.name ===
 export async function fetchWithRetry(url: string | URL, init: RequestInit = {}, opts: RetryOptions = {}): Promise<Response> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, retries = 2, baseMs = 300, maxDelayMs = 4_000, signal } = opts;
   const href = String(url);
-  const canRetry = idempotent(init);
+  const canRetry = opts.idempotent ?? idempotent(init);
   for (let attempt = 0; ; attempt++) {
     const last = !canRetry || attempt >= retries;
     const attemptSignal = signal ? AbortSignal.any([timeoutSignal(timeoutMs), signal]) : timeoutSignal(timeoutMs);

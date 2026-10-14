@@ -30,9 +30,14 @@ export function resetTimelineCaches() {
   failedAt.clear();
 }
 
-export async function userTimeline(ctx: Hosted, profile: ProfileRow): Promise<Timeline> {
+/**
+ * `known` carries rows this request has already read (server/state.ts): the
+ * cached timeline (null when there's none) and the connections, so neither
+ * is read twice.
+ */
+export async function userTimeline(ctx: Hosted, profile: ProfileRow, known: { timeline?: TimelineRow | null; connections?: ConnectionRow[] } = {}): Promise<Timeline> {
   const userId = profile.user_id;
-  const cached = await ctx.db.one<TimelineRow>('timelines', { user_id: userId });
+  const cached = known.timeline !== undefined ? known.timeline : await ctx.db.one<TimelineRow>('timelines', { user_id: userId });
   const named = (t: Timeline): Timeline => ({ ...t, name: profile.name });
   if (cached && Date.parse(cached.fetched_at) > ctx.now - TIMELINE_TTL_MS) return named(cached.timeline);
 
@@ -44,7 +49,7 @@ export async function userTimeline(ctx: Hosted, profile: ProfileRow): Promise<Ti
 
   let pending = building.get(userId);
   if (!pending) {
-    pending = build(ctx, profile).finally(() => building.delete(userId));
+    pending = build(ctx, profile, known.connections).finally(() => building.delete(userId));
     building.set(userId, pending);
   }
   try {
@@ -65,8 +70,8 @@ export async function userTimeline(ctx: Hosted, profile: ProfileRow): Promise<Ti
   }
 }
 
-async function build(ctx: Hosted, profile: ProfileRow): Promise<Timeline> {
-  const rows = await ctx.db.many<ConnectionRow>('connections', { user_id: profile.user_id });
+async function build(ctx: Hosted, profile: ProfileRow, known?: ConnectionRow[]): Promise<Timeline> {
+  const rows = known ?? (await ctx.db.many<ConnectionRow>('connections', { user_id: profile.user_id }));
   // Test-mode Stripe never drives the economy, unless ALLOW_TEST_MODE=1 (development).
   const stripeRow = rows.find((r) => r.provider === 'stripe' && (r.livemode || ctx.s.allowTestMode));
   const githubRow = rows.find((r) => r.provider === 'github' && typeof r.metadata.repo === 'string');

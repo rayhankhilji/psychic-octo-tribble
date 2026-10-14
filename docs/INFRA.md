@@ -44,9 +44,33 @@ All tables have row-level security on and **no policies**: the browser can't rea
 | `connections` | per user and provider: account id, display name, livemode, **encrypted** refresh token or key, metadata |
 | `worlds` | the founder's actions (builds, home picks) as JSON |
 | `timelines` | cached metrics timeline per user, with when it was fetched |
+| `user_state()` (function) | the caller's profile, plan and asked-for rows in one call (below) |
 | (no `oauth_states`) | OAuth `state` is an HMAC-signed, expiring token naming the user, plus a nonce in an HttpOnly cookie so a callback only completes in the browser that started it |
 
 Secrets at rest (Stripe refresh tokens, PostHog keys) are encrypted with AES-256-GCM under `TOKEN_ENCRYPTION_KEY`, which lives only in the server environment.
+
+### One round trip per request
+
+Every signed-in route needs the same few rows: the profile, the plan (to answer 402), and depending on the route the connections, the world or the cached timeline. `public.user_state()` (migration `0007`) returns them in one call, read in one transaction; `server/state.ts` calls it and keeps the answer on the request (`ctx.userState`), so each row is read at most once per request.
+
+- **"Has paid" is never cached between requests.** The plan comes back with every call, so a revoked comp or an ended plan loses access on the very next request, on every instance.
+- **First sight:** the function makes the profile if there isn't one (with the seed the server picked) and says so (`created`), so `/api/me` costs one call even for a new founder. 0006's guard still applies: no profile for a deleted user, and the request gets 401.
+- **Write routes count their shared rate limit in the same call** (it calls `rate_hit()` from 0002). The in-memory window still runs first, so a loop costs no database call at all.
+- **No writes that change nothing:** reading the world doesn't create a row (the first build inserts it), and `PATCH /api/world` with the values already stored sends no update.
+- **Before the migration has run** (the code can go live ahead of the database, `docs/RELEASE.md`), PostgREST answers 404 and the server falls back to separate reads in parallel, asking again once a minute per instance.
+
+What one founder's visit costs (no `ACCESS_MODE`; `tools/loadtest.mjs` measures it):
+
+| Request | Database calls |
+|---|---|
+| `GET /api/me` | 1 |
+| `GET /api/world/actions` | 1 |
+| `GET /api/timeline` | 1 cached; 3 when it's rebuilt (plus Stripe and GitHub) |
+| `PATCH /api/world` (lastSeen, once a day) | 2 (1 if nothing changed) |
+| `POST /api/world/actions` | 2 |
+| A page load and three builds | 11 to 13 (was 31 to 34) |
+
+With `ACCESS_MODE=waitlist`, the gate (`server/access.ts`) adds two reads (waitlist and plan) once per founder per five minutes per instance, and one write the first time an invited founder signs in.
 
 ## The game on the server
 

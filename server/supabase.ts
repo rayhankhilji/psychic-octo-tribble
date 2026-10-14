@@ -57,19 +57,35 @@ function filters(where: Record<string, string | number | boolean>): string {
     .join('&');
 }
 
-async function rest<T>(cfg: SupabaseConfig, method: string, path: string, body?: unknown, prefer?: string): Promise<T> {
+/**
+ * PostgREST's 404 for a function it doesn't know: the migration that adds it
+ * hasn't run on this database yet. Callers that can manage without it catch this.
+ */
+export class MissingFunction extends Error {
+  constructor(fn: string) {
+    super(`The database has no function ${fn} yet`);
+    this.name = 'MissingFunction';
+  }
+}
+
+async function rest<T>(cfg: SupabaseConfig, method: string, path: string, body?: unknown, prefer?: string, opts: { read?: boolean } = {}): Promise<T> {
   const table = path.split('?')[0];
+  // Reads fail fast under overload rather than stacking up; writes get longer.
+  const read = opts.read ?? method === 'GET';
   let res: Response;
   try {
     res = await fetchWithRetry(
       `${cfg.url}/rest/v1/${path}`,
       { method, headers: serviceHeaders(cfg, prefer ? { Prefer: prefer } : {}), ...(body === undefined ? {} : { body: JSON.stringify(body) }) },
-      // Reads fail fast under overload rather than stacking up; writes get longer.
-      { timeoutMs: method === 'GET' ? READ_TIMEOUT_MS : TIMEOUT_MS },
+      { timeoutMs: read ? READ_TIMEOUT_MS : TIMEOUT_MS, ...(opts.read ? { idempotent: true } : {}) },
     );
   } catch (err) {
     log.error('database unreachable', { method, table, err });
     throw new HttpError(502, 'The database is unavailable. Try again in a moment.', 'upstream');
+  }
+  if (res.status === 404 && table!.startsWith('rpc/')) {
+    await res.body?.cancel().catch(() => {});
+    throw new MissingFunction(table!.slice(4));
   }
   if (!res.ok) {
     // PostgREST errors can echo values; log the status only, never the body.
@@ -114,5 +130,14 @@ export class Db {
 
   async remove(table: string, where: Record<string, string | number | boolean>): Promise<void> {
     await rest(this.cfg, 'DELETE', `${table}?${filters(where)}`, undefined, 'return=minimal');
+  }
+
+  /**
+   * Calls a Postgres function (POST /rest/v1/rpc/fn). `read` marks one that
+   * is mostly a read and safe to send twice: it gets the read timeout and
+   * retries. Throws `MissingFunction` if the database doesn't have it.
+   */
+  rpc<T>(fn: string, args: Record<string, unknown>, opts: { read?: boolean } = {}): Promise<T> {
+    return rest<T>(this.cfg, 'POST', `rpc/${fn}`, args, undefined, opts);
   }
 }

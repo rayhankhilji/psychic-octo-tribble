@@ -1,10 +1,9 @@
-import { hasAccess } from './billing.ts';
 import { sha256 } from './crypto.ts';
 import type { Env, Settings } from './env.ts';
 import { HttpError, bearer, notConfigured } from './http.ts';
 import { noteUser } from './log.ts';
 import { resetSharedLimiter, sharedHit } from './ratelimit.ts';
-import type { SubscriptionRow } from './store.ts';
+import type { UserState } from './state.ts';
 import { Db, fetchUser, type AuthUser } from './supabase.ts';
 
 /** Everything a route needs for one request. */
@@ -19,6 +18,12 @@ export interface Ctx {
 export interface Hosted extends Ctx {
   db: Db;
   supabase: NonNullable<Settings['supabase']>;
+  /**
+   * The caller's rows as this request read them (server/state.ts), so each
+   * is read at most once per request. Never shared between requests: "has
+   * paid" is always read fresh.
+   */
+  userState?: { userId: string; state: UserState; /** This request made the profile. */ created: boolean };
 }
 
 export function hosted(ctx: Ctx): Hosted {
@@ -54,18 +59,6 @@ export async function requireUser(ctx: Hosted): Promise<AuthUser> {
   return user;
 }
 
-/**
- * The caller's plan row; 402 unless it gives access now. Checked against
- * the period end too (billing.ts, `hasAccess`), so a plan cancelled at
- * period end closes on time even if its last webhook never arrived.
- */
-export async function requirePaid(ctx: Hosted, user: AuthUser): Promise<SubscriptionRow> {
-  // Read every time, never cached: a revoked comp or an ended plan must lose access at once, on every instance.
-  const sub = await ctx.db.one<SubscriptionRow>('subscriptions', { user_id: user.id });
-  if (!sub || !hasAccess(sub, ctx.now)) throw new HttpError(402, 'Pick a plan to open your city.', 'payment_required');
-  return sub;
-}
-
 // ─── Rate limits ──────────────────────────────────────────────────────────
 
 export interface LimitOptions {
@@ -87,7 +80,7 @@ export interface LimitOptions {
 /** Fixed windows in this instance's memory: the cheap first layer, and the whole limit without `ctx`. */
 const windows = new Map<string, { start: number; count: number }>();
 
-const slowDown = (retryAfter: number) =>
+export const slowDown = (retryAfter: number) =>
   new HttpError(429, `Slow down a little and try again in ${retryAfter > 90 ? 'a few minutes' : 'a minute'}.`, 'rate_limited', retryAfter);
 
 /**
@@ -100,7 +93,18 @@ const slowDown = (retryAfter: number) =>
  *   await rateLimit(`checkout:${user.id}`, 10, ctx.now, { ctx });
  */
 export function rateLimit(key: string, max: number, now: number, opts: LimitOptions = {}): Promise<void> {
-  const windowS = Math.min(86_400, Math.max(1, Math.round(opts.windowS ?? 60)));
+  const windowS = memoryLimit(key, max, now, opts.windowS);
+  const supabase = opts.ctx?.s.supabase;
+  if (!supabase) return Promise.resolve();
+  const shared = sharedCheck(supabase, key, windowS, max, now, !!opts.failClosed);
+  // Marked as handled, so a caller that doesn't await can't crash the process with it.
+  shared.catch(() => {});
+  return shared;
+}
+
+/** The in-memory layer alone: counts one hit, throws 429 when over. Returns the window in whole seconds. */
+export function memoryLimit(key: string, max: number, now: number, window = 60): number {
+  const windowS = limitWindow(window);
   const windowMs = windowS * 1000;
   const memKey = `${windowMs}:${key}`;
   const w = windows.get(memKey);
@@ -110,13 +114,11 @@ export function rateLimit(key: string, max: number, now: number, opts: LimitOpti
   } else if (++w.count > max) {
     throw slowDown((w.start + windowMs - now) / 1000);
   }
-  const supabase = opts.ctx?.s.supabase;
-  if (!supabase) return Promise.resolve();
-  const shared = sharedCheck(supabase, key, windowS, max, now, !!opts.failClosed);
-  // Marked as handled, so a caller that doesn't await can't crash the process with it.
-  shared.catch(() => {});
-  return shared;
+  return windowS;
 }
+
+/** Whole seconds, from one second up to a day. */
+export const limitWindow = (windowS = 60) => Math.min(86_400, Math.max(1, Math.round(windowS)));
 
 async function sharedCheck(cfg: NonNullable<Settings['supabase']>, key: string, windowS: number, max: number, now: number, failClosed: boolean) {
   const verdict = await sharedHit(cfg, key, windowS, max, { now, ignoreBreaker: failClosed });

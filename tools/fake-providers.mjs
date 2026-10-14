@@ -942,6 +942,29 @@ export async function startFakes(opts = {}) {
     r.hits++;
     return [{ allowed: r.hits <= p_max, retry_after_s: Math.max(1, Math.ceil((Date.parse(r.window_start) + p_window_s * 1000 - now) / 1000)) }];
   });
+  // 0007: the caller's profile (made on first sight), plan and asked-for rows in one call, plus an optional rate_hit.
+  state.rpc.set('user_state', ({ p_user, p_seed, p_parts, p_rate_key, p_rate_window_s, p_rate_max }) => {
+    if (!p_user) throw pgError(400, '22023', 'user_state: p_user is required');
+    const mine = (name) => state.tables[name].filter((r) => r.user_id === p_user);
+    let profile = mine('profiles')[0] ?? null;
+    let created = false;
+    if (!profile) {
+      // insertRow applies 0006's guard: nothing is made for a user Auth no longer has.
+      profile = insertRow(schema.tables.profiles, { user_id: p_user, seed: p_seed ?? 1 + Math.floor(Math.random() * 2147483646) });
+      created = !!profile;
+    }
+    const rate = p_rate_key == null ? undefined : state.rpc.get('rate_hit')({ p_key: p_rate_key, p_window_s: p_rate_window_s, p_max: p_rate_max })[0];
+    const parts = p_parts ?? [];
+    return clone({
+      profile,
+      created,
+      subscription: mine('subscriptions')[0] ?? null,
+      ...(rate ? { rate } : {}),
+      ...(parts.includes('connections') ? { connections: mine('connections') } : {}),
+      ...(parts.includes('world') ? { world: mine('worlds')[0] ?? null } : {}),
+      ...(parts.includes('timeline') ? { timeline: mine('timelines')[0] ?? null } : {}),
+    });
+  });
   state.rpc.set('export_user_data', ({ uid }) => {
     if (!uid) throw pgError(400, 'P0001', 'export_user_data: uid is required');
     const out = {};

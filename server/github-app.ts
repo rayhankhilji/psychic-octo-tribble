@@ -6,7 +6,8 @@ import type { Settings } from './env.ts';
 import { HttpError, badRequest, notConfigured, upstream } from './http.ts';
 import { backHome, callbackUrl, finishState, startState } from './oauth.ts';
 import { fetchGithub } from './sources.ts';
-import { connectionsOf, ensureProfile, type ConnectionRow } from './store.ts';
+import { userState } from './state.ts';
+import { connectionsOf, type ConnectionRow } from './store.ts';
 import { markJoined } from './stripe-app.ts';
 import type { AuthUser } from './supabase.ts';
 
@@ -181,7 +182,8 @@ export async function setRepo(ctx: Hosted, user: AuthUser, body: Record<string, 
   const fullName = ((await res.json()) as { full_name: string }).full_name;
   await ctx.db.update('connections', { user_id: user.id, provider: 'github' }, { metadata: { ...row.metadata, repo: fullName }, updated_at: new Date(ctx.now).toISOString() });
   await ctx.db.remove('timelines', { user_id: user.id });
-  const profile = await ensureProfile(ctx.db, user.id);
+  // The profile as this request read it with the plan: choosing a repository doesn't change it.
+  const profile = (await userState(ctx, user)).profile;
   return connectionsOf(profile, await ctx.db.many<ConnectionRow>('connections', { user_id: user.id }));
 }
 
