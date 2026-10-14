@@ -195,7 +195,7 @@ export class Hud {
     const tools = el('nav', { class: 'toolbar card', 'aria-label': 'Actions' });
     this.toolsEl = tools;
     if (!h.onConnect) tools.append(this.button('plug', 'Connect', () => this.openConnect(false), 'ghost icon-only', 'Connect your startup: Stripe, GitHub, your city name'));
-    tools.append(this.button('share', 'Share', () => h.onShare(), 'ghost', 'Share a snapshot of your city'));
+    tools.append(this.button('share', 'Share', () => h.onShare(), 'ghost', 'Share a postcard or a growth clip of your city'));
     this.soundBtn = el('button', { class: 'btn ghost icon-only sound-toggle', type: 'button' });
     this.soundBtn.addEventListener('click', () => this.sound.toggle());
     this.sound.onChange = (on) => this.renderSound(on, true);

@@ -16,7 +16,7 @@ import { revealHud, whenBooted } from './loader.ts';
 const SEEN_KEY = 'tinytown:frontdoor-seen';
 
 /** Any of these in the URL means a link with a purpose (a preview, a test, a pinned view): go straight in. */
-const PURPOSEFUL = ['demo', 'debug', 'fresh', 'time', 'view', 'away', 'replay', 'seed', 'mockapi', 'quality'];
+const PURPOSEFUL = ['demo', 'debug', 'fresh', 'time', 'view', 'away', 'replay', 'seed', 'mockapi', 'quality', 'recap', 'moon'];
 
 export interface FrontDoorFacts {
   /** The page's query string. `?intro` always shows the front door (previews, screenshots). */

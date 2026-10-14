@@ -1,0 +1,384 @@
+/* ── Share sheet and growth clip (src/ui/recap.ts) ──────────────────────── */
+
+.recap-dialog {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.recap-dialog[data-state='record'],
+.recap-dialog[data-state='done'] {
+  width: min(600px, calc(100vw - 32px));
+}
+
+/* While filming, the stage is resized off to one side and the HUD is away: a calm paper studio instead. */
+.recap-dialog[data-state='record']::backdrop {
+  background: var(--bg);
+  backdrop-filter: none;
+}
+
+:root.recording #ui,
+:root.recording #world {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The two choices. */
+
+.recap-pick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.recap-choice {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 12px 8px;
+  padding: 8px 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface-solid);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out);
+}
+
+.recap-choice:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+
+.recap-choice[aria-checked='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow-1);
+  background: var(--surface-solid);
+}
+
+.recap-choice:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.recap-thumb {
+  position: relative;
+  grid-column: 1 / -1;
+  display: block;
+  aspect-ratio: 1.6;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.recap-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.recap-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px 0 6px;
+  border-radius: var(--r-pill);
+  background: rgba(15, 20, 36, 0.72);
+  color: #f6eedf;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  backdrop-filter: blur(6px);
+}
+
+.recap-badge .ico {
+  width: 14px;
+  height: 14px;
+}
+
+.recap-choice-text {
+  padding-left: 6px;
+  min-width: 0;
+}
+
+.recap-choice-text b {
+  display: block;
+  font: 750 16px/1.2 var(--font-display);
+  letter-spacing: -0.02em;
+  font-stretch: 92%;
+}
+
+.recap-choice-text small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+}
+
+.recap-tag {
+  align-self: start;
+  margin: 2px 6px 0 0;
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font: 500 10.5px/1.5 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.recap-choice[aria-checked='true'] .recap-tag {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* Clip options. */
+
+.recap-options {
+  display: grid;
+  gap: 16px;
+}
+
+.recap-shapes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.recap-shapes legend {
+  grid-column: 1 / -1;
+  margin-bottom: 8px;
+  padding: 0;
+}
+
+.recap-shape {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out);
+}
+
+.recap-shape:hover {
+  background: var(--surface-hover);
+}
+
+.recap-shape:has(input:checked) {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.recap-shape:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.recap-shape input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.recap-shape b {
+  display: block;
+  font-weight: 600;
+}
+
+.recap-shape small {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A little picture of the frame's shape. */
+.recap-aspect {
+  justify-self: center;
+  display: block;
+  border: 1.6px solid var(--ink-3);
+  border-radius: 4px;
+  background: linear-gradient(to top, var(--bay-soft) 0 38%, transparent 38%);
+}
+
+.recap-aspect.square {
+  width: 22px;
+  height: 22px;
+}
+
+.recap-aspect.vertical {
+  width: 16px;
+  height: 28px;
+}
+
+.recap-shape:has(input:checked) .recap-aspect {
+  border-color: var(--ink);
+}
+
+.recap-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: auto;
+  max-width: 34ch;
+  color: var(--ink-3);
+  font-size: var(--t-xs);
+  line-height: 1.35;
+}
+
+.recap-note .ico {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+.recap-error {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* Recording: a live look at the clip, a progress line and Cancel. */
+
+.recap-live,
+.recap-player {
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.recap-live canvas,
+.recap-player video {
+  display: block;
+  max-width: 100%;
+  max-height: min(52dvh, 460px);
+  aspect-ratio: 1;
+  border-radius: var(--r-md);
+  background: var(--surface-3);
+  box-shadow: var(--shadow-2);
+}
+
+.recap-live.vertical canvas,
+.recap-player.vertical video {
+  aspect-ratio: 9 / 16;
+}
+
+.recap-player video {
+  width: auto;
+  height: min(52dvh, 460px);
+}
+
+.recap-progress {
+  --p: 0;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.recap-progress i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left;
+  transform: scaleX(var(--p));
+  transition: transform var(--dur-2) linear;
+}
+
+.recap-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recap-status p {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.recap-status b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.recap-status .num {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.recap-of {
+  color: var(--ink-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recap-progress i {
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .recap-dialog,
+  .recap-dialog[data-state='record'],
+  .recap-dialog[data-state='done'] {
+    width: 100%;
+  }
+
+  .recap-pick {
+    gap: 8px;
+  }
+
+  .recap-choice {
+    padding: 6px 6px 10px;
+    gap: 8px 4px;
+  }
+
+  .recap-choice-text small {
+    display: none;
+  }
+
+  .recap-tag {
+    display: none;
+  }
+
+  .recap-shapes {
+    grid-template-columns: 1fr;
+  }
+
+  .recap-note {
+    max-width: none;
+    flex-basis: 100%;
+  }
+
+  .recap-live canvas,
+  .recap-player video {
+    max-height: 46dvh;
+  }
+
+  .recap-player video {
+    height: 46dvh;
+  }
+}

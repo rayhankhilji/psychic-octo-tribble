@@ -109,7 +109,7 @@ The order agreed with the owner: the game loop first (done), then hosting.
 
 - [ ] **Public world page** (opt-in, metrics hidden by default) with a shareable URL.
 - [ ] **Flights and visits:** buy a plane, pick a founder, play a cinematic flight (taxi, take off, 5–10 s over the ocean, land), then explore their city as a visitor and leave a postcard.
-- [ ] **Growth recap video:** export the replay as a 15-second clip.
+- [x] **Growth recap video:** Share → Growth clip: 15 s, square or vertical MP4/WebM, filmed frame by frame with a branded overlay and the real numbers (`src/ui/recap.ts`). Left: one run in real Chrome and Safari to confirm the MP4/H.264 path and Share on a phone; a 15 s square clip is ~10–15 MB (`bitrateFor()`).
 - [ ] **Leaderboards / public score**, satisfaction first (safer than MRR).
 
 ## P6: Later

@@ -40,6 +40,7 @@ To keep a dev server running in the background in a cloud session:
 | `&quality=low\|medium\|high` | Force render quality (high enables GTAO). |
 | `&seed=N` | Show world seed N (0, the classic map, by default). |
 | `&mockapi=<state>` | Dev builds only (`vite dev`, or `vite build --mode mockapi`): fake the hosted API. States: `signedout`, `waitlist`, `unpaid`, `canceled`, `paid-unconnected`, `paid-stripe`, `paid-github`, `connected`, `pastdue`, `local`. Extras: `&mockerr=checkout\|portal\|signin\|repos\|users\|connect\|timeline\|link\|delete`, `&mockreject` (next build refused), `&mockcaptcha`; the email code `123456` works. Admin console: `/admin.html?mock&debug`. To screenshot dialogs in SwiftShader, freeze the scene first (`__stage.renderer.setAnimationLoop(null)`) and click through the DOM. A frozen page stops advancing CSS animations, so a newly opened dialog sits invisible on its first keyframe: run `document.getAnimations().forEach((a) => a.finish())` before the screenshot (or pause them and set `currentTime` to capture motion frame by frame). The shared dev server reloads the page whenever any agent saves a file; for long dialog shoots run your own server with HMR off. |
+| `&recap` (or `&recap=3`) | Open the share sheet on the growth clip (`=3`: a 3-second test clip). `&recapvia=mediarecorder` forces the fallback recorder; `&recapcodec=vp09` forces a codec. |
 | `&view=x,z,zoom` | Pin the camera target and zoom (disables auto-framing). Full-city overview: `view=-11.5,-9.2,0.46`. |
 
 ### Keys
