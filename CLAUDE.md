@@ -1,6 +1,6 @@
 # TinyTown: instructions for Claude
 
-**TinyTown is a Tamagotchi for your startup.** A tiny isometric San Francisco Bay, rendered in three.js and driven by a founder's real metrics (Stripe MRR, users, GitHub releases and commits). Every real $1 of MRR becomes $10,000 to spend on the city. Users must be housed ($0.20 of MRR each) or the city decays. The founder's own house climbs from a hacker house to a house on the moon. It's a paid product: $12/month or $99/year, no free trial.
+**TinyTown is a Tamagotchi for your startup.** A tiny isometric San Francisco Bay, rendered in three.js and driven by a founder's real metrics (Stripe MRR, users, GitHub releases and commits). Every real $1 of MRR becomes $10,000 to spend on the city. Users must be housed ($0.20 of MRR each) or the city decays. The founder's own house climbs from a hacker house to a house on the moon (at $100k MRR; every unlock was made 10x easier on 2026-10-14). It's a paid product: $29 a year, annual only, no free trial, no refunds.
 
 You are picking up a project that already has a lot of history. **Read before you build.**
 

@@ -17,7 +17,7 @@ This is everything a new session needs to continue without the original conversa
   - **Satisfaction (0–100)** comes from housing, upkeep, amenities and momentum. Nothing in the game can raise it except growing the business.
   - **The one rule:** the only way to grow the city is to grow the startup. We never sell in-game money, speed-ups or unlocks.
 - **Real metrics drive the world.** Stripe gives MRR and customers. GitHub releases add HQ floors, and commits speed up the train. Rain falls when MRR drops more than 1% in a week. PostHog (active users) and Supabase (signups) come later.
-- **Business model.** Paid only: **$12/month or $99/year, no free trial**. An open question is whether to add a 14-day money-back guarantee. Cosmetics might come later, but never anything that touches money, land, housing or unlocks.
+- **Business model.** Paid only: **$29 a year, annual only, no free trial, no refunds** (owner, 2026-10-14; it was $12/month or $99/year). Cosmetics might come later, but never anything that touches money, land, housing or unlocks.
 - **Hosting plan.** Vercel + Supabase for accounts, saves and billing. Not built yet; today, saves live in localStorage.
 
 The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs/PRODUCT.md`.
@@ -71,7 +71,9 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
 | **Satisfaction score** | The owner wanted an addictive score where the only way up is growing the real startup. | Built |
 | **Wealth-based cars:** taxis downtown, convertibles in the Hills, more luxury cars as the city gets richer | The owner's request. | Built in traffic (`setLuxury`) |
 | **Your brand on HQ:** sign up with name and URL; we pull the logo and colour, and HQ wears a rooftop logo sign | The owner's idea. | Name sign built; **URL and logo import aren't** |
-| **Paid only, $12/mo or $99/yr, no free trial** | The owner's call. A money-back guarantee is an open question. | Not built (no accounts yet) |
+| **Paid only, $29 a year (annual only), no free trial, no refunds** | The owner's call (2026-10-14; was $12/mo or $99/yr). An impulse price for a delight product; annual avoids novelty churn. | Built |
+| **Everything 10x easier** (2026-10-14) | The owner found $1M MRR for the moon out of reach. Every MRR unlock and every price is a tenth of before (moon at $100k MRR); $1 of MRR = $10,000 and housing at $0.20 per user are unchanged. | Built |
+| **Composio vs native connectors** | The owner prefers Composio if it gives the data we need (founders trust a bigger name). Evaluated in `docs/CONNECTORS.md`. | See CONNECTORS.md |
 | **Hosting: Vercel + Supabase** | The owner OK'd it. Don't buy a domain without asking. | Not built |
 | **The world is the San Francisco Bay** (no longer an LA mix) | The owner: "it should look more like the bay area of SF layout". The TINYTOWN sign stays, on Twin Peaks. | Built |
 | **Day/night from the viewer's local clock**, with a real evening | The owner's request. | Built |
@@ -92,7 +94,7 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
 **Launch build (2026-10-13):** the owner is going live to a 10,000-person waitlist and asked for everything to be ready: "infra, billing, payments, accounts, portals, pipelines, data, systems". Decisions: **no refunds** (no money-back guarantee), drop "different building layouts". Thirteen agents built it in parallel, each in its own files; the lead integrated and committed each in a clean worktree. Now in the repo:
 
 - **Seeded cities** (`src/world/worldgen.ts`): every founder's map differs; same plots and economy; seed 0 is the classic map.
-- **Hosted product:** Supabase accounts; Stripe Checkout ($12/month, $99/year, no trial, no refunds) with the portal and a hardened webhook; our Stripe App and GitHub App for founders' data; PostHog or a manual number for users; server-checked saves; export and deletion; branded email through Resend with a weekly digest; hourly/daily/weekly pipelines with stored history; the waitlist gate and `/admin.html`; Postgres-backed rate limits; CSP and security headers; health checks, logs, Sentry and the funnel; the sign-in, paywall, onboarding and account UI.
+- **Hosted product:** Supabase accounts; Stripe Checkout ($29 a year, annual only, no trial, no refunds) with the portal and a hardened webhook; our Stripe App and GitHub App for founders' data; PostHog or a manual number for users; server-checked saves; export and deletion; branded email through Resend with a weekly digest; hourly/daily/weekly pipelines with stored history; the waitlist gate and `/admin.html`; Postgres-backed rate limits; CSP and security headers; health checks, logs, Sentry and the funnel; the sign-in, paywall, onboarding and account UI.
 - **Ops:** CI (typecheck, tests, build, audit, E2E, CodeQL, Dependabot), migrations on deploy with approval, release and rollback docs, the launch plan with invite waves, the incident runbook, the FAQ and launch copy, draft legal pages.
 - **What's left is mostly the owner's** (accounts, keys, a domain, a lawyer): see TODO "P0: Launch" and `docs/LAUNCH.md`. **Verified:** `node tools/e2e.mjs` runs the real server against fake providers (`tools/fake-providers.mjs`): 14 API journeys pass (sign in → pay → webhook → connect → build → 409s → portal → export → delete) and the 8 browser journeys passed in QA's run; `tests/fuzz-game.test.ts` proves the server accepts exactly what the browser allows; the load test held 1,200 founders over 2 minutes with 0 errors (p95 under 160 ms except a first timeline build, ~1.3 s). QA's bugs are fixed (a minute of 500s after deleting an account; land opened today couldn't be built on today; a Stripe price-API stampede from `/api/config`).
 
