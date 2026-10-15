@@ -446,12 +446,37 @@ export function founderReleases(repo, { days = 300, now = Date.now() } = {}) {
  * - `founderSubs`: subscriptions per founder Stripe account (default 90)
  * - `log`: print each request
  */
+/** A coupon as Stripe returns it. */
+function couponObject(cid, c) {
+  return {
+    id: cid,
+    object: 'coupon',
+    name: c.name ?? null,
+    percent_off: c.percent_off ?? null,
+    amount_off: c.amount_off ?? null,
+    currency: c.amount_off != null ? (c.currency ?? 'usd') : null,
+    duration: c.duration ?? 'once',
+    valid: c.valid ?? true,
+    metadata: c.metadata ?? {},
+    livemode: false,
+  };
+}
+
+/** What the first invoice comes to with this coupon (Stripe rounds a percentage to the nearest cent). */
+function discounted(amount, coupon) {
+  if (!coupon) return amount;
+  const off = coupon.percent_off != null ? Math.round((amount * coupon.percent_off) / 100) : (coupon.amount_off ?? 0);
+  return Math.max(0, amount - off);
+}
+
 export async function startFakes(opts = {}) {
   const schema = opts.schema ?? loadSchema(opts.migrationsDir);
   const anonKey = opts.anonKey ?? 'fake-anon-key';
   const serviceKey = opts.serviceKey ?? 'fake-service-role-key';
   const latency = { auth: 0, rest: 0, stripe: 0, github: 0, posthog: 0, ...(opts.latency ?? {}) };
   const prices = opts.prices ?? { price_month: { amount: 1200, interval: 'month' }, price_year: { amount: 9900, interval: 'year' } };
+  // Coupons on our billing account, by id: { percent_off } or { amount_off, currency }, always `duration: once` unless given.
+  const coupons = opts.coupons ?? {};
 
   const state = {
     appUrl: opts.appUrl ?? null,
@@ -475,6 +500,7 @@ export async function startFakes(opts = {}) {
       refreshTokens: new Map(),
       accessTokens: new Map(),
       spentRefreshTokens: new Set(),
+      coupons: new Map(Object.entries(coupons).map(([cid, c]) => [cid, couponObject(cid, c)])),
       prices: new Map(Object.entries(prices).map(([pid, p]) => [pid, { id: pid, object: 'price', active: true, unit_amount: p.amount, currency: p.currency ?? 'usd', recurring: { interval: p.interval, interval_count: 1 }, product: 'prod_tinytown', livemode: false }])),
     },
     github: { installations: new Map(), codes: new Map(), userTokens: new Map(), instTokens: new Map(), nextInstallation: 4_242_001 },
@@ -489,6 +515,7 @@ export async function startFakes(opts = {}) {
   const routeKey = (service, method, path) =>
     `${service} ${method} ${path
       .replace(/\/(cus|sub|cs|bps|evt|acct|si|in)_\w+/g, '/:id')
+      .replace(/(\/coupons\/)[\w-]+/, '$1:id')
       .replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}/g, '/:id')
       .replace(/\/\d+(?=\/|$)/g, '/:n')
       .replace(/(\/repos\/)[^/]+\/[^/]+/, '$1:owner/:repo')
@@ -1032,7 +1059,7 @@ export async function startFakes(opts = {}) {
     return deliver(makeEvent(type, object));
   }
 
-  function newSubscription(customer, priceId, metadata) {
+  function newSubscription(customer, priceId, metadata, couponId = null) {
     const price = state.stripe.prices.get(priceId);
     const start = nowS();
     const end = start + (price.recurring.interval === 'year' ? 365 : 30) * 86_400;
@@ -1052,6 +1079,9 @@ export async function startFakes(opts = {}) {
       trial_end: null,
       currency: price.currency,
       metadata: metadata ?? {},
+      // Stripe lists discount ids on the subscription; a `duration: once` coupon's discount ends after the first invoice.
+      discounts: couponId ? [id('di_')] : [],
+      first_invoice_amount: discounted(price.unit_amount, couponId ? state.stripe.coupons.get(couponId) : null),
       items: { object: 'list', data: [{ id: id('si_'), object: 'subscription_item', quantity: 1, current_period_start: start, current_period_end: end, price: clone(price) }] },
     };
     state.stripe.subscriptions.set(sub.id, sub);
@@ -1154,6 +1184,16 @@ export async function startFakes(opts = {}) {
       state.stripe.prices.set(price.id, price);
       return reply(200, price);
     }
+    if ((m = /^\/v1\/coupons\/([\w-]+)$/.exec(p)) && req.method === 'GET') {
+      const c = state.stripe.coupons.get(m[1]);
+      return c ? send(res, 200, c) : stripeError(res, 404, `No such coupon: '${m[1]}'`, 'invalid_request_error', 'resource_missing');
+    }
+    if (p === '/v1/coupons' && req.method === 'POST') {
+      if (params.id && state.stripe.coupons.has(params.id)) return stripeError(res, 400, `Coupon already exists.`, 'invalid_request_error', 'resource_already_exists');
+      const c = couponObject(params.id ?? id('coupon_'), { ...params, percent_off: params.percent_off != null ? Number(params.percent_off) : undefined, amount_off: params.amount_off != null ? Number(params.amount_off) : undefined });
+      state.stripe.coupons.set(c.id, c);
+      return reply(200, c);
+    }
     if (p === '/v1/products' && req.method === 'POST') return reply(200, { id: id('prod_'), object: 'product', name: params.name, active: true, metadata: params.metadata ?? {} });
 
     if (p === '/v1/customers' && req.method === 'POST') {
@@ -1188,7 +1228,12 @@ export async function startFakes(opts = {}) {
       if (params.customer && !state.stripe.customers.get(params.customer)) return stripeError(res, 400, `No such customer: '${params.customer}'`, 'invalid_request_error', 'resource_missing');
       if (params.mode !== 'subscription') return stripeError(res, 400, 'The fake only does subscription Checkout.');
       if (!params.success_url || !params.cancel_url) return stripeError(res, 400, 'Missing success_url or cancel_url.');
-      const s = { id: id('cs_test_', 20), object: 'checkout.session', mode: 'subscription', status: 'open', payment_status: 'unpaid', customer: params.customer ?? null, client_reference_id: params.client_reference_id ?? null, metadata: params.metadata ?? {}, subscription: null, success_url: params.success_url, cancel_url: params.cancel_url, price: price.id, subscription_data: params.subscription_data ?? {}, livemode: false, created: nowS(), expires_at: nowS() + 86_400 };
+      // As Stripe: one discount at most, never alongside a promotion code box, and only a coupon that exists.
+      const discounts = params.discounts ?? [];
+      if (discounts.length && params.allow_promotion_codes) return stripeError(res, 400, 'You may only specify one of these parameters: allow_promotion_codes, discounts.');
+      const coupon = discounts[0]?.coupon ? state.stripe.coupons.get(discounts[0].coupon) : null;
+      if (discounts[0]?.coupon && !coupon) return stripeError(res, 400, `No such coupon: '${discounts[0].coupon}'`, 'invalid_request_error', 'resource_missing');
+      const s = { id: id('cs_test_', 20), object: 'checkout.session', mode: 'subscription', status: 'open', payment_status: 'unpaid', customer: params.customer ?? null, client_reference_id: params.client_reference_id ?? null, metadata: params.metadata ?? {}, subscription: null, success_url: params.success_url, cancel_url: params.cancel_url, price: price.id, subscription_data: params.subscription_data ?? {}, coupon: coupon?.id ?? null, amount_total: discounted(price.unit_amount, coupon), livemode: false, created: nowS(), expires_at: nowS() + 86_400 };
       s.url = `${base}/stripe-pages/checkout/${s.id}`;
       state.stripe.sessions.set(s.id, s);
       return reply(200, s);
@@ -1249,7 +1294,7 @@ export async function startFakes(opts = {}) {
 
     if (p === '/v1/invoices' && req.method === 'GET') {
       const subs = [...state.stripe.subscriptions.values()].filter((s) => !params.customer || s.customer === params.customer);
-      const invoices = subs.map((s) => ({ id: `in_${s.id.slice(4)}`, object: 'invoice', customer: s.customer, subscription: s.id, status: 'paid', amount_paid: s.items.data[0].price.unit_amount, currency: s.currency, created: s.created, hosted_invoice_url: `${base}/stripe-pages/invoice/${s.id}`, invoice_pdf: null }));
+      const invoices = subs.map((s) => ({ id: `in_${s.id.slice(4)}`, object: 'invoice', customer: s.customer, subscription: s.id, status: 'paid', amount_paid: s.first_invoice_amount ?? s.items.data[0].price.unit_amount, currency: s.currency, created: s.created, hosted_invoice_url: `${base}/stripe-pages/invoice/${s.id}`, invoice_pdf: null }));
       return send(res, 200, list(invoices.slice(0, Number(params.limit ?? 10)), '/v1/invoices'));
     }
     if (p === '/v1/events' && req.method === 'GET') {
@@ -1271,10 +1316,11 @@ export async function startFakes(opts = {}) {
       const s = state.stripe.sessions.get(m[1]);
       if (!s || s.status !== 'open') return html(res, '<h1>This checkout has expired</h1>', 404);
       const price = state.stripe.prices.get(s.price);
-      const amount = `$${(price.unit_amount / 100).toFixed(2)}`;
+      const amount = `$${(s.amount_total / 100).toFixed(2)}`;
+      const then = s.coupon ? ` today, then $${(price.unit_amount / 100).toFixed(2)} every ${price.recurring.interval}` : ` per ${price.recurring.interval}`;
       return html(
         res,
-        `<h1>Subscribe to TinyTown</h1><p><b>${amount}</b> per ${price.recurring.interval}. Test card <code>4242 4242 4242 4242</code>.</p>
+        `<h1>Subscribe to TinyTown</h1><p><b>${amount}</b>${then}. Test card <code>4242 4242 4242 4242</code>.</p>
          <form method="post" action="/stripe-pages/checkout/${s.id}/pay"><button type="submit">Pay ${amount}</button></form>
          <form method="post" action="/stripe-pages/checkout/${s.id}/decline"><button class="secondary" type="submit">Use a card that declines</button></form>
          <a class="btn secondary" href="${escapeHtml(s.cancel_url)}">Back</a>`,
@@ -1289,7 +1335,7 @@ export async function startFakes(opts = {}) {
         state.stripe.customers.set(c.id, c);
         s.customer = c.id;
       }
-      const sub = newSubscription(s.customer, s.price, s.subscription_data?.metadata);
+      const sub = newSubscription(s.customer, s.price, s.subscription_data?.metadata, s.coupon);
       Object.assign(s, { status: 'complete', payment_status: 'paid', subscription: sub.id });
       // Stripe doesn't promise an order; this is the common one. A delay imitates a slow webhook.
       const fire = async () => {

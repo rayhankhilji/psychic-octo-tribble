@@ -8,8 +8,8 @@ import './hosted.css';
 import type { AuthProvider } from '../api/auth.ts';
 import type { Opening, BootScreen } from '../api/boot.ts';
 import type { Api, ApiRequestError } from '../api/client.ts';
-import { isPaid, type ConfigResponse, type Connections, type MeResponse, type PlanInterval, type WorldInfo } from '../api/contract.ts';
-import { ctaPrice, inWords, priceLine } from '../api/pricing.ts';
+import { isPaid, type ConfigResponse, type Connections, type MeResponse, type Offer, type PlanInterval, type WorldInfo } from '../api/contract.ts';
+import { ctaPrice, formatPrice, priceLine } from '../api/pricing.ts';
 import { AccountDialog, initialOf } from './account.ts';
 import { busy } from './dialogs.ts';
 import { el, escape } from './dom.ts';
@@ -23,6 +23,9 @@ import { WaitlistDialog } from './waitlist.ts';
 const INTENT_KEY = 'tinytown:plan-intent';
 const BANNER_KEY = 'tinytown:pastdue-dismissed';
 const WAITLIST_KEY = 'tinytown:waitlist-shown';
+
+/** The promise every way into setup makes (the owner's order: account and setup free, pay when the city opens). */
+const FREE_SETUP = "Free to set up. You'll only pay when you open your city.";
 
 export interface HostedDeps {
   api: Api;
@@ -117,6 +120,17 @@ export class HostedShell {
     if (pastDue && !this.banner && !this.bannerDismissed()) this.showPastDue();
   }
 
+  /** Signed in, never paid: setup is free, and the plan comes when the city opens. */
+  private get settingUp(): boolean {
+    return !!this.me && this.me.plan.status === 'none';
+  }
+
+  /** The introductory offer, while it's open for this founder (shown, and inside its 48 hours). */
+  private get openOffer(): Offer | null {
+    const o = this.me?.offer;
+    return o && o.status === 'open' && o.available && (o.expiresAt ?? 0) > Date.now() ? o : null;
+  }
+
   private makeCta(kind: 'signin' | 'plan' | 'onboard' | 'world' | 'waitlist'): HTMLElement {
     // The price on sale, as the server has it ("$29/yr"), and in words for the tip ("$29 a year").
     const price = ctaPrice(this.deps.config.plans) ?? '';
@@ -124,18 +138,36 @@ export class HostedShell {
     const wrap = el('div', { class: 'cta card', 'data-cta': kind, role: 'group', 'aria-label': 'Your own city' });
     const c = this.me?.connections;
     const doneSteps = c ? [!!c.stripe, !!c.github?.repo, c.users.source !== 'customers'].filter(Boolean).length : 0;
+    const offer = this.openOffer;
+    const free = `Free to set up${words ? `; ${words} when you open your city` : ''}.`;
     const main =
       kind === 'onboard' && this.stripeBroken
         ? { label: 'Reconnect Stripe', aside: '', icon: ICON.refresh, tip: "Stripe's access has stopped working. Reconnect it and your city comes back." }
+        : kind === 'onboard' && this.settingUp
+          ? {
+              label: doneSteps ? 'Finish setup' : 'Set up my city',
+              aside: doneSteps ? `${Math.min(3, doneSteps + 1)} of 3` : 'Free',
+              icon: ICON.plug,
+              tip: `Connect Stripe and your city runs on your real revenue. ${free}`,
+            }
         : kind === 'onboard'
         ? { label: 'Finish setup', aside: `${Math.min(3, doneSteps + 1)} of 3`, icon: ICON.plug, tip: 'Connect Stripe and your city runs on your real revenue.' }
+        : kind === 'plan' && this.settingUp && c?.stripe
+          ? {
+              label: 'Open my city',
+              aside: offer ? `${formatPrice(offer.amount, offer.currency)} first year` : price,
+              icon: ICON.sparkle,
+              tip: offer
+                ? `Your city is built from your real numbers. ${formatPrice(offer.amount, offer.currency)} for your first year, then ${formatPrice(offer.regular, offer.currency)} a year.`
+                : `Your city is built from your real numbers${words ? `. ${words.charAt(0).toUpperCase()}${words.slice(1)}` : ''}.`,
+            }
         : kind === 'world'
           ? { label: 'Open my city', aside: '', icon: ICON.arrowRight, tip: 'Leave the demo for your own city.' }
           : kind === 'waitlist'
             ? { label: "You're on the list", aside: '', icon: ICON.check, tip: "We'll email you the moment your spot opens." }
           : this.me?.plan.status === 'canceled'
             ? { label: 'Bring your city back', aside: price, icon: ICON.sparkle, tip: `Your city and its saves are kept. Renew${words ? ` for ${words}` : ''} and it runs on your real numbers again.` }
-          : { label: 'Make it yours', aside: price, icon: ICON.sparkle, tip: `Your startup's real numbers, your own city. ${words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}. ` : ''}No free trial; the demo stays free.` };
+          : { label: 'Make it yours', aside: price, icon: ICON.sparkle, tip: `Your startup's real numbers, your own city. ${free} The demo stays free.` };
     if (kind === 'signin') {
       const signIn = el('button', { class: 'btn ghost cta-signin', type: 'button' }, '<span class="label">Sign in</span>');
       signIn.addEventListener('click', () => this.openSignIn());
@@ -153,6 +185,8 @@ export class HostedShell {
     if (cta === 'world') return void location.assign('/');
     if (cta === 'onboard') return this.openOnboarding({});
     if (cta === 'waitlist') return this.openWaitlist(true);
+    // An account comes first, and setting up is free: signing in leads to setup, not to paying.
+    if (cta === 'signin') return this.openSignIn({ context: FREE_SETUP });
     this.openPlans({});
   }
 
@@ -210,10 +244,12 @@ export class HostedShell {
       api: this.deps.api,
       config: this.deps.config,
       signedIn: () => !!this.me,
+      me: () => this.me,
+      onOffer: (offer) => this.setOffer(offer),
+      // Signed out: an account first, then the free setup; the plan waits until the city is ready.
       signIn: (interval) => {
         setPlanIntent(interval);
-        const plan = this.deps.config.plans.find((p) => p.interval === interval);
-        this.openSignIn({ context: `Next: checkout${plan ? `, ${inWords(plan)}` : ''}.` });
+        this.openSignIn({ context: FREE_SETUP });
       },
       go: (url) => location.assign(url),
     });
@@ -231,8 +267,16 @@ export class HostedShell {
       me: () => this.me!,
       onConnections: (c) => this.setConnections(c),
       go: (url) => location.assign(url),
-      // A fresh boot loads the world with its seed and the new connections.
-      finish: () => location.assign('/'),
+      // Paid: a fresh boot loads the world with its seed and the new connections.
+      // Not yet: the city is ready, and opening it is the paywall (setup was free).
+      finish: () => {
+        if (this.me && isPaid(this.me.plan.status)) return void location.assign('/');
+        if (this.screen.kind === 'demo' && this.screen.cta !== 'plan') {
+          this.screen = { kind: 'demo', cta: 'plan' };
+          this.render();
+        }
+        this.openPlans({});
+      },
       inWorld: this.screen.kind === 'world',
       // Google Analytics through Composio, when this server offers it (docs/CONNECTORS.md).
       ga4: this.deps.config.connect.ga4
@@ -334,6 +378,12 @@ export class HostedShell {
   private setConnections(c: Connections) {
     if (!this.me) return;
     this.me = { ...this.me, connections: c };
+    if (this.screen.kind === 'demo') this.render();
+  }
+
+  private setOffer(offer: Offer | null) {
+    if (!this.me) return;
+    this.me = { ...this.me, offer };
     if (this.screen.kind === 'demo') this.render();
   }
 

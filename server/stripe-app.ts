@@ -10,7 +10,8 @@ import { decryptionKeys, type Settings } from './env.ts';
 import { HttpError, notConfigured, upstream } from './http.ts';
 import { backHome, callbackUrl, finishState, startState } from './oauth.ts';
 import { fetchStripeSubscriptions } from './sources.ts';
-import type { ConnectionRow, ProfileRow } from './store.ts';
+import { hasAccess } from './billing.ts';
+import type { ConnectionRow, ProfileRow, SubscriptionRow } from './store.ts';
 import type { AuthUser } from './supabase.ts';
 
 /**
@@ -183,9 +184,18 @@ export function awayTo(url: string): Response {
   return new Response(null, { status: 302, headers: { Location: url, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
 }
 
-/** The founder's first real connection starts their back-pay window (see GAME_DESIGN, "Back pay"). */
-export async function markJoined(ctx: Hosted, userId: string) {
-  const profile = await ctx.db.one<ProfileRow>('profiles', { user_id: userId });
+/**
+ * The day the founder's city opens starts their back-pay window (see
+ * GAME_DESIGN, "Back pay"): connecting Stripe with a plan, or paying with
+ * Stripe already connected (billing.ts), whichever comes second. Setup is
+ * free, so connecting without a plan starts nothing yet.
+ */
+export async function markJoined(ctx: Hosted, userId: string, opts: { paid?: boolean } = {}) {
+  const [profile, sub] = await Promise.all([
+    ctx.db.one<ProfileRow>('profiles', { user_id: userId }),
+    opts.paid ? null : ctx.db.one<SubscriptionRow>('subscriptions', { user_id: userId }),
+  ]);
+  if (!opts.paid && !hasAccess(sub, ctx.now)) return;
   if (profile && profile.joined_at == null) {
     await ctx.db.update('profiles', { user_id: userId }, { joined_at: startOfDay(ctx.now), updated_at: new Date(ctx.now).toISOString() });
   }

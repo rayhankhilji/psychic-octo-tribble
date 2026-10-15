@@ -1,8 +1,10 @@
 /**
  * The founder's whole journey through the hosted API, as a browser would
  * make it (same calls, same cookies, same redirects), with no browser: sign
- * in, pay, connect Stripe and GitHub, choose the users source, load the
- * city, build, get refused, manage billing, export and delete the account.
+ * in, connect Stripe and GitHub and choose the users source (free, before
+ * paying), see their own numbers, close the paywall and take the one-time
+ * first-year offer, load the city, build, get refused, manage billing,
+ * export and delete the account. A second founder pays the standard price.
  * Runs against the real server and the fakes (harness.mjs), in order; each
  * journey hands what it made to the next through `t`.
  */
@@ -44,13 +46,14 @@ export async function signIn(stack, email) {
   return c;
 }
 
-/** Pays through the fake Checkout. Returns the success URL. */
-export async function pay(c, interval = 'year') {
-  const r = await c.api('POST', '/api/billing/checkout', { body: { interval } });
+/** Pays through the fake Checkout. Returns the success URL (and the page, for what it charged). */
+export async function pay(c, interval = 'year', { offer = false, onPage } = {}) {
+  const r = await c.api('POST', '/api/billing/checkout', { body: { interval, ...(offer ? { offer: true } : {}) } });
   assert(r.status === 200 && r.body?.url, `checkout answered ${r.status} ${JSON.stringify(r.body)}`);
   const page = await c.raw('GET', r.body.url);
   assert(page.status === 200, `checkout page answered ${page.status}`);
   const html = await page.text();
+  onPage?.(html);
   const form = formOf(html, 0);
   const paid = await c.raw('POST', new URL(form.action, r.body.url).toString(), { form: form.fields });
   return location(paid);
@@ -158,26 +161,32 @@ export const API_JOURNEYS = [
   },
   {
     name: 'api: plan → checkout → signed webhook → paid',
-    needs: 'api: sign in with a magic link',
     async run(t) {
+      // A second founder, paying the standard price straight away (setup can come after).
       const fakes = t.stack.fakes;
+      const c = await signIn(t.stack, `founder2+${Date.now()}@nightjar.test`);
+      const userId = (await c.api('GET', '/api/me')).body.user.id;
       const before = fakes.state.stripe.deliveries.length;
       // There's no monthly plan to buy.
-      const monthly = await t.c.api('POST', '/api/billing/checkout', { body: { interval: 'month' } });
+      const monthly = await c.api('POST', '/api/billing/checkout', { body: { interval: 'month' } });
       assert(monthly.status === 400 && /no monthly plan/.test(monthly.body?.error ?? ''), `a monthly checkout should be refused, got ${monthly.status} ${JSON.stringify(monthly.body)}`);
-      const success = await pay(t.c, 'year');
+      let html = '';
+      const success = await pay(c, 'year', { onPage: (h) => (html = h) });
+      assert(/<b>\$29\.00<\/b> per year/.test(html), `the standard checkout should charge $29.00 a year: ${html.slice(0, 160)}`);
       assert(new URL(success).searchParams.get('checkout') === 'success', `checkout returned to ${success}`);
       const deliveries = fakes.state.stripe.deliveries.slice(before);
       assert(deliveries.length >= 2, `expected two webhook deliveries, got ${deliveries.length}`);
       for (const d of deliveries) assert(d.status === 200, `webhook ${d.type} answered ${d.status}: ${d.body ?? d.error}`);
-      const me = await t.c.api('GET', '/api/me');
+      const me = await c.api('GET', '/api/me');
       assert(me.body.plan.status === 'active' && me.body.plan.interval === 'year', `plan after paying: ${JSON.stringify(me.body.plan)}`);
       assert(me.body.plan.renewsAt > Date.now(), 'renewsAt should be in the future');
+      assert(me.body.offer === null, `a paying founder has no offer: ${JSON.stringify(me.body.offer)}`);
       // Paying again goes to the portal instead of a second subscription.
-      const again = await t.c.api('POST', '/api/billing/checkout', { body: { interval: 'year' } });
+      const again = await c.api('POST', '/api/billing/checkout', { body: { interval: 'year' } });
       assert(again.status === 200 && again.body.url.includes('/stripe-pages/portal/'), `a second checkout should open the portal, got ${JSON.stringify(again.body)}`);
-      const subs = [...fakes.state.stripe.subscriptions.values()].filter((s) => s.metadata?.user_id === t.userId);
-      assert(subs.length === 1, `expected one subscription, found ${subs.length}`);
+      const subs = [...fakes.state.stripe.subscriptions.values()].filter((s) => s.metadata?.user_id === userId);
+      assert(subs.length === 1 && subs[0].discounts.length === 0 && !subs[0].metadata.offer, `expected one undiscounted subscription, found ${JSON.stringify(subs.map((x) => x.discounts))}`);
+      t.paidOther = { c, userId };
     },
   },
   {
@@ -194,14 +203,16 @@ export const API_JOURNEYS = [
       const [tampered, first, second] = fakes.state.stripe.deliveries.slice(before);
       assert(tampered.status === 400, `a tampered webhook answered ${tampered.status}, want 400`);
       assert(first.status === 200 && second.status === 200, `replays answered ${first.status}/${second.status}`);
-      const rows = fakes.rows('subscriptions').filter((r) => r.user_id === t.userId);
+      const rows = fakes.rows('subscriptions').filter((r) => r.user_id === t.paidOther.userId);
       assert(rows.length === 1 && rows[0].status === 'active', `subscriptions after replay: ${JSON.stringify(rows)}`);
     },
   },
   {
     name: 'api: connect Stripe (OAuth with state and cookie)',
-    needs: 'api: plan → checkout → signed webhook → paid',
+    needs: 'api: sign in with a magic link',
     async run(t) {
+      // Setup is free: no plan yet.
+      assert((await t.c.api('GET', '/api/me')).body.plan.status === 'none', 'this founder should not have paid yet');
       // Without the browser's cookie, the callback must refuse (someone else's link).
       const stolen = await connectStripe(t.c, { cookie: false });
       assert(stolen.includes('connect_error=stripe'), `a callback without the cookie should fail, went to ${stolen}`);
@@ -212,7 +223,9 @@ export const API_JOURNEYS = [
       const row = t.stack.fakes.rows('connections').find((r) => r.user_id === t.userId && r.provider === 'stripe');
       assert(row.secret?.startsWith('v1.') && row.access_token?.startsWith('v1.'), 'tokens should be stored encrypted');
       assert(!JSON.stringify(row).includes('fake_rt_'), 'a raw refresh token was stored');
-      assert(me.body.world.joinedAt, 'joinedAt should be set by the first connection');
+      assert(me.body.setup?.complete === true, `setup should be complete once Stripe is connected: ${JSON.stringify(me.body.setup)}`);
+      // The city (and its back pay) opens when they pay, not when they connect for free.
+      assert(me.body.world.joinedAt === null, `joinedAt should wait for the plan, got ${me.body.world.joinedAt}`);
     },
   },
   {
@@ -243,8 +256,69 @@ export const API_JOURNEYS = [
     },
   },
   {
-    name: "api: the city loads with the founder's timeline and seed",
+    name: 'api: before paying: the preview has their numbers, the city stays paid',
     needs: 'api: connect Stripe (OAuth with state and cookie)',
+    async run(t) {
+      const p = await t.c.api('GET', '/api/preview');
+      assert(p.status === 200, `preview answered ${p.status} ${JSON.stringify(p.body).slice(0, 200)}`);
+      assert(p.body.ready && p.body.revenue?.mrr > 0 && p.body.revenue.customers > 0, `preview numbers: ${JSON.stringify(p.body).slice(0, 300)}`);
+      assert(!('snapshots' in p.body), 'the preview must not carry the timeline');
+      // Honest: the same MRR the fake account's live subscriptions add up to.
+      const acct = (await t.c.api('GET', '/api/me')).body.connections.stripe.account;
+      const subs = t.stack.fakes.founderAccount(acct).subs.filter((s) => s.status === 'active');
+      const expected = subs.reduce((sum, s) => sum + (s.items.data[0].price.unit_amount / 100) * (s.items.data[0].price.recurring.interval === 'year' ? 1 / 12 : 1), 0);
+      assert(Math.abs(p.body.revenue.mrr - expected) < 1, `preview MRR ${p.body.revenue.mrr} vs the account's ${expected.toFixed(2)}`);
+      for (const path of ['/api/timeline', '/api/world/actions', '/api/world']) {
+        const r = await t.c.api('GET', path);
+        assert(r.status === 402, `${path} before paying answered ${r.status}, want 402`);
+      }
+      const seen = await t.c.api('POST', '/api/billing/paywall/seen', { body: { teaser: true } });
+      assert(seen.status === 200, `paywall/seen answered ${seen.status}`);
+    },
+  },
+  {
+    name: 'api: close the paywall → the one-time offer → checkout with the coupon → paid',
+    needs: 'api: connect Stripe (OAuth with state and cookie)',
+    async run(t) {
+      const fakes = t.stack.fakes;
+      const me0 = await t.c.api('GET', '/api/me');
+      assert(JSON.stringify(me0.body.offer) === JSON.stringify({ status: 'unseen', available: true, expiresAt: null, amount: 900, regular: 2900, currency: 'usd' }), `offer before it's shown: ${JSON.stringify(me0.body.offer)}`);
+      // Not claimable until it has been shown (the server starts the clock).
+      const early = await t.c.api('POST', '/api/billing/checkout', { body: { interval: 'year', offer: true } });
+      assert(early.status === 409, `an offer checkout before it was shown answered ${early.status}`);
+      const t0 = Date.now();
+      const seen = await t.c.api('POST', '/api/billing/offer/seen', { body: {} });
+      assert(seen.status === 200 && seen.body.offer?.status === 'open', `offer/seen: ${seen.status} ${JSON.stringify(seen.body)}`);
+      const window = seen.body.offer.expiresAt - t0;
+      assert(window > 47.9 * 3_600_000 && window <= 48 * 3_600_000 + 5_000, `the offer should be open 48 hours, got ${(window / 3_600_000).toFixed(2)} h`);
+      const profile = () => fakes.rows('profiles').find((r) => r.user_id === t.userId);
+      const shownAt = profile().offer_shown_at;
+      assert(shownAt, 'offer_shown_at was not stored');
+      // Seen again (a reload, another tab): nothing moves.
+      const again = await t.c.api('POST', '/api/billing/offer/seen', { body: {} });
+      assert(again.body.offer.expiresAt === seen.body.offer.expiresAt && profile().offer_shown_at === shownAt, 'seeing the offer again moved its window');
+      // Accept: Checkout carries the coupon, and the first invoice is $9.
+      const before = fakes.state.stripe.deliveries.length;
+      let html = '';
+      const success = await pay(t.c, 'year', { offer: true, onPage: (h) => (html = h) });
+      assert(/<b>\$9\.00<\/b> today, then \$29\.00 every year/.test(html), `the offer checkout should say $9.00 today, then $29.00: ${html.slice(0, 200)}`);
+      assert(new URL(success).searchParams.get('checkout') === 'success', `checkout returned to ${success}`);
+      for (const d of fakes.state.stripe.deliveries.slice(before)) assert(d.status === 200, `webhook ${d.type} answered ${d.status}: ${d.body ?? d.error}`);
+      const session = [...fakes.state.stripe.sessions.values()].find((s) => s.client_reference_id === t.userId && s.status === 'complete');
+      assert(session?.coupon === 'tinytown_first_year_9' && session.amount_total === 900, `the session should carry the coupon: ${JSON.stringify({ coupon: session?.coupon, total: session?.amount_total })}`);
+      const sub = [...fakes.state.stripe.subscriptions.values()].find((s) => s.metadata?.user_id === t.userId);
+      assert(sub && sub.discounts.length === 1 && sub.metadata.offer === 'tinytown_first_year_9' && sub.first_invoice_amount === 900, `subscription: ${JSON.stringify({ discounts: sub?.discounts, metadata: sub?.metadata })}`);
+      assert(sub.items.data[0].price.unit_amount === 2900, 'the renewal price should stay $29');
+      const me = await t.c.api('GET', '/api/me');
+      assert(me.body.plan.status === 'active' && me.body.plan.interval === 'year', `plan after the offer: ${JSON.stringify(me.body.plan)}`);
+      assert(profile().offer_used_at, 'the webhook should mark the offer used');
+      assert(me.body.offer === null, 'a paying founder has no offer');
+      assert(me.body.world.joinedAt, 'paying with Stripe connected opens the city (joinedAt)');
+    },
+  },
+  {
+    name: "api: the city loads with the founder's timeline and seed",
+    needs: 'api: close the paywall → the one-time offer → checkout with the coupon → paid',
     async run(t) {
       const me = await t.c.api('GET', '/api/me');
       const seed = me.body.world.seed;
@@ -349,7 +423,7 @@ export const API_JOURNEYS = [
   },
   {
     name: 'api: billing portal and cancelling at period end',
-    needs: 'api: plan → checkout → signed webhook → paid',
+    needs: 'api: close the paywall → the one-time offer → checkout with the coupon → paid',
     async run(t) {
       const r = await t.c.api('POST', '/api/billing/portal');
       assert(r.status === 200 && r.body.url, `portal answered ${r.status} ${JSON.stringify(r.body)}`);

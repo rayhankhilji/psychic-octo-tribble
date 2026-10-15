@@ -111,7 +111,7 @@ The order agreed with the owner: the game loop first (done), then hosting.
 - [ ] **Connect with Stripe:** OAuth / Stripe Apps, read-only, no pasted keys. Reject test-mode data for the economy.
 - [ ] **PostHog** for monthly active users (the housing population), with a manual entry fallback. **GitHub** as an app/OAuth instead of a token.
 - [ ] **Brand import:** sign up with the startup name and URL, pull the logo and brand colour, and show them on HQ's rooftop sign and street plaque.
-- [ ] **Billing:** $29 a year (annual only) with Stripe Checkout, **no free trial**. Ask the owner about a 14-day money-back guarantee. The paywall goes before connecting real data; the demo stays free to view.
+- [x] **Billing:** $29 a year (annual only) with Stripe Checkout, no free trial, no refunds. Setup is free; the paywall comes after it, and a one-time "$9 first year, then $29" offer shows on first close (48 h, server-tracked).
 - [ ] **Deploy:** Vercel (front end + API routes) + Supabase. Don't buy a domain without asking.
 
 ## P5: Social and growth

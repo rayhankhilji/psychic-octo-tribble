@@ -126,6 +126,8 @@ The full numbers are in `docs/GAME_DESIGN.md`. The thesis and risks are in `docs
 - **Night flicker** fixed at the root (`SteadyBloom`, slow window changes, calm beacons, minimum light-point size).
 - The island moved far out into the bay and lost its lighthouse.
 
+**Free setup, then the paywall (2026-10-15, the owner's call):** the demo, an account and the whole setup (Stripe, GitHub, users) are free; "Build my city" opens the $29 paywall led by the founder's real numbers (`GET /api/preview`); the first close shows a one-time "$9 first year, then $29 a year" offer for 48 hours, tracked on the server (`server/offer.ts`, migration 0009, Stripe coupon `tinytown_first_year_9`, `STRIPE_OFFER_COUPON`). Paying opens the city with the grand opening. Back pay now starts when the city opens (connected and paid), so free setup weeks before paying earns nothing extra.
+
 Still open with the owner: whether the public GitHub repository should stay public, the legal decisions in LAUNCH.md, and the two account-deletion questions in TODO.
 
 **Headless gotcha learned:** homes build a few per frame; SwiftShader frames are slow, so screenshot tools call `city.finishBuilding()` after scrubbing (`tools/playwright.mjs`), otherwise shots catch a half-built city.

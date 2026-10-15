@@ -171,3 +171,342 @@
     --perf-inset: 14px;
   }
 }
+
+/* ── Your city is ready ────────────────────────────────────────────────────
+ * Set up and unpaid, the pitch leads with the founder's own headline numbers
+ * (GET /api/preview): big, mono, three of them, and one honest line.
+ */
+
+.plans-head .ready-eyebrow {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 0;
+  font: 500 10.5px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--good);
+}
+
+.ready-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px var(--good-soft);
+}
+
+.plans-ready h2 {
+  margin-top: 10px;
+}
+
+.ready-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, auto));
+  justify-content: start;
+  gap: 4px 26px;
+  margin: 4px 0 12px;
+}
+
+.ready-stat {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ready-stat b {
+  font: 750 26px/1 var(--font-display);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.ready-stat small {
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.ready-stats.is-loading b {
+  color: var(--ink-4);
+  animation: ready-pulse 1.2s var(--ease-in-out) infinite alternate;
+}
+
+@keyframes ready-pulse {
+  to {
+    opacity: 0.45;
+  }
+}
+
+.plans-head .ready-note {
+  margin: 0;
+  max-width: 36ch;
+  color: var(--ink-2);
+  font-size: var(--t-md);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.plans-head .ready-note b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.plans-head .ready-note.is-waiting {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-solid) 72%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.plans-head .ready-note.is-waiting .ico {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: var(--bay-text);
+}
+
+.plan-later {
+  margin-top: -4px;
+}
+
+/* ── The golden ticket ─────────────────────────────────────────────────────
+ * The introductory offer, in the same family as the $29 ticket: the same
+ * eyebrow, price, perforation and stub, printed on gold card with a little
+ * foil. Gold is the sun token, so it reads warm by day and glows by night.
+ */
+
+.plan-ticket.is-golden {
+  --gold: var(--sun);
+  --gold-ink: var(--warn-text);
+  border-color: color-mix(in srgb, var(--gold) 62%, var(--line-strong));
+  background:
+    linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.4) 44%, transparent 58%) -180% 0 / 250% 100% no-repeat,
+    linear-gradient(165deg, color-mix(in srgb, var(--sun-400) 40%, var(--surface-solid)) 0%, color-mix(in srgb, var(--sun-400) 16%, var(--surface-solid)) 78%);
+  box-shadow: var(--shadow-1), inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 10px 26px -14px color-mix(in srgb, var(--gold) 70%, transparent);
+  overflow: hidden;
+}
+
+:root[data-theme='night'] .plan-ticket.is-golden {
+  background:
+    linear-gradient(115deg, transparent 30%, rgba(255, 236, 190, 0.16) 44%, transparent 58%) -180% 0 / 250% 100% no-repeat,
+    linear-gradient(165deg, color-mix(in srgb, var(--sun-400) 30%, var(--surface-solid)) 0%, color-mix(in srgb, var(--sun-400) 9%, var(--surface-solid)) 80%);
+  box-shadow: var(--shadow-1), inset 0 1px 0 rgba(255, 236, 190, 0.18), 0 12px 32px -14px color-mix(in srgb, var(--gold) 55%, transparent);
+}
+
+/* The foil catches the light once as the ticket arrives. */
+.dialog[open] .plan-ticket.is-golden {
+  animation: foil 1.4s var(--ease-out) 260ms both;
+}
+
+@keyframes foil {
+  from {
+    background-position: -180% 0, 0 0;
+  }
+  to {
+    background-position: 180% 0, 0 0;
+  }
+}
+
+.is-golden .ticket-eyebrow span:first-child,
+.is-golden .ticket-stub dt {
+  color: var(--gold-ink);
+}
+
+.is-golden .ticket-perf {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--gold) 60%, var(--line-strong)) 55%, transparent 0) 0 0 / 7px 1.5px repeat-x;
+}
+
+.is-golden .ticket-perf::before,
+.is-golden .ticket-perf::after {
+  border-color: color-mix(in srgb, var(--gold) 62%, var(--line-strong));
+}
+
+.is-golden .ticket-main {
+  position: relative;
+}
+
+.is-golden .ticket-price span {
+  font-size: var(--t-lg);
+}
+
+.ticket-ends {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 20px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--gold, var(--sun)) 30%, transparent);
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.ticket-ends .ico {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--gold-ink, var(--ink-3));
+}
+
+/* A rubber stamp in gold ink: "once only". */
+.ticket-stamp {
+  position: absolute;
+  top: 34px;
+  right: 18px;
+  display: grid;
+  place-content: center;
+  width: 62px;
+  height: 62px;
+  border: 1.5px solid var(--gold-ink);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--surface-solid) 40%, transparent), inset 0 0 0 4.5px var(--gold-ink);
+  color: var(--gold-ink);
+  font: 700 10px/1.15 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+  rotate: -12deg;
+  opacity: 0.85;
+}
+
+.dialog[open] .ticket-stamp {
+  animation: stamp 380ms var(--ease-spring) 420ms backwards;
+}
+
+@keyframes stamp {
+  from {
+    opacity: 0;
+    scale: 1.6;
+  }
+}
+
+/* ── The offer ─────────────────────────────────────────────────────────────
+ * What the paywall turns into the first time it's closed: one column, the
+ * ticket in the middle, a plain yes and a plain no.
+ */
+
+.dialog.plan-dialog.is-offer {
+  width: min(452px, calc(100vw - 32px));
+}
+
+.dialog-body.offer {
+  position: relative;
+  gap: 18px;
+  padding: 28px 28px 22px;
+  background: radial-gradient(120% 60% at 50% 0%, color-mix(in srgb, var(--sun-400) 16%, transparent), transparent 70%);
+}
+
+.offer-head h2 {
+  margin: 12px 0 8px;
+  font: 750 30px/1.04 var(--font-display);
+  letter-spacing: -0.035em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.offer-head p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--t-lg);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.offer-head p b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.offer-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: 500 10.5px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--warn-text);
+}
+
+.offer-kicker .ico {
+  width: 15px;
+  height: 15px;
+}
+
+.offer-foot {
+  display: grid;
+  gap: 8px;
+}
+
+.offer-foot .plan-fine {
+  margin-top: 4px;
+}
+
+.offer-foot .plan-fine .ico {
+  color: var(--ink-3);
+}
+
+.dialog[open] .dialog-body.offer > * {
+  animation: rise-in var(--dur-3) var(--ease-out) backwards;
+}
+
+.dialog[open] .dialog-body.offer > :nth-child(3) {
+  animation-delay: 70ms;
+}
+
+.dialog[open] .dialog-body.offer > :nth-child(n + 4) {
+  animation-delay: 140ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog[open] .plan-ticket.is-golden,
+  .dialog[open] .ticket-stamp,
+  .dialog[open] .dialog-body.offer > *,
+  .ready-stats.is-loading b {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .ready-stats {
+    gap: 4px 18px;
+  }
+
+  .ready-stat b {
+    font-size: 22px;
+  }
+
+  .dialog.plan-dialog.is-offer {
+    width: 100%;
+  }
+
+  .dialog-body.offer {
+    padding: 22px 16px calc(16px + env(safe-area-inset-bottom));
+  }
+
+  .offer-head h2 {
+    font-size: 27px;
+  }
+
+  .ticket-stamp {
+    top: 30px;
+    right: 14px;
+    width: 54px;
+    height: 54px;
+    font-size: 9px;
+  }
+
+  .ticket-ends {
+    padding: 10px 16px 12px;
+  }
+
+  /* The paywall's own "Not now" sits under the sticky button, kept short so the sheet stays mostly city. */
+  .plan-later {
+    min-height: 30px;
+    margin-top: -4px;
+    padding-block: 4px;
+  }
+}

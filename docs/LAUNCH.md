@@ -166,12 +166,12 @@ Free plan: unlimited challenges, up to 20 widgets, 10 hostnames per widget. Toke
 - [ ] Production environment variables set in Vercel with **live** keys, marked Sensitive (SETUP.md table plus `ACCESS_MODE=waitlist`, `STRIPE_TERMS_CONSENT=1`, `ADMIN_EMAILS`, `CRON_SECRET`, `HEALTH_SECRET`, `SUPPORT_EMAIL`, `TURNSTILE_SITE_KEY` and the email, Sentry and PostHog keys from `.env.example`). `ALLOW_TEST_MODE` and `STRIPE_APP_INSTALL_URL` **unset** (unless you're on the external test, below).
 - [ ] All migrations run on the production database, in order (`supabase/migrations/0001…`). Check every table has RLS on (Database → Tables).
 - [ ] Supabase: custom SMTP via Resend on `auth.YOUR-DOMAIN`; auth email limit raised; Turnstile secret set; Site URL and redirects on the real domain.
-- [ ] Stripe live: `node tools/stripe-setup.mjs --live` (product, the **$29 yearly** price, **no trial**, no monthly price; webhook endpoint on the real domain with all nine events; customer portal with cancel at period end, card and invoices, no plan switching); `STRIPE_PRICE_YEARLY` set and **`STRIPE_PRICE_MONTHLY` unset**; Adaptive Pricing on; renewal reminder emails on; branding; Checkout settings (below).
+- [ ] Stripe live: `node tools/stripe-setup.mjs --live` (product, the **$29 yearly** price, **no trial**, no monthly price; webhook endpoint on the real domain with all nine events; customer portal with cancel at period end, card and invoices, no plan switching); `STRIPE_PRICE_YEARLY` set and **`STRIPE_PRICE_MONTHLY` unset**; the first-year offer's coupon made (`tinytown_first_year_9`, 68.97% off once) and `STRIPE_OFFER_COUPON` set, after migration 0009; Adaptive Pricing on; renewal reminder emails on; branding; Checkout settings (below).
 - [ ] Email warm-up started. Announcement batch 1 sent.
 - [ ] Stripe App: approved, or in review with a fallback chosen.
 
 **T-5**
-- [ ] **A real end-to-end run in live mode with your own card**: sign in (magic link, Google, GitHub), pay $29 for the year (in a second currency too, with a `+location_FR` test email in test mode), connect Stripe and GitHub, buy something, open the portal, cancel, export, delete. Then refund yourself from the Dashboard.
+- [ ] **A real end-to-end run in live mode with your own card**: sign in (magic link, Google, GitHub), connect Stripe and GitHub **before paying** (no card asked), "Build my city", check the paywall shows your real MRR, close it, check the $9 first-year offer (and that Checkout says $9 today, then $29 a year), pay (in a second currency too, with a `+location_FR` test email in test mode), watch the grand opening, buy something, open the portal, cancel, export, delete. Then refund yourself from the Dashboard. A second account should see the offer once; after 48 hours (or in test mode, with `offer_shown_at` moved back two days in the SQL editor) the paywall is $29 again.
 - [ ] `GET /api/config` shows `"hosted": true`, both plans, `"access": "waitlist"`, and no secrets.
 - [ ] `GET /api/health` and the deep check (`/api/health?deep=1` with the health secret as a bearer token) are all `ok`.
 - [ ] Sentry receives a test error from the browser and from the API.
@@ -345,6 +345,7 @@ These need you (and, where it matters, a lawyer or accountant). The docs and cop
 6. **⚖ Who the merchant is.** The legal entity on the Stripe account, the Stripe App's "Built by" line, and the terms should all name the same one.
 7. **⚖ Refund exceptions.** RUNBOOK suggests refunding double charges, billing errors and charges after a confirmed cancellation. Put "except where we charged you in error or the law requires it" in the terms so the exceptions don't contradict the policy.
 8. **⚖ Data after cancelling.** How long a cancelled founder's city and connections are kept. FAQ says "kept until you delete your account" and marks it for you to confirm.
+9. **⚖ Introductory offer (new, 2026-10-15).** The terms now say a first-year price may be offered once and renews at the standard price (`/legal/terms.html` §3, flagged in the page source). Check the wording, and the renewal-disclosure rules for discounted first periods (California's auto-renewal law asks for the price after the offer to be stated clearly before purchase: the offer card, Checkout and the terms all say "$9 for your first year, then $29 a year"), and whether EU/UK price-reduction rules apply to how it's presented.
 
 ---
 

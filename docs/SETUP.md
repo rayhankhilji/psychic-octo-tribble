@@ -52,6 +52,8 @@ openssl rand -base64 32
 >
 > **Then, in the Stripe Dashboard:** Settings → Billing → Subscriptions and emails → Manage failed payments: Smart Retries on, and after the last retry **cancel the subscription**; turn on emails for failed payments, expiring cards and payments that need 3D Secure. Settings → Customer emails: receipts on. Settings → Business → Public details: Terms of service URL (`https://YOUR-DOMAIN/legal/terms.html`), support email, statement descriptor `TINYTOWN`. Settings → Payments → **Adaptive Pricing**: on, so Checkout shows the price in each buyer's own currency. Optional: Settings → Tax (then `STRIPE_AUTOMATIC_TAX=1`). Branding: logo, icon, colours.
 >
+> **The first-year offer ($9, then $29 a year):** the same command creates the coupon `tinytown_first_year_9` (68.97% off, `duration: once`, so $29 becomes exactly $9.00 for the first invoice and every renewal is the full $29) and prints `STRIPE_OFFER_COUPON=tinytown_first_year_9`. It's a percentage rather than $20 off because Adaptive Pricing converts the price into local currencies: a percentage comes off whatever the local price is, so the first year is the local equivalent of $9 everywhere (31.03% of whatever $29 shows as in that currency). Set the variable in Vercel and run migration `0009_intro_offer.sql` first; without the variable there's simply no offer. The offer is shown once, the first time a founder who has never paid closes the paywall, and stays open 48 hours by the server's clock (`server/offer.ts`).
+>
 > **Moving from the old $12/$99 pricing:** run the same command. It makes the $29 yearly price and moves the `tinytown_yearly` lookup key onto it; the old $99 yearly and $12 monthly prices are left exactly as they are, so anyone already on one keeps it (the server still recognises their renewals and cancellations). Then set `STRIPE_PRICE_YEARLY` to the new price id and **remove `STRIPE_PRICE_MONTHLY`** from Vercel: whatever prices are configured are on sale.
 
 Do this in **test mode** first (the toggle in the Dashboard), check the whole flow, then repeat it in live mode and swap the keys in Vercel.
@@ -72,7 +74,9 @@ Do this in **test mode** first (the toggle in the Dashboard), check the whole fl
    - Fill in your business name, privacy policy and terms links.
 5. **Branding:** [Settings → Branding](https://dashboard.stripe.com/settings/branding): logo, icon and colours (Checkout and the portal use them).
 
-**You now have:** `STRIPE_BILLING_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_YEARLY`.
+6. **The first-year offer** (optional; the setup command does this): [Product catalogue → Coupons](https://dashboard.stripe.com/coupons) → **New**: ID `tinytown_first_year_9`, **Percentage discount 68.97%**, duration **Once**. Don't restrict it to customers or add a promotion code: the server applies it only to founders it has checked.
+
+**You now have:** `STRIPE_BILLING_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_YEARLY` (and `STRIPE_OFFER_COUPON` for the offer).
 
 ## 3. The Stripe App (founders connect their Stripe)
 
@@ -131,7 +135,7 @@ Later migrations are applied by CI when they reach `main` (`.github/workflows/mi
 
 Everything here is optional for a test run and needed before the waitlist arrives. `docs/LAUNCH.md` puts it on a timeline.
 
-1. **Database migrations, in order:** `0001` to `0006` in `supabase/migrations/` (0002 shared rate limits, 0003 data pipelines, 0004 waitlist and admin, 0005 email, 0006 account deletion). After launch, CI applies new ones (`docs/RELEASE.md`).
+1. **Database migrations, in order:** `0001` to `0009` in `supabase/migrations/` (0002 shared rate limits, 0003 data pipelines, 0004 waitlist and admin, 0005 email, 0006 account deletion, 0007 one-call user state, 0008 Google Analytics as a users source, 0009 the first-year offer). After launch, CI applies new ones (`docs/RELEASE.md`).
 2. **Email:** Resend Pro, a sending subdomain with SPF, DKIM and DMARC, Supabase custom SMTP and raised auth email limits, the six branded auth templates. All in `supabase/templates/README.md`.
 3. **Scheduled jobs:** set `CRON_SECRET`. The hourly, daily and weekly jobs are registered automatically on deploy (Vercel Pro is needed for the hourly one).
 4. **Health and alerts:** set `HEALTH_SECRET`; add an uptime monitor (Better Stack) on `https://YOUR-DOMAIN/api/health?deep=1` with the header `Authorization: Bearer <HEALTH_SECRET>`, and one on `/api/health`. Optional: `SENTRY_DSN` for error alerts, a Vercel log drain (Pro keeps logs one day), `POSTHOG_PROJECT_KEY` for the signup-to-paid funnel.
@@ -168,6 +172,7 @@ Public values can be seen by anyone; secret ones must only ever live in Vercel a
 | `POSTHOG_HOSTS` | Optional. Defaults to `us.posthog.com,eu.posthog.com` | Public |
 | `TOKEN_ENCRYPTION_KEY_OLD` | Only while rotating the encryption key (docs/SECURITY.md) | **Secret** |
 | `STRIPE_PORTAL_CONFIGURATION` | Printed by `tools/stripe-setup.mjs` (`bpc_…`) | Public |
+| `STRIPE_OFFER_COUPON` | Printed by `tools/stripe-setup.mjs` (`tinytown_first_year_9`): $9 for the first year, then $29. Unset = no offer. Needs migration 0009 | Public |
 | `STRIPE_AUTOMATIC_TAX`, `STRIPE_TERMS_CONSENT`, `STRIPE_PROMO_CODES` | `1` to switch on Stripe Tax, the Terms checkbox (with the no-refund line), promo codes | Public |
 | `STRIPE_ADAPTIVE_PRICING` | `0` to always charge in USD; otherwise Checkout shows local currencies (Adaptive Pricing) | Public |
 | `STRIPE_API_VERSION` | Optional override of the pinned version | Public |

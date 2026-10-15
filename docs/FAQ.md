@@ -24,11 +24,14 @@ No, and you never will be able to. The only way to grow your city is to grow you
 ### How much is it?
 **$29 a year.** That's $2.42 a month, paid once a year. There's one plan, with everything in it, and no monthly option. Payment is handled by Stripe.
 
+### Is there a discount?
+Sometimes, once. The first time you close the plan screen, we offer **$9 for your first year, then $29 a year** after that. It's a one-time offer: it stays open for 48 hours from when you first see it, it's for founders who haven't paid before, and it renews at the standard price (Checkout and the renewal reminder both say so). After 48 hours the price is $29 again.
+
 ### Can I pay in my own currency?
 Usually, yes. The price is set in US dollars, and Stripe's checkout shows it in your local currency where it can, at Stripe's exchange rate (it includes a small conversion fee, and you can choose to pay in dollars instead). Your renewals are charged in the same currency.
 
 ### Is there a free trial?
-No. **The demo is free**, for as long as you like, with no account: it's the full game running on a sample startup's 540 days, so you can see exactly what you'd be paying for. The only thing behind the paywall is your own data.
+No, but you can see a lot before paying. **The demo is free**, for as long as you like, with no account: it's the full game running on a sample startup's 540 days. **Setting up is free too**: create an account, connect Stripe, GitHub and your users, and you'll see your own MRR, residents and releases before you're asked to pay. The only thing behind the paywall is your own city.
 
 ### Why no free trial?
 Because the demo already shows everything, and we'd rather you decide with your eyes open than with a card on file and a countdown. If the demo doesn't make you want your own city, TinyTown probably isn't for you, and that's fine.

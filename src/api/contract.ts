@@ -96,7 +96,39 @@ export interface MeResponse {
   plan: { status: PlanStatus; interval: PlanInterval | null; renewsAt: number | null; cancelAtPeriodEnd: boolean };
   connections: Connections;
   world: WorldInfo;
+  /**
+   * Setup is free and comes before paying: `complete` once Stripe is
+   * connected, which is what a city needs. Optional, so a browser that's
+   * ahead of its server still reads an older answer.
+   */
+  setup?: { complete: boolean };
+  /** The one-time introductory offer, when this founder can still have it (null otherwise, or on a server without one). */
+  offer?: Offer | null;
 }
+
+/**
+ * The introductory offer: a cheaper first year, then the standard yearly
+ * price. Shown once, the first time a founder closes the paywall, and
+ * claimable for OFFER_WINDOW_MS from that moment (the server keeps the
+ * clock, so clearing storage changes nothing). Only for founders who have
+ * never paid.
+ */
+export interface Offer {
+  /** `unseen`: not shown yet. `open`: shown, claimable until `expiresAt`. `expired` and `used` are final. */
+  status: 'unseen' | 'open' | 'expired' | 'used';
+  /** Can be shown or claimed right now (`unseen` or `open`). */
+  available: boolean;
+  /** When the window closes (UTC ms); null until it has been shown. */
+  expiresAt: number | null;
+  /** The first year's price, in minor units ($9 = 900). */
+  amount: number;
+  /** What it renews at every year after that, in minor units. */
+  regular: number;
+  currency: string;
+}
+
+/** How long the introductory offer stays open after it's first shown. */
+export const OFFER_WINDOW_MS = 48 * 60 * 60_000;
 
 export interface Connections {
   /** The founder's own Stripe account, installed through our Stripe App (read-only). */
@@ -147,9 +179,65 @@ export interface ActionRequest {
 /** `GET /api/timeline` → Timeline. The signed-in founder's real metrics (402 without a plan). */
 export type TimelineResponse = Timeline;
 
-/** `POST /api/billing/checkout` { interval } → { url } (Stripe Checkout). */
+/**
+ * `POST /api/billing/checkout` { interval, offer? } → { url } (Stripe
+ * Checkout). With `offer: true` the server checks the founder may still have
+ * the introductory offer (409 `rejected` if not) and Checkout applies it.
+ */
 export interface CheckoutRequest {
   interval: PlanInterval;
+  offer?: boolean;
+}
+
+/** `POST /api/billing/offer/seen` → { offer }: starts the offer's window the first time (later calls change nothing). */
+export interface OfferSeenResponse {
+  offer: Offer | null;
+}
+
+/** `POST /api/billing/paywall/seen` { teaser } → { ok: true }: the paywall was shown (our own funnel only). */
+export interface PaywallSeenRequest {
+  /** It led with the founder's own numbers. */
+  teaser?: boolean;
+}
+
+/**
+ * `GET /api/preview` → PreviewResponse. Signed in, no plan needed: the
+ * headline numbers from the founder's connected data, for the setup cards and
+ * the paywall's "your city is ready". Never the full timeline (the city is
+ * what the plan pays for). 409 `not_connected` before anything is connected.
+ */
+export interface PreviewResponse {
+  /** The world's name, as on HQ's sign. */
+  name: string;
+  currency: string;
+  /** False while there's no history to read yet: connected a moment ago, or nothing in it. */
+  ready: boolean;
+  /** The latest day (UTC ms). */
+  asOf: number | null;
+  /** Days of history. */
+  days: number;
+  revenue: RevenueFacts | null;
+  shipping: ShippingFacts | null;
+  /** Monthly active users from the chosen source; null when the residents are the paying customers. */
+  users: number | null;
+}
+
+/** What Stripe gave the city: the numbers on the setup card and the paywall. */
+export interface RevenueFacts {
+  mrr: number;
+  customers: number;
+  currency: string;
+  /** The first day anyone paid. */
+  since: number | null;
+  /** MRR across the history, a few dozen points for a sparkline. */
+  spark: number[];
+}
+
+/** What GitHub gave the city. */
+export interface ShippingFacts {
+  releases: number;
+  latest: { name: string; t: number } | null;
+  commits30: number;
 }
 
 /** Any call that hands back a page to send the browser to. */
@@ -212,7 +300,11 @@ export const ROUTES = {
   world: '/api/world',
   actions: '/api/world/actions',
   timeline: '/api/timeline',
+  /** Headline numbers only, for setup and the paywall (no plan needed). */
+  preview: '/api/preview',
   checkout: '/api/billing/checkout',
+  offerSeen: '/api/billing/offer/seen',
+  paywallSeen: '/api/billing/paywall/seen',
   portal: '/api/billing/portal',
   webhook: '/api/billing/webhook',
   connectStripe: '/api/connect/stripe',

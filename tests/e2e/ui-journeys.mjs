@@ -1,6 +1,8 @@
 /**
  * The founder's journey clicked through in Chromium against the built app:
- * demo, sign in, pay, connect, the city, building, the account menu.
+ * demo, sign in, set up for free (connect Stripe, GitHub, users), the
+ * paywall with their own numbers, close it, take the one-time first-year
+ * offer through Checkout, the city, building, the account menu.
  *
  * Selectors are roles and accessible names (what a person sees), never
  * styling classes, except where a control has no name of its own. A step
@@ -87,6 +89,21 @@ async function cityUp(page) {
 }
 
 /**
+ * A founder's first open of their own city plays the grand opening, then the
+ * guided tour; both take the screen and the keyboard. Journeys about what
+ * comes after skip them, the way a founder can.
+ */
+async function pastTheOpening(page) {
+  for (let i = 0; i < 40; i++) {
+    const state = await page.evaluate(() => ({ cer: !!document.querySelector('.cer-skip'), tour: !!document.querySelector('.tour-skip') }));
+    if (state.cer) await page.evaluate(() => document.querySelector('.cer-skip')?.click());
+    else if (state.tour) await page.evaluate(() => document.querySelector('.tour-skip')?.click());
+    else if (i > 6) return;
+    await page.waitForTimeout(500);
+  }
+}
+
+/**
  * A button on a fake provider page, then the redirect back to the app. Plain
  * HTML, so a real click with Playwright's own checks is quick. A click that
  * lands while the page is still settling can be lost, so it's retried while
@@ -146,6 +163,7 @@ async function fastForward(t, { open = true } = {}) {
   await page.goto(`${stack.appUrl}/`, { waitUntil: 'commit', timeout: LOAD_MS });
   await cityUp(page);
   await shellUp(page);
+  await pastTheOpening(page);
   const tl = await t.api.api('GET', '/api/timeline');
   t.timeline = tl.body;
   t.joinedAt = (await t.api.api('GET', '/api/me')).body.world.joinedAt;
@@ -190,35 +208,19 @@ export const UI_JOURNEYS = [
       t.api.token = await tokenOf(page);
       assert(t.api.token, 'no session stored after the magic link');
       assert(!/access_token/.test(page.url()), 'tokens were left in the address bar');
-    },
-  },
-  {
-    name: 'ui: plan picker → checkout → webhook → paid',
-    needs: 'ui: sign in with a magic link',
-    async run(t) {
-      const { page, stack } = t;
-      await tap(page.getByRole('button', { name: /Make it yours/ }), 'Make it yours');
-      const plans = dialog(page, /Make it yours|Bring your city back/);
-      if (!(await shows(plans))) throw new Skip('no plan dialog');
-      await tap(plans.getByRole('button', { name: /Continue to checkout/ }), 'Continue to checkout');
-      await page.waitForURL(/\/stripe-pages\/checkout\//, { timeout: 60_000, waitUntil: 'commit' });
-      const before = stack.fakes.state.stripe.deliveries.length;
-      await providerClick(page, /^Pay \$29\.00/, stack.appUrl);
-      const deliveries = stack.fakes.state.stripe.deliveries.slice(before);
-      assert(deliveries.length >= 2 && deliveries.every((d) => d.status === 200), `webhooks: ${JSON.stringify(deliveries)}`);
-      await shellUp(page);
-      const welcome = dialog(page, /You're in|Set up your city/);
-      assert(await shows(welcome, LOAD_MS), 'onboarding did not open after paying');
-      const me = await t.api.api('GET', '/api/me');
-      assert(me.body.plan.status === 'active', `plan after checkout: ${me.body.plan.status}`);
+      // A new founder lands on setup, which is free: no paywall first.
+      assert(await shows(dialog(page, /Set up your city/), LOAD_MS), 'setup did not open by itself after signing in');
+      assert(await shows(page.getByText(/Free to set up/)), 'setup should say it is free');
+      assert(!(await shows(dialog(page, /Make it yours/), 1_000)), 'the paywall opened before setup');
     },
   },
   {
     name: 'ui: onboarding connects Stripe, GitHub and a repo, and the users source',
-    needs: 'ui: plan picker → checkout → webhook → paid',
+    needs: 'ui: sign in with a magic link',
     async run(t) {
       const { page, stack } = t;
       const setup = dialog(page, /You're in|Set up your city/);
+      assert((await t.api.api('GET', '/api/me')).body.plan.status === 'none', 'setup should come before paying');
       // Stripe: out to the fake marketplace and back with ?connected=stripe.
       await tap(setup.getByRole('button', { name: 'Install on Stripe' }), 'Install on Stripe');
       await page.waitForURL(/\/stripe-pages\/oauth\//, { timeout: 60_000, waitUntil: 'commit' });
@@ -254,14 +256,61 @@ export const UI_JOURNEYS = [
       } else t.notes = 'no users-source choice shown';
       const after = await t.api.api('GET', '/api/me');
       assert(after.body.connections.github?.repo, 'no repository saved');
+      assert(after.body.plan.status === 'none', 'connecting should not need a plan');
+    },
+  },
+  {
+    name: 'ui: Build my city → the paywall with their numbers → close → the offer → checkout with the coupon',
+    needs: 'ui: onboarding connects Stripe, GitHub and a repo, and the users source',
+    async run(t) {
+      const { page, stack } = t;
+      const finish = page.getByRole('button', { name: 'Build my city' });
+      const paywall = dialog(page, /is ready/);
+      // Setup re-renders as its numbers arrive, so a click can land on a button that was just
+      // replaced: try again while the paywall hasn't opened.
+      for (let attempt = 0; attempt < 3 && !(await shows(paywall, attempt ? 20_000 : 1_000)); attempt++) {
+        if (await shows(finish, 15_000)) await tap(finish, 'Build my city');
+        // Setup was closed along the way: the call to action opens the paywall now.
+        else await tap(page.getByRole('button', { name: /Open my city/ }), 'Open my city');
+      }
+      assert(await shows(paywall, 60_000), 'the paywall did not open after setup, with "your city is ready"');
+      // Their own MRR, the same number the server's preview has.
+      const preview = await t.api.api('GET', '/api/preview');
+      const mrr = new Intl.NumberFormat('en-US', { style: 'currency', currency: preview.body.currency.toUpperCase(), minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(preview.body.revenue.mrr);
+      assert(await shows(paywall.getByText(mrr, { exact: true }), 30_000), `the paywall should lead with their MRR (${mrr})`);
+      // Closing it the first time turns it over to the one-time offer.
+      await tap(paywall.getByRole('button', { name: 'Close' }), 'Close');
+      const offer = dialog(page, /Your first year for \$9/);
+      assert(await shows(offer, 15_000), 'closing the paywall did not show the first-year offer');
+      assert(await shows(offer.getByText(/then \$29 a year/i)), 'the offer must say what it renews at');
+      await page.waitForFunction(() => /hours? left/.test(document.querySelector('dialog[open]')?.textContent ?? ''), null, { timeout: 30_000, polling: 500 });
+      const me = await t.api.api('GET', '/api/me');
+      assert(me.body.offer?.status === 'open', `the server should have started the offer's window: ${JSON.stringify(me.body.offer)}`);
+      await tap(offer.getByRole('button', { name: /Accept: \$9 for the first year/ }), 'Accept');
+      await page.waitForURL(/\/stripe-pages\/checkout\//, { timeout: 60_000, waitUntil: 'commit' });
+      assert(await shows(page.getByText(/then \$29\.00 every year/)), 'the Checkout page should show $9.00 today, then $29.00');
+      const before = stack.fakes.state.stripe.deliveries.length;
+      await providerClick(page, /^Pay \$9\.00/, stack.appUrl);
+      const deliveries = stack.fakes.state.stripe.deliveries.slice(before);
+      assert(deliveries.length >= 2 && deliveries.every((d) => d.status === 200), `webhooks: ${JSON.stringify(deliveries)}`);
+      const paid = await t.api.api('GET', '/api/me');
+      assert(paid.body.plan.status === 'active', `plan after checkout: ${paid.body.plan.status}`);
+      const profile = stack.fakes.rows('profiles').find((r) => r.user_id === paid.body.user.id);
+      assert(profile?.offer_used_at, 'the offer should be marked used');
     },
   },
   {
     name: "ui: the city loads with the founder's timeline and seed",
-    needs: 'ui: onboarding connects Stripe, GitHub and a repo, and the users source',
+    needs: 'ui: Build my city → the paywall with their numbers → close → the offer → checkout with the coupon',
     prepare: (t) => fastForward(t, { open: false }),
     async run(t) {
       const { page, stack } = t;
+      // Back from Checkout, the app confirms the payment and reloads into the city by itself: let it
+      // finish, so the responses read below belong to the page that stays.
+      if (/checkout=|\/stripe-pages\//.test(page.url()) || (await shows(page.locator('.billing-banner.is-pending'), 2_000))) {
+        await page.waitForFunction(() => !document.querySelector('.billing-banner.is-pending') && !location.search.includes('checkout='), null, { timeout: LOAD_MS, polling: 500 });
+        await cityUp(page);
+      }
       const timeline = page.waitForResponse((r) => r.url().endsWith('/api/timeline'), { timeout: LOAD_MS });
       const me = page.waitForResponse((r) => r.url().endsWith('/api/me'), { timeout: LOAD_MS });
       // "Build my city", or "Back to my city" when connecting Stripe already opened it behind the dialog.
@@ -276,6 +325,7 @@ export const UI_JOURNEYS = [
       assert(Number.isInteger(seed) && seed > 0, `seed ${seed}`);
       await cityUp(page);
       await shellUp(page);
+      await pastTheOpening(page);
       assert(!(await shows(page.locator('[data-cta]'), 2_000)), "the demo's call to action is still showing on the founder's own city");
       t.timeline = body;
       t.joinedAt = (await t.api.api('GET', '/api/me')).body.world.joinedAt;

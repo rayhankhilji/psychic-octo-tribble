@@ -15,6 +15,13 @@ export interface ProfileRow {
   users_source: 'customers' | 'manual' | 'posthog' | 'ga4';
   users_manual: { t: number; value: number }[];
   created_at: string;
+  /**
+   * The introductory offer (migration 0009): when it was first shown, which
+   * starts its window, and when a plan bought with it started. Undefined on
+   * a database without 0009, which means no offer at all.
+   */
+  offer_shown_at?: string | null;
+  offer_used_at?: string | null;
 }
 
 export interface SubscriptionRow {

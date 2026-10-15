@@ -16,11 +16,16 @@ export type BootScreen =
   | { kind: 'world'; pastDue: boolean };
 
 /**
+ * Setup is free and comes first; the plan is paid when the city opens (the
+ * owner's order, 2026-10-15: demo, account, connect everything, then pay).
+ *
  * | config            | signed in | plan                  | Stripe   | screen                 |
  * |-------------------|-----------|-----------------------|----------|------------------------|
  * | missing / !hosted | –         | –                     | –        | local                  |
  * | hosted            | no        | –                     | –        | demo, cta signin       |
- * | hosted            | yes       | none/canceled/incompl.| –        | demo, cta plan         |
+ * | hosted            | yes       | none                  | no       | demo, cta onboard      |
+ * | hosted            | yes       | none                  | yes      | demo, cta plan         |
+ * | hosted            | yes       | canceled/incomplete   | –        | demo, cta plan         |
  * | hosted            | yes       | active/trialing/past  | no       | demo, cta onboard      |
  * | hosted            | yes       | active/trialing/past  | yes      | world (pastDue flag)   |
  * | … with `?demo`    | yes       | paid                  | yes      | demo, cta world        |
@@ -30,7 +35,11 @@ export function decideBoot(config: ConfigResponse | null, me: MeResponse | null,
   if (!config?.hosted) return { kind: 'local' };
   if (opts.waitlisted && !me) return { kind: 'demo', cta: 'waitlist' };
   if (!me) return { kind: 'demo', cta: 'signin' };
-  if (!isPaid(me.plan.status)) return { kind: 'demo', cta: 'plan' };
+  if (!isPaid(me.plan.status)) {
+    // A new founder sets up first, for free; a lapsed one is bringing a city back.
+    if (me.plan.status === 'none' && !me.connections.stripe) return { kind: 'demo', cta: 'onboard' };
+    return { kind: 'demo', cta: 'plan' };
+  }
   if (!me.connections.stripe) return { kind: 'demo', cta: 'onboard' };
   if (opts.forceDemo) return { kind: 'demo', cta: 'world' };
   return { kind: 'world', pastDue: me.plan.status === 'past_due' };
@@ -111,8 +120,9 @@ export type Opening =
 
 /**
  * Pure: which dialog (if any) opens by itself. The demo never nags: dialogs
- * open on their own only when the founder is mid-flow (back from Checkout or
- * an install, or paid but not yet connected).
+ * open on their own only when the founder is mid-flow: back from Checkout or
+ * an install, signed in with setup still to do (it's free), or set up with
+ * the city waiting to be opened (the paywall, led by their own numbers).
  */
 export function decideOpening(screen: BootScreen, ret: ReturnState, me: MeResponse | null, opts: { signInError?: string | null; wantsPlan?: boolean } = {}): Opening {
   if (screen.kind === 'local') return { dialog: 'none' };
@@ -134,6 +144,8 @@ export function decideOpening(screen: BootScreen, ret: ReturnState, me: MeRespon
   if (screen.kind === 'demo' && screen.cta === 'plan' && me) {
     const s = me.plan.status;
     if (s === 'canceled' || s === 'incomplete') return { dialog: 'plan', note: s };
+    // Setup is done and the city is ready: the paywall, over the demo.
+    if (s === 'none' && me.connections.stripe) return { dialog: 'plan', note: null };
     if (opts.wantsPlan) return { dialog: 'plan', note: null };
   }
   return { dialog: 'none' };

@@ -1,6 +1,7 @@
 /**
- * After paying: connect Stripe (required), GitHub (optional, then pick a
- * repository), and say where active users come from. Each connector is a
+ * Setup, free and before paying (or after, for a founder who paid first):
+ * connect Stripe (required), GitHub (optional, then pick a repository), and
+ * say where active users come from. Each connector is a
  * card that says, exactly and before anything is installed, what TinyTown
  * reads and what it never can (the lists match the server code: see
  * docs/CONNECTORS.md), then shows what the connection found, from the same
@@ -8,8 +9,7 @@
  * come back to `/?connected=…`, which reopens this at the next step.
  */
 import { ApiRequestError, type Api } from '../api/client.ts';
-import type { ConfigResponse, Connections, MeResponse, ReposResponse, UsersRequest } from '../api/contract.ts';
-import { DAY, type Timeline } from '../data/types.ts';
+import type { ConfigResponse, Connections, MeResponse, PreviewResponse, ReposResponse, RevenueFacts, UsersRequest } from '../api/contract.ts';
 import { FREE_HOUSED, MRR_PER_USER, RATE } from '../game/economy.ts';
 import { brandMark, brandTile, type BrandName } from './brand-icons.ts';
 import { busy, focusFirst, makeDialog, message } from './dialogs.ts';
@@ -168,40 +168,9 @@ function money(n: number, currency: string, cents = false): string {
 
 const monthYear = (t: number) => new Date(t).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
-export interface RevenueFacts {
-  mrr: number;
-  customers: number;
-  currency: string;
-  /** The first day anyone paid. */
-  since: number | null;
-  /** MRR across the history, a few dozen points for a sparkline. */
-  spark: number[];
-}
-
-export function revenueFacts(t: Timeline): RevenueFacts | null {
-  if (!t.integrations.stripe || !t.snapshots.length) return null;
-  const last = t.snapshots.at(-1)!;
-  const first = t.snapshots.find((s) => s.customers > 0 || s.mrr > 0);
-  const from = first ? t.snapshots.indexOf(first) : t.snapshots.length - 1;
-  const span = t.snapshots.slice(from);
-  const n = Math.min(48, span.length);
-  const spark = Array.from({ length: n }, (_, i) => span[Math.round((i * (span.length - 1)) / Math.max(1, n - 1))]!.mrr);
-  return { mrr: last.mrr, customers: last.customers, currency: t.currency, since: first?.t ?? null, spark };
-}
-
-export interface ShippingFacts {
-  releases: number;
-  latest: { name: string; t: number } | null;
-  commits30: number;
-}
-
-export function shippingFacts(t: Timeline): ShippingFacts | null {
-  if (!t.integrations.github || !t.snapshots.length) return null;
-  const last = t.snapshots.at(-1)!;
-  const monthAgo = t.snapshots.find((s) => s.t >= last.t - 30 * DAY) ?? t.snapshots[0]!;
-  const latest = [...t.snapshots].reverse().find((s) => s.release);
-  return { releases: last.releases, latest: latest ? { name: latest.release!, t: latest.t } : null, commits30: Math.max(0, last.commits - monthAgo.commits) };
-}
+// The facts themselves are worked out by src/api/preview.ts (the server sends them as `GET /api/preview`);
+// re-exported so the account dialog and tests can read a full timeline the same way.
+export { revenueFacts, shippingFacts, type RevenueFacts, type ShippingFacts } from '../api/preview.ts';
 
 /** The MRR it takes to house everyone (the game's rule: $0.20 each beyond the first 100). */
 export function housingNeed(users: number): number {
@@ -301,7 +270,7 @@ function stats(items: [string, string][], extra = ''): string {
   return `<div class="cx-stats">${items.map(([v, l]) => `<span class="cx-stat"><b class="num">${v}</b><small>${l}</small></span>`).join('')}${extra}</div>`;
 }
 
-type PreviewState = { state: 'idle' } | { state: 'loading' } | { state: 'ready'; t: Timeline } | { state: 'error'; err: unknown };
+type PreviewState = { state: 'idle' } | { state: 'loading' } | { state: 'ready'; p: PreviewResponse } | { state: 'error'; err: unknown };
 
 // ─── The dialog ─────────────────────────────────────────────────────────
 
@@ -384,16 +353,20 @@ export class OnboardingDialog {
     return this.c.users as AnyUsersSource;
   }
 
-  /** The numbers behind the cards, from the timeline the city runs on. Cached by the server, so cheap. */
+  /**
+   * The numbers behind the cards, from the timeline the city runs on (the
+   * headline numbers only: setup is free, the city isn't). Cached by the
+   * server, so cheap.
+   */
   private loadPreview(force = false) {
     const c = this.c;
     if (!c.stripe && !c.github?.repo) return;
     if (!force && (this.preview.state === 'loading' || this.preview.state === 'ready')) return;
     this.preview = { state: 'loading' };
     this.deps.api
-      .timeline()
-      .then((t) => {
-        this.preview = { state: 'ready', t };
+      .preview()
+      .then((p) => {
+        this.preview = { state: 'ready', p };
       })
       .catch((err: unknown) => {
         this.preview = { state: 'error', err };
@@ -443,7 +416,7 @@ export class OnboardingDialog {
     const summary = (s: Step) => {
       if (s === 1) {
         if (!c.stripe) return '<span>MRR and paying customers, read-only</span>';
-        const r = this.preview.state === 'ready' && !this.stripeBroken ? revenueFacts(this.preview.t) : null;
+        const r = this.preview.state === 'ready' && !this.stripeBroken ? this.preview.p.revenue : null;
         const found = r && r.since != null ? ` · ${money(r.mrr, r.currency)} MRR · ${r.customers.toLocaleString('en-US')} paying` : '';
         return `${brandMark('stripe')}<span>${escape(c.stripe.name ?? `Stripe account ${shortId(c.stripe.account)}`)}${c.stripe.livemode ? '' : ' · test mode'}${found}</span>`;
       }
@@ -467,13 +440,29 @@ export class OnboardingDialog {
         </div>
       </li>`;
     const ready = !!c.stripe && !this.stripeBroken;
+    // Never paid: setup is free, and the plan comes when the city opens ("Build my city" leads there).
+    const free = this.deps.me().plan.status === 'none';
+    const intro = this.welcome
+      ? 'Your plan is active. Three short steps and your city runs on your real numbers.'
+      : this.stripeBroken
+        ? 'Your city and everything you built are safe. It just needs Stripe again to keep up with your revenue.'
+        : free
+          ? "Three short steps and your city runs on your real numbers. Free to set up. You'll only pay when you open your city."
+          : 'Three short steps and your city runs on your real numbers. About two minutes.';
+    const hint = ready
+      ? free
+        ? 'Stripe is connected. Your city is ready to open.'
+        : 'Stripe is connected. You can change any of this later in your account.'
+      : this.stripeBroken
+        ? 'Reconnect Stripe to bring your city back.'
+        : 'Connect Stripe to build your city: it runs on your revenue.';
     this.body.className = 'dialog-body onboard';
     this.body.innerHTML = `
       <header class="dialog-head">
         <span class="tile ${this.welcome ? 'tone-good' : this.stripeBroken ? 'tone-bad' : 'tone-brand'}">${this.welcome ? ICON.check : this.stripeBroken ? ICON.unlink : ICON.plug}</span>
         <div>
           <h2 id="onboard-title">${this.welcome ? "You're in. Thank you." : this.stripeBroken ? 'Reconnect Stripe' : 'Set up your city'}</h2>
-          <p>${this.welcome ? 'Your plan is active. Three short steps and your city runs on your real numbers.' : this.stripeBroken ? 'Your city and everything you built are safe. It just needs Stripe again to keep up with your revenue.' : 'Three short steps and your city runs on your real numbers. About two minutes.'}</p>
+          <p>${intro}</p>
         </div>
         <button class="btn ghost icon-only close" type="button" data-act="close" aria-label="Close">${ICON.close}</button>
       </header>
@@ -483,11 +472,7 @@ export class OnboardingDialog {
         ${step(3, 'Where your active users come from', () => this.usersStep())}
       </ol>
       <footer class="dialog-actions onboard-foot">
-        <span class="onboard-hint">${
-          ready
-            ? `${ICON.check}<span>Stripe is connected. You can change any of this later in your account.</span>`
-            : `${ICON.info}<span>${this.stripeBroken ? 'Reconnect Stripe to bring your city back.' : 'Connect Stripe to build your city: it runs on your revenue.'}</span>`
-        }</span>
+        <span class="onboard-hint">${ready ? ICON.check : ICON.info}<span>${hint}</span></span>
         <button class="btn primary lg finish" type="button" data-act="finish" ${ready ? '' : 'disabled aria-disabled="true"'}>${ready ? ICON.build : ICON.lock}<span class="label">${this.deps.inWorld ? 'Back to my city' : this.stripeBroken ? 'Open my city' : 'Build my city'}</span></button>
       </footer>`;
   }
@@ -557,7 +542,7 @@ export class OnboardingDialog {
       if (p.err instanceof ApiRequestError && p.err.code === 'not_connected') return '';
       return `<div class="cx-found">${this.failure(p.err, 'retry-preview', 'Read them again')}</div>`;
     }
-    const r = revenueFacts(p.t);
+    const r = p.p.revenue;
     if (!r || r.since == null)
       return `<div class="cx-found"><span class="cx-found-label">${ICON.info}Connected. No paying subscriptions yet, so your city starts small and grows with your first customer.</span></div>`;
     const budget = r.mrr * RATE;
@@ -628,7 +613,7 @@ export class OnboardingDialog {
     if (p.state === 'loading' || p.state === 'idle')
       return `<div class="cx-found is-loading" aria-busy="true"><span class="cx-found-label">Reading releases and commits…</span>${stats([['—', 'releases'], ['—', 'latest'], ['—', 'commits, 30 days']])}</div>`;
     if (p.state === 'error') return `<div class="cx-found">${this.failure(p.err, 'retry-preview', 'Read them again')}</div>`;
-    const s = shippingFacts(p.t);
+    const s = p.p.shipping;
     if (!s) return '';
     return `
       <div class="cx-found">
@@ -750,7 +735,7 @@ export class OnboardingDialog {
 
   /** The default, spelled out for founders with no analytics at all, with the trade-off. */
   private customersPanel(): string {
-    const r = this.preview.state === 'ready' ? revenueFacts(this.preview.t) : null;
+    const r = this.preview.state === 'ready' ? this.preview.p.revenue : null;
     return `
       <div class="choice-extra">
         <div class="cx-explain">
@@ -763,7 +748,7 @@ export class OnboardingDialog {
   private manualPanel(): string {
     const u = this.users;
     const manualValue = u.source === 'manual' ? String(u.value) : '';
-    const r = this.preview.state === 'ready' ? revenueFacts(this.preview.t) : null;
+    const r = this.preview.state === 'ready' ? this.preview.p.revenue : null;
     const err = this.fieldErrors.value;
     return `
       <div class="choice-extra">
@@ -789,9 +774,9 @@ export class OnboardingDialog {
   private posthogPanel(): string {
     const u = this.users;
     const ph = u.source === 'posthog' ? u : null;
-    const r = this.preview.state === 'ready' ? revenueFacts(this.preview.t) : null;
+    const r = this.preview.state === 'ready' ? this.preview.p.revenue : null;
     if (ph && !this.replacingKey) {
-      const latest = this.preview.state === 'ready' ? [...this.preview.t.snapshots].reverse().find((s) => s.users != null)?.users ?? null : null;
+      const latest = this.preview.state === 'ready' ? this.preview.p.users : null;
       return `
         <div class="choice-extra">
           <div class="cx is-on">
@@ -1157,7 +1142,7 @@ export class OnboardingDialog {
     // The housing line follows the number as it's typed.
     if (t.name === 'value') {
       const line = this.d.querySelector('[data-house]');
-      const r = this.preview.state === 'ready' ? revenueFacts(this.preview.t) : null;
+      const r = this.preview.state === 'ready' ? this.preview.p.revenue : null;
       if (line) line.innerHTML = /^\d+$/.test(t.value.trim()) ? this.houseLine(Number(t.value), r) : '';
     }
     if (t.closest('.users-form') && (t.name === 'projectId' || t.name === 'apiKey' || t.name === 'host') && this.test.state !== 'idle' && this.test.state !== 'busy') {

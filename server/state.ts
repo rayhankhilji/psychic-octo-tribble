@@ -84,6 +84,19 @@ export async function userState(ctx: Hosted, user: AuthUser, parts: Part[] = [])
  * costs no database call, then the shared count in the same round trip.
  */
 export async function requirePaid(ctx: Hosted, user: AuthUser, opts: { parts?: Part[]; rate?: RouteLimit } = {}): Promise<UserState> {
+  return (await loadWithLimit(ctx, user, opts, true)).state;
+}
+
+/**
+ * The same for routes that are free to every signed-in founder (connecting
+ * data and the preview: setup comes before paying). The rate limit still
+ * applies, so an unpaid account can't hammer a founder's Stripe or GitHub.
+ */
+export async function requireSignedIn(ctx: Hosted, user: AuthUser, opts: { parts?: Part[]; rate?: RouteLimit } = {}): Promise<UserState> {
+  return (await loadWithLimit(ctx, user, opts, false)).state;
+}
+
+async function loadWithLimit(ctx: Hosted, user: AuthUser, opts: { parts?: Part[]; rate?: RouteLimit }, mustPay: boolean): Promise<Loaded> {
   const rate = opts.rate ? { ...opts.rate, windowS: memoryLimit(opts.rate.key, opts.rate.max, ctx.now, opts.rate.windowS) } : null;
   let loaded: Loaded;
   if (ctx.userState?.userId === user.id) {
@@ -93,9 +106,9 @@ export async function requirePaid(ctx: Hosted, user: AuthUser, opts: { parts?: P
     loaded = await load(ctx, user, opts.parts ?? [], rate);
   }
   const sub = loaded.state.subscription;
-  if (!sub || !hasAccess(sub, ctx.now)) throw new HttpError(402, 'Pick a plan to open your city.', 'payment_required');
+  if (mustPay && (!sub || !hasAccess(sub, ctx.now))) throw new HttpError(402, 'Pick a plan to open your city.', 'payment_required');
   if (loaded.rate && !loaded.rate.allowed) throw slowDown(loaded.rate.retryAfter);
-  return loaded.state;
+  return loaded;
 }
 
 // ─── Reading ──────────────────────────────────────────────────────────────

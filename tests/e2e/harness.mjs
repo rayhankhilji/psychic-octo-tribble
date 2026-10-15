@@ -43,7 +43,7 @@ export async function startStack({ env = {}, latency = {}, port, fakesOptions = 
   });
   const webhookSecret = `whsec_${randomBytes(16).toString('hex')}`;
   // TinyTown is sold by the year: one $29 price, as the owner's Stripe account has it.
-  const fakes = await startFakes({ webhookSecret, latency, githubPublicKey: publicKey, log: !quiet, prices: { price_year: { amount: 2900, interval: 'year' } }, ...fakesOptions });
+  const fakes = await startFakes({ webhookSecret, latency, githubPublicKey: publicKey, log: !quiet, prices: { price_year: { amount: 2900, interval: 'year' } }, coupons: { tinytown_first_year_9: { percent_off: 68.97, duration: 'once' } }, ...fakesOptions });
   const serverPort = port ?? (await freePort());
   const appUrl = `http://127.0.0.1:${serverPort}`;
   fakes.setAppUrl(appUrl);
@@ -63,6 +63,8 @@ export async function startStack({ env = {}, latency = {}, port, fakesOptions = 
     STRIPE_BILLING_SECRET_KEY: `sk_test_${randomBytes(12).toString('hex')}`,
     STRIPE_WEBHOOK_SECRET: webhookSecret,
     STRIPE_PRICE_YEARLY: 'price_year',
+    // The introductory offer (server/offer.ts): $9 for the first year, then $29.
+    STRIPE_OFFER_COUPON: 'tinytown_first_year_9',
     STRIPE_APP_CLIENT_ID: 'ca_fake_tinytown',
     // A live-mode app key would demand an https:// APP_URL for the callback; locally it's test mode.
     STRIPE_APP_INSTALL_URL: `${fakes.url}/stripe-pages/oauth/v2/authorize`,

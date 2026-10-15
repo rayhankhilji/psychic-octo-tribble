@@ -7,7 +7,9 @@ import { verifyStripeSignature } from './crypto.ts';
 import type { Settings } from './env.ts';
 import { HttpError, badRequest, notConfigured } from './http.ts';
 import { notify } from './notify.ts';
-import { planStatus, type SubscriptionRow } from './store.ts';
+import { claimOffer, markOfferUsed } from './offer.ts';
+import { planStatus, type ConnectionRow, type SubscriptionRow } from './store.ts';
+import { markJoined } from './stripe-app.ts';
 import { STRIPE_API_VERSION, StripeError, stripe, stripeFailure } from './stripe-api.ts';
 import type { AuthUser } from './supabase.ts';
 
@@ -50,7 +52,7 @@ export function appUrl(ctx: Ctx): string {
 }
 
 const flag = (ctx: Ctx, name: string) => ctx.env[name]?.trim() === '1';
-const apiVersion = (ctx: Ctx) => ctx.env.STRIPE_API_VERSION?.trim() || STRIPE_API_VERSION;
+export const apiVersion = (ctx: Ctx) => ctx.env.STRIPE_API_VERSION?.trim() || STRIPE_API_VERSION;
 const shortHash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16);
 
 // ─── Prices ───────────────────────────────────────────────────────────────
@@ -278,9 +280,15 @@ async function existingPlan(ctx: Hosted, billing: Billing, user: AuthUser, row: 
   }
 }
 
-/** Checkout's settings for one founder and price, with the owner's optional switches. */
-export function checkoutParams(ctx: Ctx, opts: { customer: string; userId: string; price: string; base: string }) {
+/**
+ * Checkout's settings for one founder and price, with the owner's optional
+ * switches. `coupon` is the introductory offer (server/offer.ts), already
+ * checked: it comes off the first invoice only, and the subscription carries
+ * `offer` in its metadata so the webhook can mark the offer used.
+ */
+export function checkoutParams(ctx: Ctx, opts: { customer: string; userId: string; price: string; base: string; coupon?: string | null }) {
   const tax = flag(ctx, 'STRIPE_AUTOMATIC_TAX');
+  const offer = opts.coupon ? { offer: opts.coupon } : {};
   return {
     mode: 'subscription',
     customer: opts.customer,
@@ -288,11 +296,12 @@ export function checkoutParams(ctx: Ctx, opts: { customer: string; userId: strin
     line_items: [{ price: opts.price, quantity: 1 }],
     success_url: `${opts.base}/?checkout=success`,
     cancel_url: `${opts.base}/?checkout=cancel`,
-    metadata: { user_id: opts.userId },
-    subscription_data: { metadata: { user_id: opts.userId } },
+    metadata: { user_id: opts.userId, ...offer },
+    subscription_data: { metadata: { user_id: opts.userId, ...offer } },
     // The price in the customer's own currency where Stripe can, renewals included (we still record USD).
     adaptive_pricing: { enabled: ctx.env.STRIPE_ADAPTIVE_PRICING?.trim() !== '0' },
-    ...(flag(ctx, 'STRIPE_PROMO_CODES') ? { allow_promotion_codes: true } : {}),
+    // Stripe takes either a discount or a promotion code box, never both: the offer wins.
+    ...(opts.coupon ? { discounts: [{ coupon: opts.coupon }] } : flag(ctx, 'STRIPE_PROMO_CODES') ? { allow_promotion_codes: true } : {}),
     // Tax needs an address, and a tax ID needs a name, saved back to our existing customer.
     ...(tax ? { automatic_tax: { enabled: true }, tax_id_collection: { enabled: true }, customer_update: { address: 'auto', name: 'auto' } } : {}),
     // The Terms and the no-refund policy, agreed to before paying, with how to cancel under the button.
@@ -317,6 +326,9 @@ export async function checkout(ctx: Hosted, user: AuthUser, body: Record<string,
   const billing = requireBilling(ctx);
   const interval = body.interval;
   if (interval !== 'month' && interval !== 'year') throw badRequest('Choose "year".');
+  if (body.offer !== undefined && typeof body.offer !== 'boolean') throw badRequest('"offer" is true or left out.');
+  const wantsOffer = body.offer === true;
+  if (wantsOffer && interval !== 'year') throw badRequest('The first-year offer is on the yearly plan.');
   // Only the plans configured are on sale: normally just the yearly one.
   if (!billing.prices[interval]) throw badRequest(interval === 'month' ? "There's no monthly plan: TinyTown is paid for by the year." : 'There\'s no yearly plan on sale right now.');
   const base = appUrl(ctx);
@@ -325,9 +337,11 @@ export async function checkout(ctx: Hosted, user: AuthUser, body: Record<string,
   try {
     const existing = await existingPlan(ctx, billing, user, row);
     if (existing) return existing;
+    // Checked on the server every time: shown within 48 hours, never used, never paid before.
+    const coupon = wantsOffer ? await claimOffer(ctx, user) : null;
     const price = await priceId(ctx, billing, interval);
     const session = async (customer: string) => {
-      const params = checkoutParams(ctx, { customer, userId: user.id, price, base });
+      const params = checkoutParams(ctx, { customer, userId: user.id, price, base, coupon });
       const window = Math.floor(ctx.now / CHECKOUT_KEY_WINDOW_MS);
       const idempotencyKey = `tinytown-checkout-${user.id}-${window}-${shortHash(JSON.stringify(params))}`;
       return stripe<StripeSession>(billing.secretKey, 'POST', '/v1/checkout/sessions', params, { idempotencyKey, apiVersion: apiVersion(ctx) });
@@ -341,7 +355,8 @@ export async function checkout(ctx: Hosted, user: AuthUser, body: Record<string,
       if (!(err instanceof StripeError && err.code === 'resource_missing' && err.param === 'customer')) throw err;
       created = await session(await customerFor(ctx, billing, user, row, customer));
     }
-    await track(ctx, user.id, 'checkout_started', { interval });
+    await track(ctx, user.id, 'checkout_started', { interval, offer: !!coupon });
+    if (coupon) await track(ctx, user.id, 'offer_accepted', { interval });
     return { url: created.url };
   } catch (err) {
     throw stripeFailure(err);
@@ -608,10 +623,16 @@ async function announce(ctx: Hosted, userId: string, sub: StripeSubscriptionObje
   for (const c of changes) {
     try {
       switch (c.kind) {
-        case 'started':
+        case 'started': {
+          // Bought with the introductory offer: it's used, for good (server/offer.ts).
+          const offer = !!sub.metadata?.offer;
+          if (offer) await markOfferUsed(ctx, userId);
+          await opened(ctx, userId);
           if (c.interval) await notify(ctx, { kind: 'plan.started', userId, interval: c.interval, ref: sub.id });
           await track(ctx, userId, 'plan_started', { interval: c.interval ?? 'unknown', livemode });
+          await track(ctx, userId, 'checkout_completed', { plan: c.interval ?? 'unknown', offer, livemode });
           break;
+        }
         case 'payment_failed':
           await notify(ctx, { kind: 'plan.payment_failed', userId, ref: idOf(sub.latest_invoice) ?? sub.id });
           break;
@@ -629,6 +650,16 @@ async function announce(ctx: Hosted, userId: string, sub: StripeSubscriptionObje
       console.error(`Couldn't announce ${c.kind} for ${userId}: ${err instanceof Error ? err.message : 'unknown error'}`);
     }
   }
+}
+
+/**
+ * Setup comes before paying, so a founder may have connected Stripe days
+ * ago. Their city (and its back-pay window, GAME_DESIGN "Back pay") starts
+ * the day they can open it: today, if their data is already connected.
+ */
+async function opened(ctx: Hosted, userId: string) {
+  const rows = await ctx.db.many<ConnectionRow>('connections', { user_id: userId });
+  if (rows.some((r) => r.provider === 'stripe' || r.provider === 'github')) await markJoined(ctx, userId, { paid: true });
 }
 
 // ─── The daily safety net ─────────────────────────────────────────────────

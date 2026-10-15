@@ -28,7 +28,13 @@ export interface Settings {
    * TinyTown is sold by the year (STRIPE_PRICE_YEARLY). STRIPE_PRICE_MONTHLY is
    * optional and normally unset: when it is set, a monthly plan is on sale too.
    */
-  billing: { secretKey: string; webhookSecret: string | null; prices: { month: string | null; year: string } } | null;
+  billing: {
+    secretKey: string;
+    webhookSecret: string | null;
+    prices: { month: string | null; year: string };
+    /** STRIPE_OFFER_COUPON: the introductory first-year coupon (server/offer.ts). Without it there's no offer. */
+    offerCoupon?: string | null;
+  } | null;
   stripeApp: { clientId: string; secretKey: string; installUrl: string; livemode: boolean } | null;
   githubApp: { appId: string | null; slug: string; clientId: string; clientSecret: string; privateKey: string } | null;
   posthog: { hosts: string[] };
@@ -85,7 +91,10 @@ export function settings(env: Env): Settings {
     appUrl,
     supabase: supabaseUrl && anonKey && serviceKey ? { url: supabaseUrl, anonKey, serviceKey } : null,
     secrets,
-    billing: billingKey && yearly ? { secretKey: billingKey, webhookSecret: get(env, 'STRIPE_WEBHOOK_SECRET') ?? null, prices: { month: monthly ?? null, year: yearly } } : null,
+    billing:
+      billingKey && yearly
+        ? { secretKey: billingKey, webhookSecret: get(env, 'STRIPE_WEBHOOK_SECRET') ?? null, prices: { month: monthly ?? null, year: yearly }, offerCoupon: get(env, 'STRIPE_OFFER_COUPON') ?? null }
+        : null,
     stripeApp:
       appClientId && appKey && secrets
         ? {
@@ -216,6 +225,9 @@ export function checkEnv(env: Env): EnvProblem[] {
     const v = get(env, name);
     if (v && !v.startsWith('price_')) error(`${name} should be a price id (price_…), not a product id or an amount.`);
   }
+  const coupon = get(env, 'STRIPE_OFFER_COUPON');
+  if (coupon && !/^[\w-]{1,200}$/.test(coupon)) error('STRIPE_OFFER_COUPON should be a coupon id like tinytown_first_year_9 (letters, digits, - and _).');
+  if (coupon && !billingKey) warn('STRIPE_OFFER_COUPON is set, but billing is not, so there is no offer to make.');
   if (s.billing?.prices.month) warn('STRIPE_PRICE_MONTHLY is set, so a monthly plan is on sale next to the yearly one. TinyTown is sold by the year: unset it unless you mean to sell monthly.');
   if (has('STRIPE_APP_CLIENT_ID') && !s.stripeApp) error('STRIPE_APP_CLIENT_ID is set, but connecting Stripe also needs TOKEN_ENCRYPTION_KEY, STATE_SECRET and a secret key.');
   const appKey = get(env, 'STRIPE_APP_SECRET_KEY');

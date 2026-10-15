@@ -48,7 +48,7 @@ Until 2026-10-14 game prices tracked real-world luxury prices (a $70M jet at $10
 ### Getting started
 
 - **Starting grant:** $500k, enough for a park, a café and a couple of repairs, so day one is fun even at $0 MRR.
-- **Back pay:** a founder who connects an existing business gets the last 3 months of collected revenue as a *grand opening* fund. Full history would let a mature company build everything on day one and skip the game. Their MRR still unlocks everything they've earned, so they start in the right house with the right land open.
+- **Back pay:** a founder whose city opens (connected and paid; setup is free and can come first) gets the last 3 months of collected revenue as a *grand opening* fund. Full history would let a mature company build everything on day one and skip the game. Their MRR still unlocks everything they've earned, so they start in the right house with the right land open.
 
 ### Spending
 

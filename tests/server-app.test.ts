@@ -62,6 +62,7 @@ describe('auth gates', () => {
     expect(await res.json()).toMatchObject({ code: 'unauthenticated' });
   });
 
+  // Connecting data is free (setup comes before paying): tests/server-offer.test.ts.
   it('402 on data routes without a paid plan, but /api/me works', async () => {
     stubFetch(db);
     for (const [method, path] of [
@@ -69,11 +70,8 @@ describe('auth gates', () => {
       ['GET', '/api/world/actions'],
       ['POST', '/api/world/actions'],
       ['PATCH', '/api/world'],
-      ['POST', '/api/connect/stripe'],
-      ['PUT', '/api/connect/users'],
-      ['DELETE', '/api/connect/github'],
     ] as const) {
-      const res = await call(method, path, { body: method === 'GET' || method === 'DELETE' ? undefined : {} });
+      const res = await call(method, path, { body: method === 'GET' ? undefined : {} });
       expect(res.status, `${method} ${path}`).toBe(402);
       expect(await res.json()).toMatchObject({ code: 'payment_required' });
     }

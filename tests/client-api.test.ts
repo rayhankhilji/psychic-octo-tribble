@@ -5,7 +5,8 @@ import { HOME_TIERS } from '../src/game/catalog.ts';
 import { MRR_PER_USER, RATE } from '../src/game/economy.ts';
 import { shortMrr } from '../src/ui/dom.ts';
 import { frontDoorBeats } from '../src/ui/frontdoor.ts';
-import { climb } from '../src/ui/plans.ts';
+import { climb, offerEnds, teaserStats } from '../src/ui/plans.ts';
+import { previewOf, residentsOf } from '../src/api/preview.ts';
 import { ctaPrice, defaultInterval, formatPrice, inWords, perInterval, priceLine, priceSheet } from '../src/api/pricing.ts';
 import type { Plan } from '../src/api/contract.ts';
 
@@ -186,5 +187,66 @@ describe('filenameFrom', () => {
     expect(filenameFrom('attachment; filename=plain.json', 'x.json')).toBe('plain.json');
     expect(filenameFrom("attachment; filename*=UTF-8''caf%C3%A9.json", 'x.json')).toBe('café.json');
     expect(filenameFrom(null, 'x.json')).toBe('x.json');
+  });
+});
+
+describe('the preview and the paywall teaser', () => {
+  const DAY = 86_400_000;
+  const T0 = Date.UTC(2026, 0, 1);
+  const timeline = (users?: number) => ({
+    name: 'Acme',
+    currency: 'usd',
+    source: 'live' as const,
+    integrations: { stripe: true, github: true },
+    snapshots: Array.from({ length: 60 }, (_, i) => ({ t: T0 + i * DAY, mrr: i < 10 ? 0 : 4320 * (i / 59), customers: i < 10 ? 0 : Math.round(120 * (i / 59)), releases: Math.floor(i / 4), commits: i * 2, ...(users && i > 50 ? { users } : {}) })),
+  });
+
+  it('only the headline numbers, never the days', () => {
+    const p = previewOf(timeline(2400));
+    expect(p).toMatchObject({ name: 'Acme', ready: true, days: 60, asOf: T0 + 59 * DAY, users: 2400 });
+    expect(p.revenue).toMatchObject({ mrr: 4320, customers: 120, since: T0 + 10 * DAY });
+    expect(p.shipping).toMatchObject({ releases: 14, commits30: 60 });
+    expect(JSON.stringify(p)).not.toContain('snapshots');
+    expect(residentsOf(p)).toBe(2400);
+    // No users source: the residents are the paying customers.
+    expect(residentsOf(previewOf(timeline()))).toBe(120);
+    expect(previewOf({ ...timeline(), snapshots: [] })).toMatchObject({ ready: false, revenue: null, asOf: null });
+  });
+
+  it('the teaser quotes the real numbers', () => {
+    expect(teaserStats(previewOf(timeline(2400)))).toEqual([
+      ['$4,320', 'MRR'],
+      ['2,400', 'residents'],
+      ['14', 'releases for HQ'],
+    ]);
+    const noGithub = previewOf({ ...timeline(), integrations: { stripe: true, github: false } });
+    expect(teaserStats(noGithub).at(-1)).toEqual(['Jan 2026', 'history from']);
+    expect(teaserStats(previewOf({ ...timeline(), snapshots: [] }))).toEqual([]);
+  });
+
+  it('says when the offer closes, from the real time, never a made-up countdown', () => {
+    const now = Date.UTC(2026, 9, 15, 12);
+    expect(offerEnds(now + 47.5 * 3_600_000, now).left).toBe('47 hours left');
+    expect(offerEnds(now + 90 * 60_000, now).left).toBe('1 hour left');
+    expect(offerEnds(now + 20 * 60_000, now).left).toBe('less than an hour left');
+    expect(offerEnds(now - 1, now).left).toBe('closed');
+    expect(offerEnds(now + 3_600_000, now).when).toMatch(/day \d{1,2}:\d{2} [AP]M$/);
+  });
+
+  it('asks the server for the offer with the checkout, and nothing else', async () => {
+    const calls: { url: string; body: string }[] = [];
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      calls.push({ url, body: String(init.body ?? '') });
+      return new Response(JSON.stringify({ url: 'https://checkout.stripe.com/x', offer: null }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const api = new Api({ token: async () => 't' });
+    await api.checkout('year', { offer: true });
+    await api.checkout('year');
+    await api.offerSeen();
+    expect(calls.map((c) => [c.url, c.body])).toEqual([
+      ['/api/billing/checkout', '{"interval":"year","offer":true}'],
+      ['/api/billing/checkout', '{"interval":"year"}'],
+      ['/api/billing/offer/seen', '{}'],
+    ]);
   });
 });

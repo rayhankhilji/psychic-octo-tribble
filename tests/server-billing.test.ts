@@ -396,7 +396,7 @@ describe('webhook events', () => {
     expect(res.map((r) => r.status)).toEqual([200, 200, 200, 200]);
     expect(row()).toMatchObject({ status: 'active', stripe_subscription_id: 'sub_9' });
     expect(kinds()).toEqual(['plan.started']);
-    expect(funnel()).toEqual(['plan_started']);
+    expect(funnel()).toEqual(['plan_started', 'checkout_completed']);
   });
 
   it('invoice.payment_failed and payment_action_required: past_due keeps access and warns once', async () => {
@@ -436,7 +436,7 @@ describe('webhook events', () => {
     expect(row()!.status).toBe('canceled');
     expect(kinds()).toEqual(['plan.started', 'plan.canceled', 'plan.ended']);
     // The cancellation was counted when it was made, not again at the end.
-    expect(funnel()).toEqual(['plan_started', 'plan_canceled']);
+    expect(funnel()).toEqual(['plan_started', 'checkout_completed', 'plan_canceled']);
     expect((await call('GET', '/api/world/actions')).status).toBe(402);
   });
 

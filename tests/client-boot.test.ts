@@ -38,8 +38,18 @@ describe('decideBoot', () => {
     expect(decideBoot(hosted, null)).toEqual({ kind: 'demo', cta: 'signin' });
   });
 
-  it.each<PlanStatus>(['none', 'canceled', 'incomplete'])('signed in without a plan (%s): the demo and the paywall', (s) => {
+  it('signed in, new, nothing connected: setup first, for free', () => {
+    expect(decideBoot(hosted, me('none'))).toEqual({ kind: 'demo', cta: 'onboard' });
+  });
+
+  it('signed in, new, Stripe connected: the paywall, over the demo', () => {
+    expect(decideBoot(hosted, me('none', true))).toEqual({ kind: 'demo', cta: 'plan' });
+    expect(decideBoot(hosted, me('none', true, 'a/b'))).toEqual({ kind: 'demo', cta: 'plan' });
+  });
+
+  it.each<PlanStatus>(['canceled', 'incomplete'])('a plan that ended or never finished (%s): the paywall, connected or not', (s) => {
     expect(decideBoot(hosted, me(s))).toEqual({ kind: 'demo', cta: 'plan' });
+    expect(decideBoot(hosted, me(s, true))).toEqual({ kind: 'demo', cta: 'plan' });
   });
 
   it.each<PlanStatus>(['active', 'trialing', 'past_due'])('paid (%s) but Stripe not connected: setup', (s) => {
@@ -98,6 +108,22 @@ describe('decideOpening', () => {
     expect(decideOpening({ kind: 'local' }, none, null)).toEqual({ dialog: 'none' });
     expect(decideOpening({ kind: 'demo', cta: 'signin' }, none, null)).toEqual({ dialog: 'none' });
     expect(decideOpening({ kind: 'demo', cta: 'plan' }, none, me('none'))).toEqual({ dialog: 'none' });
+  });
+
+  it('signed in with setup to do: setup opens by itself (it is free)', () => {
+    const screen = decideBoot(hosted, me('none'));
+    expect(decideOpening(screen, none, me('none'))).toEqual({ dialog: 'onboard', welcome: false, step: 1, error: null });
+  });
+
+  it('set up but unpaid: the paywall opens by itself, every visit', () => {
+    const founder = me('none', true, 'a/b');
+    expect(decideOpening(decideBoot(hosted, founder), none, founder)).toEqual({ dialog: 'plan', note: null });
+  });
+
+  it('back from connecting Stripe without a plan: on to the next step, not the paywall yet', () => {
+    const founder = me('none', true);
+    expect(decideOpening(decideBoot(hosted, founder), { ...none, connected: 'stripe' }, founder)).toMatchObject({ dialog: 'onboard', step: 2 });
+    expect(decideOpening(decideBoot(hosted, founder), { ...none, connected: 'github' }, founder)).toMatchObject({ dialog: 'onboard', step: 2 });
   });
 
   it('a failed sign-in link reopens sign-in with the reason', () => {

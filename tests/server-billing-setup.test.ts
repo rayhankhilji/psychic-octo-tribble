@@ -1,21 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { WEBHOOK_EVENTS as HANDLED } from '../server/billing.ts';
 import { STRIPE_API_VERSION } from '../server/stripe-api.ts';
-import { API_VERSION, WEBHOOK_EVENTS, checkAppUrl, keyMode, parseArgs, report, setupStripe } from '../tools/stripe-setup.mjs';
+import { API_VERSION, OFFER, WEBHOOK_EVENTS, checkAppUrl, keyMode, offerPercent, parseArgs, report, setupStripe } from '../tools/stripe-setup.mjs';
 
 /**
  * tools/stripe-setup.mjs against an in-memory Stripe: a first run creates
  * everything (one $29 yearly price), a second changes nothing, an account
  * set up for the old $12/$99 pricing gets the new price without losing the
- * old ones, a dry run only reads, and live keys need --live.
+ * old ones, the introductory offer's coupon is made once ($9 for the first
+ * year), a dry run only reads, and live keys need --live.
  */
 
 type Obj = Record<string, unknown> & { id: string };
 const APP = 'https://tinytown.example';
 
-/** Just enough of Stripe: products, prices, webhook endpoints and portal configurations. */
-function fakeStripe(seed: Partial<Record<'products' | 'prices' | 'webhook_endpoints' | 'configurations', Obj[]>> = {}) {
-  const store = { products: [...(seed.products ?? [])], prices: [...(seed.prices ?? [])], webhook_endpoints: [...(seed.webhook_endpoints ?? [])], configurations: [...(seed.configurations ?? [])] };
+/** Just enough of Stripe: products, prices, coupons, webhook endpoints and portal configurations. */
+function fakeStripe(seed: Partial<Record<'products' | 'prices' | 'coupons' | 'webhook_endpoints' | 'configurations', Obj[]>> = {}) {
+  const store = {
+    products: [...(seed.products ?? [])],
+    prices: [...(seed.prices ?? [])],
+    coupons: [...(seed.coupons ?? [])],
+    webhook_endpoints: [...(seed.webhook_endpoints ?? [])],
+    configurations: [...(seed.configurations ?? [])],
+  };
   const calls: { method: string; path: string; body: Record<string, string>; headers: Headers }[] = [];
   let n = 0;
   const list = (data: Obj[]) => Response.json({ object: 'list', data, has_more: false });
@@ -37,10 +44,23 @@ function fakeStripe(seed: Partial<Record<'products' | 'prices' | 'webhook_endpoi
         return found ? Response.json(found) : Response.json({ error: { message: 'No such product', code: 'resource_missing' } }, { status: 404 });
       }
       if (p === '/v1/products') return list(store.products);
+      if (p.startsWith('/v1/coupons/')) {
+        const found = store.coupons.find((x) => x.id === p.split('/').at(-1));
+        return found ? Response.json(found) : Response.json({ error: { message: 'No such coupon', code: 'resource_missing' } }, { status: 404 });
+      }
       if (p === '/v1/webhook_endpoints') return list(store.webhook_endpoints);
       if (p === '/v1/billing_portal/configurations') return list(store.configurations);
     }
+    if (method === 'DELETE' && p.startsWith('/v1/coupons/')) {
+      store.coupons = store.coupons.filter((x) => x.id !== p.split('/').at(-1));
+      return Response.json({ id: p.split('/').at(-1), deleted: true });
+    }
     if (method === 'POST') {
+      if (p === '/v1/coupons') {
+        const o = { id: body.id!, name: body.name, percent_off: Number(body.percent_off), amount_off: null, duration: body.duration, valid: true, metadata: { tinytown: body['metadata[tinytown]'] } };
+        store.coupons.push(o);
+        return Response.json(o);
+      }
       if (p === '/v1/products') {
         const o = { id: body.id ?? `prod_${++n}`, name: body.name, active: true };
         store.products.push(o);
@@ -114,13 +134,15 @@ describe('stripe-setup', () => {
     expect(r.steps.map((s) => `${s.thing}: ${s.action}`)).toEqual([
       'Product: would create',
       'Price, yearly: would create',
+      'Offer coupon: would create',
       'Webhook: would create',
       'Customer portal: would create',
     ]);
     const text = report(r);
     expect(text).toContain('Dry run: nothing was changed.');
     expect(text).toContain('TinyTown Ltd (acct_1), test mode');
-    for (const v of ['STRIPE_BILLING_SECRET_KEY', 'STRIPE_PRICE_YEARLY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PORTAL_CONFIGURATION']) expect(text).toContain(v);
+    for (const v of ['STRIPE_BILLING_SECRET_KEY', 'STRIPE_PRICE_YEARLY', 'STRIPE_OFFER_COUPON', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PORTAL_CONFIGURATION']) expect(text).toContain(v);
+    expect(r.steps[2]!.id).toBe('tinytown_first_year_9: 68.97% off the first year only: $29 → $9, then $29 a year');
     expect(r.steps[1]!.id).toBe('tinytown_yearly: $29 a year');
     // The monthly price is only ever mentioned to say it's not sold.
     expect(text).not.toContain('STRIPE_PRICE_MONTHLY=');
@@ -134,9 +156,12 @@ describe('stripe-setup', () => {
   it('creates the product, the yearly price, the webhook and the portal on a fresh account', async () => {
     const stripe = fakeStripe();
     const r = await run(stripe);
-    expect(r.steps.map((s) => s.action)).toEqual(['created', 'created', 'created', 'created']);
+    expect(r.steps.map((s) => s.action)).toEqual(['created', 'created', 'created', 'created', 'created']);
 
-    const [product, year, hook, portal] = stripe.posts();
+    const [product, year, coupon, hook, portal] = stripe.posts();
+    // $9 for the first year, then the full price: a one-off percentage, so local currencies get the same deal.
+    expect(coupon!.body).toMatchObject({ id: 'tinytown_first_year_9', percent_off: '68.97', duration: 'once', 'metadata[tinytown]': '1' });
+    expect(coupon!.body).not.toHaveProperty('amount_off');
     expect(product!.body).toMatchObject({ id: 'tinytown', name: 'TinyTown' });
     expect(year!.body).toMatchObject({ product: 'tinytown', unit_amount: '2900', currency: 'usd', 'recurring[interval]': 'year', lookup_key: 'tinytown_yearly', 'metadata[tinytown]': '1' });
     expect(year!.body).not.toHaveProperty('transfer_lookup_key');
@@ -169,6 +194,7 @@ describe('stripe-setup', () => {
     expect(Object.keys(portal!.body).some((k) => k.startsWith('features[subscription_update][products]'))).toBe(false);
     expect(r.env).toEqual({
       STRIPE_PRICE_YEARLY: expect.stringMatching(/^price_/),
+      STRIPE_OFFER_COUPON: 'tinytown_first_year_9',
       STRIPE_WEBHOOK_SECRET: 'whsec_shown_once',
       STRIPE_PORTAL_CONFIGURATION: expect.stringMatching(/^bpc_/),
     });
@@ -183,7 +209,8 @@ describe('stripe-setup', () => {
     const newPosts = stripe.posts().slice(before);
     // Only the portal configuration is re-saved (to the same settings); nothing new is made.
     expect(newPosts.map((c) => c.path)).toEqual([`/v1/billing_portal/configurations/${first.env.STRIPE_PORTAL_CONFIGURATION}`]);
-    expect(second.steps.map((s) => s.action)).toEqual(['reused', 'reused', 'reused', 'updated']);
+    expect(second.steps.map((s) => s.action)).toEqual(['reused', 'reused', 'reused', 'reused', 'updated']);
+    expect(second.env.STRIPE_OFFER_COUPON).toBe('tinytown_first_year_9');
     expect(second.env.STRIPE_PRICE_YEARLY).toBe(first.env.STRIPE_PRICE_YEARLY);
     expect(second.env.STRIPE_WEBHOOK_SECRET).toBeNull();
     expect(report(second)).toContain('STRIPE_WEBHOOK_SECRET=<unchanged: keep the one you saved>');
@@ -207,7 +234,7 @@ describe('stripe-setup', () => {
     const dry = fakeStripe({ prices: old.map((p) => ({ ...p })) });
     const preview = await run(dry, { dryRun: true });
     expect(dry.posts()).toEqual([]);
-    expect(preview.steps.map((s) => `${s.thing}: ${s.action}`)).toEqual(['Product: reused', 'Price, yearly: would create', 'Price, monthly: left alone', 'Webhook: would create', 'Customer portal: would create']);
+    expect(preview.steps.map((s) => `${s.thing}: ${s.action}`)).toEqual(['Product: reused', 'Price, yearly: would create', 'Price, monthly: left alone', 'Offer coupon: would create', 'Webhook: would create', 'Customer portal: would create']);
     expect(preview.steps[1]!.id).toBe('tinytown_yearly: $29 a year, taking tinytown_yearly from price_y ($99 a year, kept for anyone already on it)');
 
     const stripe = fakeStripe({ prices: old.map((p) => ({ ...p })) });
@@ -235,6 +262,24 @@ describe('stripe-setup', () => {
     const r = await run(stripe);
     expect(r.steps[0]).toEqual({ thing: 'Product', action: 'reused', id: 'prod_hand' });
     expect(stripe.posts().filter((c) => c.path === '/v1/prices').every((c) => c.body.product === 'prod_hand')).toBe(true);
+  });
+
+  it('the offer takes $29 to exactly $9.00, and a coupon of ours with other terms is replaced', async () => {
+    expect(offerPercent(2900, 900)).toBe(68.97);
+    expect(2900 - Math.round((2900 * 68.97) / 100)).toBe(900);
+    expect(OFFER).toMatchObject({ id: 'tinytown_first_year_9', firstYear: 900, duration: 'once', env: 'STRIPE_OFFER_COUPON' });
+    const stripe = fakeStripe({ coupons: [{ id: 'tinytown_first_year_9', percent_off: 50, amount_off: null, duration: 'once', valid: true, metadata: { tinytown: '1' } }] });
+    const r = await run(stripe);
+    expect(r.steps.find((s) => s.thing === 'Offer coupon')!.action).toBe('replaced');
+    expect(stripe.calls.some((c) => c.method === 'DELETE' && c.path === '/v1/coupons/tinytown_first_year_9')).toBe(true);
+    expect(stripe.store.coupons).toEqual([expect.objectContaining({ percent_off: 68.97 })]);
+
+    // One made by hand is never touched; without the variable there's simply no offer.
+    const hand = fakeStripe({ coupons: [{ id: 'tinytown_first_year_9', percent_off: 50, amount_off: null, duration: 'forever', valid: true, metadata: {} }] });
+    const h = await run(hand);
+    expect(h.steps.find((s) => s.thing === 'Offer coupon')!.action).toBe('left alone');
+    expect(h.env).not.toHaveProperty('STRIPE_OFFER_COUPON');
+    expect(hand.calls.some((c) => c.path.startsWith('/v1/coupons') && c.method !== 'GET')).toBe(false);
   });
 
   it('will not run a live key without --live', async () => {

@@ -16,14 +16,30 @@ import { clip, keepAlive, redact, releaseOf } from './log.ts';
  *
  * Where each event is sent from:
  * - `signed_up`: the first `/api/me` for a new account (the profile is created).
- * - `checkout_started`: `POST /api/billing/checkout` made a Checkout session.
+ * - `paywall_shown`: the browser showed the paywall to a signed-in founder (`POST /api/billing/paywall/seen`).
+ * - `offer_shown`: the introductory offer was shown for the first time (`POST /api/billing/offer/seen`).
+ * - `checkout_started`: `POST /api/billing/checkout` made a Checkout session (`offer` says which price).
+ * - `offer_accepted`: that Checkout carries the introductory offer.
  * - `plan_started`: the webhook saw a subscription become paid for a user who wasn't.
+ * - `checkout_completed`: the same moment, with `plan` and whether it was bought with the `offer`.
  * - `plan_canceled`: the webhook saw a paid plan set to cancel, or end.
  * - `connected_stripe`, `connected_github`: the provider's callback saved the connection.
  * - `first_build`: the founder's first saved action in their city.
  * - `account_deleted`: `DELETE /api/account`, before the rows go.
  */
-export type FunnelEvent = 'signed_up' | 'checkout_started' | 'plan_started' | 'plan_canceled' | 'connected_stripe' | 'connected_github' | 'first_build' | 'account_deleted';
+export type FunnelEvent =
+  | 'signed_up'
+  | 'paywall_shown'
+  | 'offer_shown'
+  | 'checkout_started'
+  | 'offer_accepted'
+  | 'plan_started'
+  | 'checkout_completed'
+  | 'plan_canceled'
+  | 'connected_stripe'
+  | 'connected_github'
+  | 'first_build'
+  | 'account_deleted';
 
 const DEFAULT_HOST = 'https://us.i.posthog.com';
 const TIMEOUT_MS = 1_500;

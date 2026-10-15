@@ -15,7 +15,9 @@ import {
   type EmailPrefs,
   type ErrorCode,
   type MeResponse,
+  type OfferSeenResponse,
   type PlanInterval,
+  type PreviewResponse,
   type Provider,
   type RedirectResponse,
   type ReposResponse,
@@ -183,8 +185,24 @@ export class Api {
     return this.call<Timeline>('GET', ROUTES.timeline);
   }
 
-  checkout(interval: PlanInterval) {
-    return this.call<RedirectResponse>('POST', ROUTES.checkout, { interval });
+  /** The headline numbers of the founder's connected data (no plan needed). */
+  preview() {
+    return this.call<PreviewResponse>('GET', ROUTES.preview);
+  }
+
+  /** Checkout; `offer` asks for the introductory first-year price, which the server checks. */
+  checkout(interval: PlanInterval, opts: { offer?: boolean } = {}) {
+    return this.call<RedirectResponse>('POST', ROUTES.checkout, { interval, ...(opts.offer ? { offer: true } : {}) });
+  }
+
+  /** The offer was just shown: starts its window the first time, and answers its state. */
+  async offerSeen() {
+    return (await this.call<OfferSeenResponse>('POST', ROUTES.offerSeen, {})).offer;
+  }
+
+  /** The paywall was shown (our own funnel; never fails the caller). */
+  paywallSeen(teaser: boolean) {
+    return this.call<{ ok: true }>('POST', ROUTES.paywallSeen, { teaser }).catch(() => null);
   }
 
   portal() {

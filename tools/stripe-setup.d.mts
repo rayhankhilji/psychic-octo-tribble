@@ -19,6 +19,8 @@ export interface SetupResult {
 
 export const PRODUCT: { id: string; name: string; description: string };
 export const PRICES: { interval: 'month' | 'year'; lookupKey: string; amount: number; currency: string; nickname: string; env: string }[];
+export const OFFER: { id: string; name: string; firstYear: number; duration: string; env: string };
+export function offerPercent(amount: number, target: number): number;
 export const RETIRED_PRICES: { interval: 'month' | 'year'; lookupKey: string; env: string }[];
 export const WEBHOOK_EVENTS: string[];
 export const API_VERSION: string;

@@ -5,7 +5,12 @@
  * production build never contains it.
  *
  *   /?mockapi=signedout          hosted, not signed in (the demo with "Make it yours")
- *   /?mockapi=unpaid             signed in, no plan (paywall)
+ *   /?mockapi=unpaid             signed in, never paid, nothing connected (setup opens: it's free)
+ *   /?mockapi=setup-stripe       never paid, Stripe connected mid-setup (step 2; add `&connected=stripe`)
+ *   /?mockapi=setup-github       never paid, Stripe and GitHub installed, no repository picked
+ *   /?mockapi=ready              never paid, set up: the paywall leads with their numbers; closing it shows the offer
+ *   /?mockapi=offer              the same, with the first-year offer open (shown 3 hours ago)
+ *   /?mockapi=offer-expired      the same, 48 hours on: the offer has ended and the paywall is the standard price
  *   /?mockapi=canceled           signed in, plan ended
  *   /?mockapi=paid-unconnected   paid, nothing connected (onboarding step 1)
  *   /?mockapi=paid-stripe        paid, Stripe connected (no world yet without ?connected; step 2)
@@ -24,7 +29,9 @@
  *
  * Extras: `&mockerr=checkout|portal|signin|repos|users|connect|timeline|link` makes that call fail;
  * `&mockerr=posthog-key|posthog-project|repo|preview` fail the PostHog check, the repository pick, or
- * the numbers behind the setup cards; `&mockempty` gives a Stripe account with no subscriptions yet.
+ * the numbers behind the setup cards; `&mockempty` gives a Stripe account with no subscriptions yet;
+ * `&mocknodata` connects Stripe with no history yet (the paywall says the numbers are on their way);
+ * `&mocknooffer` is a server with no offer configured.
  * `&mockreject` makes the server refuse the next build (409), to see the rollback.
  * `&mockcaptcha` turns on Turnstile with Cloudflare's always-pass test key.
  */
@@ -33,12 +40,18 @@ import { demoActions } from '../game/demo-script.ts';
 import type { Action } from '../game/economy.ts';
 import type { AuthProvider, AuthSession, OAuthProvider } from './auth.ts';
 import { AuthError } from './auth.ts';
-import { ROUTES, type ConfigResponse, type Connections, type MeResponse, type PlanStatus, type UsersRequest } from './contract.ts';
+import { OFFER_WINDOW_MS, ROUTES, type ConfigResponse, type Connections, type MeResponse, type Offer, type PlanStatus, type UsersRequest } from './contract.ts';
+import { previewOf } from './preview.ts';
 
 export type MockState =
   | 'waitlist'
   | 'signedout'
   | 'unpaid'
+  | 'setup-stripe'
+  | 'setup-github'
+  | 'ready'
+  | 'offer'
+  | 'offer-expired'
   | 'canceled'
   | 'paid-unconnected'
   | 'paid-stripe'
@@ -86,7 +99,9 @@ const REPOS = [
 export function installMockApi(state: MockState): AuthProvider | null {
   const now = Date.now();
   const fail = params.get('mockerr');
-  const paid = !['signedout', 'unpaid', 'canceled', 'local', 'waitlist'].includes(state);
+  /** Signed in and never paid: setup is free, the paywall comes when it's done. */
+  const unpaid = ['unpaid', 'setup-stripe', 'setup-github', 'ready', 'offer', 'offer-expired'].includes(state);
+  const paid = !unpaid && !['signedout', 'canceled', 'local', 'waitlist'].includes(state);
   const status: PlanStatus = state === 'pastdue' ? 'past_due' : state === 'canceled' ? 'canceled' : paid ? 'active' : 'none';
   const timeline = { ...demoTimeline(), source: 'live' as const, integrations: { stripe: true, github: true } };
   let actions: Action[] = demoActions(timeline.snapshots);
@@ -94,13 +109,17 @@ export function installMockApi(state: MockState): AuthProvider | null {
 
   // Back from an install a moment ago (`&connected=…`): the setup dialog celebrates it.
   const justNow = (p: string) => (params.get('connected') === p ? now - 4_000 : now - 40 * DAY);
-  const hasStripe = ['paid-stripe', 'paid-github', 'connected', 'pastdue', 'stripe-broken', 'stripe-test', 'github-gone', 'manual', 'composio', 'ga4'].includes(state);
-  const hasGithub = ['paid-github', 'connected', 'pastdue', 'github-gone', 'manual', 'composio', 'ga4'].includes(state);
+  const hasStripe = ['paid-stripe', 'paid-github', 'connected', 'pastdue', 'stripe-broken', 'stripe-test', 'github-gone', 'manual', 'composio', 'ga4', 'setup-stripe', 'setup-github', 'ready', 'offer', 'offer-expired'].includes(state);
+  const hasGithub = ['paid-github', 'connected', 'pastdue', 'github-gone', 'manual', 'composio', 'ga4', 'setup-github', 'ready', 'offer', 'offer-expired'].includes(state);
+  // The first-year offer, as the server keeps it: shown once, open 48 hours from then.
+  let offer: Offer | null = unpaid && !params.has('mocknooffer') ? { status: 'unseen', available: true, expiresAt: null, amount: 900, regular: 2900, currency: 'usd' } : null;
+  if (offer && state === 'offer') offer = { ...offer, status: 'open', expiresAt: now - 3 * 3_600_000 + OFFER_WINDOW_MS };
+  if (offer && state === 'offer-expired') offer = { ...offer, status: 'expired', available: false, expiresAt: now - 3 * 3_600_000 };
   // Google Analytics: linked once back from Google (`&connected=ga4`).
   const ga4Linked = params.get('connected') === 'ga4';
   const connections: Connections = {
     stripe: hasStripe ? { account: 'acct_1PxNightjar', name: state === 'composio' ? 'Nightjar' : null, livemode: state !== 'stripe-test', connectedAt: justNow('stripe') } : null,
-    github: hasGithub ? { installationId: 51_204_877, repo: state === 'paid-github' || state === 'github-gone' ? null : 'nightjar-hq/nightjar', connectedAt: justNow('github') } : null,
+    github: hasGithub ? { installationId: 51_204_877, repo: state === 'paid-github' || state === 'setup-github' || state === 'github-gone' ? null : 'nightjar-hq/nightjar', connectedAt: justNow('github') } : null,
     users:
       state === 'connected' || state === 'pastdue' || state === 'composio'
         ? { source: 'posthog', host: 'https://eu.posthog.com', projectId: '48213', connectedAt: now - 38 * DAY }
@@ -117,7 +136,9 @@ export function installMockApi(state: MockState): AuthProvider | null {
       cancelAtPeriodEnd: false,
     },
     connections,
-    world: { seed: Number(params.get('seed')) || 0, name: 'Nightjar', joinedAt: timeline.snapshots.at(-1)!.t - 40 * DAY, lastSeen: timeline.snapshots.at(-6)!.t },
+    world: { seed: Number(params.get('seed')) || 0, name: 'Nightjar', joinedAt: unpaid ? null : timeline.snapshots.at(-1)!.t - 40 * DAY, lastSeen: unpaid ? null : timeline.snapshots.at(-6)!.t },
+    setup: { complete: !!connections.stripe },
+    offer: paid ? null : offer,
   });
   const config: ConfigResponse = {
     hosted: state !== 'local',
@@ -166,16 +187,33 @@ export function installMockApi(state: MockState): AuthProvider | null {
         return json(emailPrefs);
       case `POST ${ROUTES.checkout}`:
         if (fail === 'checkout') return err(502, "Stripe didn't answer. Nothing was charged; try again in a moment.", 'upstream');
-        return json({ url: hrefFor('paid-unconnected', { checkout: 'success' }) });
+        if (body.offer === true && offer?.status !== 'open') return err(409, 'That offer ended 48 hours after it was first shown. The standard price is still on sale.', 'rejected');
+        // Set up first (the usual order): paying opens the city. Paid before connecting: setup next.
+        return json({ url: connections.stripe ? hrefFor('connected', { checkout: 'success' }) : hrefFor('paid-unconnected', { checkout: 'success' }) });
+      case `POST ${ROUTES.offerSeen}`:
+        if (offer?.status === 'unseen') offer = { ...offer, status: 'open', expiresAt: Date.now() + OFFER_WINDOW_MS };
+        return json({ offer });
+      case `POST ${ROUTES.paywallSeen}`:
+        return json({ ok: true });
+      case `GET ${ROUTES.preview}`: {
+        if (fail === 'preview') return err(502, 'Stripe took too long to respond. Try again in a moment.', 'upstream');
+        if (state === 'stripe-broken') return err(409, 'Your Stripe connection has expired. Connect Stripe again.', 'not_connected');
+        if (!connections.stripe && !connections.github?.repo) return err(409, 'Connect Stripe or choose a GitHub repository to build your city.', 'not_connected');
+        if (params.has('mocknodata')) return json({ ...previewOf({ ...timeline, snapshots: [] }), name: 'Nightjar' });
+        const snaps = params.has('mockempty') ? timeline.snapshots.map((x) => ({ ...x, mrr: 0, customers: 0 })) : timeline.snapshots;
+        const users = connections.users.source === 'manual' ? connections.users.value : connections.users.source === 'customers' ? undefined : null;
+        const live = snaps.map((x) => ({ ...x, users: users === undefined ? undefined : (users ?? x.users) }));
+        return json({ ...previewOf({ ...timeline, snapshots: live, integrations: { stripe: !!connections.stripe, github: !!connections.github?.repo } }), name: 'Nightjar' });
+      }
       case `POST ${ROUTES.portal}`:
         if (fail === 'portal') return err(502, "Couldn't open billing. Try again in a moment.", 'upstream');
         return json({ url: hrefFor(state, { mockportal: '1' }) });
       case `POST ${ROUTES.connectStripe}`:
         if (fail === 'connect') return err(502, "Stripe didn't answer. Try again in a moment.", 'upstream');
-        return json({ url: hrefFor('paid-stripe', { connected: 'stripe' }) });
+        return json({ url: hrefFor(paid ? 'paid-stripe' : 'setup-stripe', { connected: 'stripe' }) });
       case `POST ${ROUTES.connectGithub}`:
         if (fail === 'connect') return err(502, "GitHub didn't answer. Try again in a moment.", 'upstream');
-        return json({ url: hrefFor('paid-github', { connected: 'github' }) });
+        return json({ url: hrefFor(paid ? 'paid-github' : 'setup-github', { connected: 'github' }) });
       case `GET ${ROUTES.githubRepos}`:
         if (fail === 'repos') return err(502, "GitHub didn't answer. Try again in a moment.", 'upstream');
         if (state === 'github-gone') return err(409, 'The TinyTown GitHub App was uninstalled. Connect GitHub again.', 'not_connected');

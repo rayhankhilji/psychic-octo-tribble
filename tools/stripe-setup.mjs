@@ -11,6 +11,12 @@
  *   $99 one) hands it over to the new price and is otherwise left alone, as
  *   is any old $12 monthly price (`tinytown_monthly`): neither is sold any
  *   more, but anyone already on one keeps it;
+ * - the introductory offer's coupon (`tinytown_first_year_9`): the first year
+ *   for $9, then $29 a year. It's a percentage off (68.97%, which takes $29
+ *   to $9.00) rather than $20 off, because Checkout shows prices in local
+ *   currencies (Adaptive Pricing) and a percentage comes off whatever the
+ *   local price is, so the first year is the local equivalent of $9
+ *   everywhere. `duration: once`, so renewals are the full price;
  * - the webhook endpoint <app-url>/api/billing/webhook, subscribed to exactly
  *   the events the server handles;
  * - a customer portal configuration: cancel at period end, update the card,
@@ -33,6 +39,21 @@ export const PRODUCT = { id: 'tinytown', name: 'TinyTown', description: 'Your st
 
 /** What's on sale: one yearly price. Checkout shows it in local currencies itself (Adaptive Pricing, server/billing.ts). */
 export const PRICES = [{ interval: 'year', lookupKey: 'tinytown_yearly', amount: 2900, currency: 'usd', nickname: 'TinyTown yearly', env: 'STRIPE_PRICE_YEARLY' }];
+
+/**
+ * The introductory offer: $9 for the first year, then the yearly price. The
+ * percentage is worked out from the price, to two decimals (Stripe's limit),
+ * so the first invoice comes to exactly the target in USD.
+ */
+export const OFFER = { id: 'tinytown_first_year_9', name: 'First year $9', firstYear: 900, duration: 'once', env: 'STRIPE_OFFER_COUPON' };
+
+/** The percentage that takes `amount` to `target` (68.97 for $29 → $9), checked to land on the cent. */
+export function offerPercent(amount, target) {
+  const pct = Math.round(((amount - target) / amount) * 10_000) / 100;
+  const charged = amount - Math.round((amount * pct) / 100);
+  if (charged !== target) throw new Error(`No two-decimal percentage takes ${amount} to exactly ${target} (closest is ${charged}).`);
+  return pct;
+}
 
 /** Prices TinyTown used to sell. Found and reported, never changed: anyone on one keeps it until they cancel. */
 export const RETIRED_PRICES = [{ interval: 'month', lookupKey: 'tinytown_monthly', env: 'STRIPE_PRICE_MONTHLY' }];
@@ -299,6 +320,34 @@ export async function setupStripe({ key, appUrl: rawAppUrl, dryRun = false, live
     if (p) step(`Price, ${old.interval}ly`, 'left alone', `${p.id} (${usd(p.unit_amount ?? 0, p.currency)} a ${old.interval}, no longer sold)`);
   }
   notes.push(`TinyTown is sold by the year only: remove ${RETIRED_PRICES.map((p) => p.env).join(', ')} from the server if it's set, or that plan goes on sale too.`);
+
+  // The introductory offer's coupon. Coupons can't be edited, so one of ours with other terms is replaced
+  // (deleting a coupon never touches anyone who already has it); one made by hand is left alone.
+  const yearly = PRICES.find((p) => p.interval === 'year');
+  const pct = offerPercent(yearly.amount, OFFER.firstYear);
+  const existingCoupon = await api('GET', `/v1/coupons/${OFFER.id}`).catch((err) => {
+    if (err.status === 404) return null;
+    throw err;
+  });
+  const couponRight = (c) => c && c.valid !== false && c.duration === OFFER.duration && c.percent_off === pct && c.amount_off == null;
+  const couponParams = { id: OFFER.id, name: OFFER.name, percent_off: pct, duration: OFFER.duration, metadata: { tinytown: '1', first_year: String(OFFER.firstYear) } };
+  const offerTerms = `${pct}% off the first year only: ${usd(yearly.amount, yearly.currency)} → ${usd(OFFER.firstYear, yearly.currency)}, then ${usd(yearly.amount, yearly.currency)} a year`;
+  if (couponRight(existingCoupon)) {
+    step('Offer coupon', 'reused', OFFER.id);
+    env[OFFER.env] = OFFER.id;
+  } else if (existingCoupon && existingCoupon.metadata?.tinytown !== '1') {
+    step('Offer coupon', 'left alone', `${OFFER.id} (made by hand, with other terms)`);
+    notes.push(`A coupon called ${OFFER.id} exists with other terms and wasn't made by this script. Delete it in the Dashboard (Product catalogue → Coupons) and run this again, or leave ${OFFER.env} unset: without it there's simply no offer.`);
+  } else if (dryRun) {
+    step('Offer coupon', existingCoupon ? 'would replace' : 'would create', `${OFFER.id}: ${offerTerms}`);
+    env[OFFER.env] = OFFER.id;
+  } else {
+    if (existingCoupon) await api('DELETE', `/v1/coupons/${OFFER.id}`);
+    const created = await api('POST', '/v1/coupons', couponParams);
+    step('Offer coupon', existingCoupon ? 'replaced' : 'created', `${created.id}: ${offerTerms}`);
+    env[OFFER.env] = created.id;
+  }
+  notes.push(`With ${OFFER.env} set, a founder who closes the paywall is offered ${usd(OFFER.firstYear, yearly.currency)} for their first year, once, for 48 hours. In local currencies (Adaptive Pricing) the same ${pct}% comes off the local price. Leave it unset for no offer.`);
 
   // The webhook endpoint.
   const webhookUrl = `${appUrl}${WEBHOOK_PATH}`;

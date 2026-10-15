@@ -6,6 +6,7 @@ import type { Hosted } from './context.ts';
 import { checkAction, parseAction } from './game.ts';
 import { HttpError, badRequest } from './http.ts';
 import { userTimeline } from './hosted-timeline.ts';
+import { offerFor } from './offer.ts';
 import { userState } from './state.ts';
 import { connectionsOf, planOf, worldInfo, type ProfileRow, type WorldRow } from './store.ts';
 import type { AuthUser } from './supabase.ts';
@@ -17,7 +18,10 @@ export async function me(ctx: Hosted, user: AuthUser): Promise<MeResponse> {
   const plan = planOf(sub);
   // Agree with requirePaid: a plan cancelled at period end shows as ended once that period is over, even if its last webhook was lost.
   if (sub && isPaid(plan.status) && !hasAccess(sub, ctx.now)) plan.status = 'canceled';
-  return { user: { id: user.id, email: user.email }, plan, connections: connectionsOf(profile, connections), world: worldInfo(profile) };
+  const conn = connectionsOf(profile, connections);
+  // The offer is only ever offered to founders without a plan; for everyone else, no Stripe call.
+  const offer = isPaid(plan.status) ? null : await offerFor(ctx, profile, sub);
+  return { user: { id: user.id, email: user.email }, plan, connections: conn, world: worldInfo(profile), setup: { complete: !!conn.stripe }, offer };
 }
 
 // Control characters and the bidi overrides people use to spoof text.

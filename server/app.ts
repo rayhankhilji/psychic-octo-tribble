@@ -8,10 +8,13 @@ import { settings, type Env } from './env.ts';
 import { EXTENSIONS } from './extensions.ts';
 import * as github from './github-app.ts';
 import { userTimeline, resetTimelineCaches } from './hosted-timeline.ts';
+import { previewOf } from '../src/api/preview.ts';
+import { track } from './analytics.ts';
 import { HttpError, errorResponse, json, notConfigured, readJson } from './http.ts';
 import { finishRequest, log, reportError } from './log.ts';
 import { backHome } from './oauth.ts';
-import { requirePaid, resetStateCaches, userState, type Part } from './state.ts';
+import { offerSeen, resetOfferCaches } from './offer.ts';
+import { requirePaid, requireSignedIn, resetStateCaches, userState, type Part } from './state.ts';
 import { worldInfo, type ConnectionRow } from './store.ts';
 import * as stripeApp from './stripe-app.ts';
 import { buildTimeline, readConfig } from './timeline.ts';
@@ -97,7 +100,8 @@ async function route(ctx: Ctx): Promise<Response> {
   const user = await requireUser(h);
   await checkAccess(h, user);
   if (connectDelete && method === 'DELETE') {
-    await requirePaid(h, user, { rate: { key: `connect:${user.id}`, max: 20 } });
+    // Setup is free, so changing your mind about a connection is too.
+    await requireSignedIn(h, user, { rate: { key: `connect:${user.id}`, max: 20 } });
     return json(await disconnect(h, user.id, connectDelete[1] as Provider));
   }
   const fn = handler![method];
@@ -108,11 +112,15 @@ async function route(ctx: Ctx): Promise<Response> {
 type Handler = (ctx: Hosted, user: { id: string; email: string | null }) => Promise<Response>;
 
 /**
- * Every signed-in route. `paid` ones answer 402 without an active plan.
- * `parts` are the rows the handler will need, read in the same round trip
- * as the plan (server/state.ts).
+ * Every signed-in route. `paid` ones answer 402 without an active plan;
+ * `free` ones are for any signed-in founder: connecting data and the
+ * preview, because setup comes before paying. Both keep their rate limits,
+ * so an unpaid account can't hammer a founder's Stripe or GitHub. `parts`
+ * are the rows the handler will need, read in the same round trip as the
+ * plan (server/state.ts).
  */
-const paid =
+const gate =
+  (mustPay: boolean) =>
   (limit: number | null, fn: Handler, parts: Part[] = []): Handler =>
   async (ctx, user) => {
     const key = `${ctx.req.method} ${ctx.url.pathname}:${user.id}`;
@@ -120,9 +128,12 @@ const paid =
     // as the plan); reads only in this instance's memory, which stops a loop
     // without a database call per page load.
     if (limit !== null && ctx.req.method === 'GET') await rateLimit(key, limit, ctx.now);
-    await requirePaid(ctx, user, { parts, ...(limit !== null && ctx.req.method !== 'GET' ? { rate: { key, max: limit } } : {}) });
+    const opts = { parts, ...(limit !== null && ctx.req.method !== 'GET' ? { rate: { key, max: limit } } : {}) };
+    await (mustPay ? requirePaid(ctx, user, opts) : requireSignedIn(ctx, user, opts));
     return fn(ctx, user);
   };
+const paid = gate(true);
+const free = gate(false);
 
 const ROUTE_TABLE: Record<string, Record<string, Handler>> = {
   [ROUTES.me]: { GET: async (ctx, user) => json(await me(ctx, user)) },
@@ -131,6 +142,14 @@ const ROUTE_TABLE: Record<string, Record<string, Handler>> = {
       await rateLimit(`checkout:${user.id}`, 10, ctx.now, { ctx });
       return json(await checkout(ctx, user, await readJson(ctx.req)));
     },
+  },
+  [ROUTES.offerSeen]: { POST: async (ctx, user) => json(await offerSeen(ctx, user)) },
+  [ROUTES.paywallSeen]: {
+    POST: free(20, async (ctx, user) => {
+      const body = await readJson(ctx.req);
+      await track(ctx, user.id, 'paywall_shown', { teaser: body.teaser === true });
+      return json({ ok: true });
+    }),
   },
   [ROUTES.portal]: {
     POST: async (ctx, user) => {
@@ -157,28 +176,39 @@ const ROUTE_TABLE: Record<string, Record<string, Handler>> = {
       ['timeline', 'connections'],
     ),
   },
+  // The founder's headline numbers, for setup and the paywall: built and cached exactly like the timeline, never sent whole.
+  [ROUTES.preview]: {
+    GET: free(
+      20,
+      async (ctx, user) => {
+        const state = await userState(ctx, user);
+        return json(previewOf(await userTimeline(ctx, state.profile, state)));
+      },
+      ['timeline', 'connections'],
+    ),
+  },
   [ROUTES.connectStripe]: {
-    POST: paid(10, async (ctx, user) => {
+    POST: free(10, async (ctx, user) => {
       const { body, setCookie } = stripeApp.installLink(ctx, user);
       return json(body, 200, { 'Set-Cookie': setCookie });
     }),
   },
   [ROUTES.connectGithub]: {
-    POST: paid(10, async (ctx, user) => {
+    POST: free(10, async (ctx, user) => {
       const { body, setCookie } = github.installLink(ctx, user);
       return json(body, 200, { 'Set-Cookie': setCookie });
     }),
   },
   [ROUTES.connectGa4]: {
-    POST: paid(10, async (ctx, user) => {
+    POST: free(10, async (ctx, user) => {
       const { body, setCookie } = ga4Link(ctx, user);
       return json(body, 200, { 'Set-Cookie': setCookie });
     }),
   },
-  [ROUTES.ga4Properties]: { GET: paid(20, async (ctx, user) => json(await ga4PropertyList(ctx, user))) },
-  [ROUTES.githubRepos]: { GET: paid(20, async (ctx, user) => json(await github.repos(ctx, user))) },
-  [ROUTES.githubRepo]: { PUT: paid(10, async (ctx, user) => json(await github.setRepo(ctx, user, await readJson(ctx.req)))) },
-  [ROUTES.users]: { PUT: paid(10, async (ctx, user) => json(await setUsersSource(ctx, user, await readJson(ctx.req)))) },
+  [ROUTES.ga4Properties]: { GET: free(20, async (ctx, user) => json(await ga4PropertyList(ctx, user))) },
+  [ROUTES.githubRepos]: { GET: free(20, async (ctx, user) => json(await github.repos(ctx, user))) },
+  [ROUTES.githubRepo]: { PUT: free(10, async (ctx, user) => json(await github.setRepo(ctx, user, await readJson(ctx.req)))) },
+  [ROUTES.users]: { PUT: free(10, async (ctx, user) => json(await setUsersSource(ctx, user, await readJson(ctx.req)))) },
 };
 
 /** `DELETE /api/connect/:provider`. The provider-side app stays installed; the founder can remove it there. */
@@ -253,6 +283,7 @@ export function resetCaches() {
   resetStateCaches();
   resetAccessCaches();
   resetBillingCaches();
+  resetOfferCaches();
   resetTimelineCaches();
   github.resetGithubCaches();
 }

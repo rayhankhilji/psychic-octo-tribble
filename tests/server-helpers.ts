@@ -10,7 +10,7 @@ import { handle, resetCaches } from '../server/app.ts';
 type Row = Record<string, unknown>;
 
 const DEFAULTS: Record<string, () => Row> = {
-  profiles: () => ({ seed: 12345, name: 'Your Startup', joined_at: null, last_seen: null, users_source: 'customers', users_manual: [], created_at: new Date().toISOString() }),
+  profiles: () => ({ seed: 12345, name: 'Your Startup', joined_at: null, last_seen: null, users_source: 'customers', users_manual: [], created_at: new Date().toISOString(), offer_shown_at: null, offer_used_at: null }),
   subscriptions: () => ({ stripe_customer_id: null, stripe_subscription_id: null, status: 'none', price_id: null, plan_interval: null, current_period_end: null, cancel_at_period_end: false, livemode: null }),
   connections: () => ({ display_name: null, livemode: null, secret: null, access_token: null, access_expires_at: null, token_version: 0, metadata: {}, connected_at: new Date().toISOString() }),
   worlds: () => ({ actions: [], version: 0 }),
