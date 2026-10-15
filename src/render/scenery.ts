@@ -3,9 +3,9 @@ import { GeoBuilder, smoothMaterial, solidMaterial, type ColorLike } from './geo
 import { PALETTE } from './palette.ts';
 import { palm, tree, type TreeKind } from './buildings.ts';
 import { airliner } from './models.ts';
-import { FogBanks, smoothGround, type FogSpec } from './fog.ts';
+import { FogBanks, Unknowns, smoothGround, type FogSpec, type UnknownSpot } from './fog.ts';
 import { Kit, cypress, put, rod, shade, tower, wall, winOf } from './towers.ts';
-import { gum, hillsHouse, hillsLots, hillsStreets, oak, pine, rock, scrub, strip, type HillsStyle, type LampSpot } from './hills.ts';
+import { disc, gum, hillsHouse, hillsLots, hillsStreets, oak, pine, rock, scrub, strip, type HillsStyle, type LampSpot } from './hills.ts';
 import { Batch } from './batch.ts';
 import {
   bayBridge,
@@ -54,6 +54,7 @@ import {
   RUNWAY,
   SEA,
   SUPERYACHT,
+  TWIN_PEAKS,
   TWIN_PEAKS_SUMMITS,
   WORLD_SPEC,
   blockCentre,
@@ -66,6 +67,7 @@ import {
   inSignZone,
   isBeach,
   naturalHeight,
+  polygonDistance,
   shoreZ,
   traceContour,
   terrainHeight,
@@ -129,6 +131,8 @@ export class Scenery {
   /** Each region's fog banks, laid while it's closed and burnt off when it opens. */
   private clouds: Record<'hills' | 'island' | 'launch', { key: string; spec: FogSpec; tip: string; proxy: THREE.Object3D | null }[]> = { hills: [], island: [], launch: [] };
   private launchKey = '';
+  /** Question marks over the land past the edge of the world. */
+  private unknowns: Unknowns | null = null;
   private sign: Sign;
   private bay: BayBridge;
   private mill: Windmill | null = null;
@@ -193,6 +197,7 @@ export class Scenery {
     this.object.add(this.fog.object);
     this.buildHood();
     this.buildClouds();
+    this.buildUnexplored();
     this.object.add(lightPools(this.streetLamps, 1.5, this.poolMat));
     this.islandPools = lightPools(this.islandLamps, 0.7, this.poolMat);
     this.islandPools.visible = this.state.island;
@@ -394,7 +399,7 @@ export class Scenery {
       if (Math.abs(x - gx) < 0.8 && z > 0) continue; // the Golden Gate viaduct
       if (nearPath(PRESIDIO_PKWY, x, z, 0.9)) continue; // and the parkway it comes down onto
       if (HAS.cliffHouse && hidesCliffHouse(x, z)) continue;
-      if (classic ? Math.abs(x + 39.8) < 0.7 : nearPath(GREAT_HIGHWAY, x, z, 0.75)) continue; // highway
+      if (nearPath(GREAT_HIGHWAY, x, z, 0.75)) continue; // highway
       if (!classic && (nearPath(EMBARCADERO, x, z, 0.8) || (HAS.windmill && Math.hypot(x - LANDMARKS.windmill.x, z - LANDMARKS.windmill.z) < 1.6))) continue;
       const y = terrainHeight(x, z);
       eucalyptus(b, r, x, z, y, r() < 0.5);
@@ -458,7 +463,9 @@ export class Scenery {
     const museum = { x: at(17.7, 0.66), z: zc + 1.4 };
     const cons = LANDMARKS.conservatory;
     const meadow = { x: park.x0 + W * 0.54, z: zc + 1.0 };
-    const polo = { x: park.x0 + W * 0.1, z: zc - 0.4, rx: 1.25, rz: 0.82 };
+    // The windmill and its tulip garden stand at the park's west end, by the Great Highway: the polo field keeps clear.
+    const mill = HAS.windmill ? LANDMARKS.windmill : null;
+    const polo = { x: Math.max(park.x0 + W * 0.1, mill ? mill.x + 2.75 : -Infinity), z: zc - 0.4, rx: 1.25, rz: 0.82 };
     const spreckels = { x: park.x0 + W * 0.25, z: zc - 1.0 };
     const bison = { x: park.x0 + W * 0.21, z: zc + 0.25 };
     const lawn = 0x6aae47;
@@ -467,6 +474,9 @@ export class Scenery {
     b.box(W, 0.012, park.z1 - park.z0, (park.x0 + park.x1) / 2, 0, zc, lawn);
     // JFK Drive: in along the north side past the lake, then down to run along the south past the Tea Garden.
     const drive: Pt[] = ([[0, 1.3], [0.3, 1.45], [0.38, 1.5], [0.49, 1.05], [0.53, -0.6], [0.565, -1.75], [0.7, -1.95], [0.86, -1.9], [0.97, -1.6], [1, -1.25]] as const).map(([u, dz]) => [park.x0 + W * u, zc + dz]);
+    // At the west end the drive runs on out to meet the Great Highway, as it does at Ocean Beach, rather than stopping at the lawn's edge.
+    const ghx = highwayX(zc + 1.3);
+    if (ghx !== null && ghx < park.x0 && park.x0 - ghx < 6) drive.unshift([ghx + 0.3, zc + 1.3]);
     ribbon(b, drive, 0.34, PALETTE.road, 0.02);
     // Stow Lake: a ring of water round Strawberry Hill, a path round the shore.
     const ellipse = (rx: number, rz: number, n = 40): Pt[] => Array.from({ length: n + 1 }, (_, k) => [lake.x + Math.cos((k / n) * Math.PI * 2) * rx, lake.z + Math.sin((k / n) * Math.PI * 2) * rz]);
@@ -543,6 +553,7 @@ export class Scenery {
       Math.hypot(x - meadow.x, z - meadow.z) < 1.0 ||
       Math.hypot((x - polo.x) / (polo.rx + 0.3), (z - polo.z) / (polo.rz + 0.3)) < 1 ||
       Math.hypot((x - spreckels.x) / 1.4, (z - spreckels.z) / 0.95) < 1 ||
+      (mill !== null && Math.hypot(x - mill.x, z - mill.z) < 1.55) ||
       (Math.abs(x - bison.x) < 0.85 && Math.abs(z - bison.z) < 0.6) ||
       // Off the drive, and a little further off it on its camera (north-east) side, so it shows between the trees.
       nearPath(drive, x, z, 0.55) ||
@@ -1404,8 +1415,23 @@ export class Scenery {
     } as const;
     for (const town of backdropTowns()) {
       const { walls, roofs } = palettes[town.style];
-      for (const line of town.streets) {
-        strip(chunks.at(line[0]![0], line[0]![1]), line, TOWN_STREET, PALETTE.road, 0.03);
+      for (const graded of town.streets) {
+        // On the ground as it's actually shaped: where a street up the slope crosses a terrace or another street's
+        // cut, the ground can stand a little over its planned line, so it rides on the highest of its middle and edges.
+        const line = graded.map(([x, z, y], i): [number, number, number] => {
+          const [ax, az] = graded[Math.max(0, i - 1)]!;
+          const [bx, bz] = graded[Math.min(graded.length - 1, i + 1)]!;
+          const tl = Math.hypot(bx - ax, bz - az) || 1;
+          const nx = (-(bz - az) / tl) * (TOWN_STREET / 2);
+          const nz = ((bx - ax) / tl) * (TOWN_STREET / 2);
+          return [x, z, Math.max(y, terrainHeight(x, z), terrainHeight(x + nx, z + nz), terrainHeight(x - nx, z - nz))];
+        });
+        strip(chunks.at(line[0]![0], line[0]![1]), line, TOWN_STREET, PALETTE.road, 0.04);
+        // A street that stops at the edge of town ends in a turning circle, like a hillside cul-de-sac, rather than just running out.
+        for (const [ex, ez, ey] of [line[0]!, line.at(-1)!]) {
+          const joined = town.streets.some((other) => other !== graded && other.some(([x, z]) => Math.hypot(x - ex, z - ez) < 0.5));
+          if (!joined) disc(chunks.at(ex, ez), ex, ey + 0.041, ez, TOWN_STREET * 0.72, PALETTE.road);
+        }
         // Street lamps, alternating sides: after dark they draw the streets across the hills in strings of light.
         let side = 1;
         for (let i = 3; i < line.length - 1; i += 5) {
@@ -1855,6 +1881,58 @@ export class Scenery {
     for (const region of ['hills', 'island', 'launch'] as const) this.setFog(region, true, false);
   }
 
+  /**
+   * The land past the edges of the world: the plains behind San Bruno Mountain and the Oakland hills,
+   * the far side of Marin. Nobody has been there yet. It lies under banks of the same fog as the land
+   * that's still closed, but these never clear (it isn't a region the game opens), and a few question
+   * marks float over them. The tooltip says only that: unexplored. No price, no gate.
+   */
+  private buildUnexplored() {
+    const land = unexploredLand();
+    const tip = { title: 'Unexplored', detail: '?' };
+    const ground = (x: number, z: number) => Math.max(0, terrainHeight(x, z));
+    const H = 1.6;
+    const spots: UnknownSpot[] = [];
+    for (const [i, box] of land.banks.entries()) {
+      // Lying close over the land's broad lie and a little above it, so the country under it stays hidden
+      // and only the highest tops (San Bruno Mountain, the crest of the Oakland hills) break through.
+      const lie = smoothGround(ground, box.x0 - 4, box.z0 - 4, box.x1 + 4, box.z1 + 4, 4.5, 1.5);
+      const floor = (x: number, z: number) => lie(x, z) + 0.3;
+      const key = `unexplored:${i}`;
+      const proxy = this.fog.add(key, {
+        x: (box.x0 + box.x1) / 2,
+        z: (box.z0 + box.z1) / 2,
+        w: box.x1 - box.x0,
+        d: box.z1 - box.z0,
+        height: H,
+        spill: 0,
+        ground,
+        floor,
+        billow: 5,
+        heap: 3,
+        haze: false,
+        step: 1.25,
+        keep: land.at,
+        picks: box.picks,
+        seed: hash(this.seed, key),
+      });
+      proxy.userData.tip = tip;
+      this.pickables.push(proxy);
+      // Two to a bank, well apart, over the low country (not perched on a summit far up in the sky).
+      const mine: UnknownSpot[] = [];
+      for (const [x, z] of box.marks) {
+        if (mine.length >= 2) break;
+        if (lie(x, z) > 3.5 || mine.some((o) => Math.hypot(o.x - x, o.z - z) < 26)) continue;
+        mine.push({ x, y: floor(x, z) + H * 1.2 + 3.8, z, size: 5 });
+      }
+      spots.push(...mine);
+    }
+    if (!spots.length) return;
+    this.unknowns = new Unknowns(spots, tip);
+    this.object.add(this.unknowns.object);
+    this.pickables.push(...this.unknowns.picks);
+  }
+
   /** Lays or clears a region's fog (burning it off when `animate`). Its tooltips come and go with it. */
   private setFog(region: 'hills' | 'island' | 'launch', on: boolean, animate: boolean) {
     for (const b of this.clouds[region]) {
@@ -1903,6 +1981,7 @@ export class Scenery {
     this.terrain.update(time, a, sunDir);
     this.fog.update(dt);
     const night = a.night;
+    this.unknowns?.update(night, time);
     const turn = time * 0.12;
     if (this.wheelSet.visible) {
       if (this.wheelFrame) this.wheelFrame.rotation.z = turn;
@@ -2398,6 +2477,180 @@ function nearPath(path: readonly Pt[], x: number, z: number, d: number): boolean
     if (Math.hypot(x - ax - dx * t, z - az - dz * t) < d) return true;
   }
   return false;
+}
+
+/** A patch of unexplored land under one fog bank: its extent, where its tooltip answers, and where its question marks float. */
+interface UnexploredBank {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+  picks: { x: number; z: number; w: number; d: number }[];
+  /** Where question marks could float, nearest the city first. */
+  marks: [number, number][];
+}
+
+/**
+ * Which land is unexplored: everything on land (and a little way out over
+ * the water, so the world's far edges vanish into the fog) more than a few
+ * blocks from anything there is to see: the city and its parks, TinyTown
+ * Hills and the peaks, the sign, the towns round the bay, the airport, the
+ * bridges and the islands. Measured on a coarse grid with a chamfer distance
+ * transform, the edge wandered by noise so it reads as weather, not a ruler.
+ * Split into a bank each for the south (behind San Bruno Mountain), the
+ * east (behind the Oakland hills) and the north-west (Marin's far side).
+ */
+function unexploredLand(): { at: (x: number, z: number) => number; banks: UnexploredBank[] } {
+  const C = 1.5;
+  const X0 = -114;
+  const Z0 = -126;
+  const nx = Math.ceil((126 - X0) / C) + 1;
+  const nz = Math.ceil((100 - Z0) / C) + 1;
+  const far = new Float32Array(nx * nz).fill(1e6);
+  const mark = (x: number, z: number) => {
+    const i = Math.round((x - X0) / C);
+    const j = Math.round((z - Z0) / C);
+    if (i >= 0 && j >= 0 && i < nx && j < nz) far[j * nx + i] = 0;
+  };
+  const disc = (x: number, z: number, r: number) => {
+    for (let dz = -r; dz <= r; dz += C) for (let dx = -r; dx <= r; dx += C) if (dx * dx + dz * dz <= r * r) mark(x + dx, z + dz);
+  };
+  const line = (ax: number, az: number, bx: number, bz: number) => {
+    const n = Math.ceil(Math.hypot(bx - ax, bz - az) / C);
+    for (let k = 0; k <= n; k++) mark(ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n);
+  };
+  // The city, its parks and the Presidio.
+  for (const b of BLOCKS) for (const dz of [-2, 0, 2]) for (const dx of [-2, 0, 2]) mark(b.bx * 5 + dx, b.bz * 5 + dz);
+  // The peaks, the Hills and the sign.
+  disc(TWIN_PEAKS.x, TWIN_PEAKS.z, 9);
+  const hills = hillsPlan();
+  for (const l of hills.lots) mark(l.x, l.z);
+  for (const st of hills.streets) for (const [x, z] of st.pts) mark(x, z);
+  mark(HILLS_HOME.x, HILLS_HOME.z);
+  disc(LANDMARKS.sign.x, LANDMARKS.sign.z, 4);
+  // The towns round the bay, deliberately there.
+  for (const t of backdropTowns()) {
+    for (const l of t.lots) mark(l.x, l.z);
+    for (const st of t.streets) for (const [x, z] of st) mark(x, z);
+  }
+  // The airport, the bridges, the islands and the other landmarks.
+  for (let z = -60; z < -26; z += C) for (let x = 8; x < 34; x += C) if (polygonDistance(AIRPORT_FILL, x, z) < 1) mark(x, z);
+  const gg = LANDMARKS.goldenGate;
+  line(gg.x, gg.z0 - 2, gg.x, gg.z1 + 3);
+  line(LANDMARKS.bayBridge.x0, LANDMARKS.bayBridge.z, LANDMARKS.bayBridge.x1 + 4, LANDMARKS.bayBridge.z);
+  for (const isl of Object.values(ISLANDS)) disc(isl.x, isl.z, isl.r + 1.5);
+  for (const l of Object.values(LANDMARKS)) if ('x' in l && 'z' in l) mark(l.x, l.z);
+  // Two passes of a chamfer transform: near-Euclidean distance to the nearest of all that.
+  const D = C * Math.SQRT2;
+  const relax = (i: number, j: number, di: number, dj: number, cost: number) => {
+    const ii = i + di;
+    const jj = j + dj;
+    if (ii < 0 || jj < 0 || ii >= nx || jj >= nz) return;
+    const k = j * nx + i;
+    const v = far[jj * nx + ii]! + cost;
+    if (v < far[k]!) far[k] = v;
+  };
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      relax(i, j, -1, 0, C);
+      relax(i, j, -1, -1, D);
+      relax(i, j, 0, -1, C);
+      relax(i, j, 1, -1, D);
+    }
+  }
+  for (let j = nz - 1; j >= 0; j--) {
+    for (let i = nx - 1; i >= 0; i--) {
+      relax(i, j, 1, 0, C);
+      relax(i, j, 1, 1, D);
+      relax(i, j, 0, 1, C);
+      relax(i, j, -1, 1, D);
+    }
+  }
+  // The fog's reach: past about two blocks' clearance it thickens over six more, on land and just off it.
+  const grid = new Float32Array(nx * nz);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const x = X0 + i * C;
+      const z = Z0 + j * C;
+      const d = far[j * nx + i]! + 3.5 * fbm(x * 0.05 + 7.1, z * 0.05 - 3.3, 3);
+      const out = THREE.MathUtils.smoothstep(d, 9, 15);
+      grid[j * nx + i] = out > 0 ? out * (1 - THREE.MathUtils.smoothstep(coastDistance(x, z), 1, 5)) : 0;
+    }
+  }
+  const at = (x: number, z: number) => {
+    const fx = Math.min(nx - 1.001, Math.max(0, (x - X0) / C));
+    const fz = Math.min(nz - 1.001, Math.max(0, (z - Z0) / C));
+    const i = Math.floor(fx);
+    const j = Math.floor(fz);
+    const tx = fx - i;
+    const tz = fz - j;
+    const g = (ii: number, jj: number) => grid[jj * nx + ii]!;
+    return (g(i, j) * (1 - tx) + g(i + 1, j) * tx) * (1 - tz) + (g(i, j + 1) * (1 - tx) + g(i + 1, j + 1) * tx) * tz;
+  };
+  // The three banks, by compass: their extents shrink to the fog inside them.
+  const regions = [
+    { x0: -114, x1: 50, z0: -126, z1: -36 },
+    { x0: 50, x1: 126, z0: -126, z1: 100 },
+    { x0: -114, x1: -16, z0: 12, z1: 100 },
+  ];
+  const centre = { x: -11.5, z: -9.2 };
+  const banks: UnexploredBank[] = [];
+  for (const reg of regions) {
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (let z = reg.z0; z <= reg.z1; z += C) {
+      for (let x = reg.x0; x <= reg.x1; x += C) {
+        if (at(x, z) < 0.02) continue;
+        x0 = Math.min(x0, x);
+        x1 = Math.max(x1, x);
+        z0 = Math.min(z0, z);
+        z1 = Math.max(z1, z);
+      }
+    }
+    if (!(x1 - x0 > 6 && z1 - z0 > 6)) continue;
+    // Tooltip boxes over the thick of it, in runs along x on an 8-unit grid.
+    const P = 8;
+    const picks: UnexploredBank['picks'] = [];
+    for (let z = z0 + P / 2; z < z1; z += P) {
+      let run: number | null = null;
+      for (let x = x0 + P / 2; x < x1 + P; x += P) {
+        const thick = x < x1 && at(x, z) > 0.75;
+        if (thick && run === null) run = x;
+        if (!thick && run !== null) {
+          picks.push({ x: (run + x - P) / 2, z, w: x - run - 1, d: P - 1 });
+          run = null;
+        }
+      }
+    }
+    // Where question marks could float: just inside the fog where it shows from the city first.
+    const cands: [number, number, number][] = [];
+    for (let z = z0; z <= z1; z += 3) {
+      for (let x = x0; x <= x1; x += 3) {
+        if (at(x, z) < 0.98 || coastDistance(x, z) > -3) continue;
+        // Deep enough that its fog is thick all round it.
+        if ([[-3.5, 0], [3.5, 0], [0, -3.5], [0, 3.5]].some(([dx, dz]) => at(x + dx!, z + dz!) < 0.9)) continue;
+        cands.push([x, z, Math.hypot(x - centre.x, z - centre.z)]);
+      }
+    }
+    cands.sort((a, b) => a[2] - b[2]);
+    banks.push({ x0: x0 - 2, x1: x1 + 2, z0: z0 - 2, z1: z1 + 2, picks, marks: cands.map(([x, z]) => [x, z]) });
+  }
+  return { at, banks };
+}
+
+/** Where the Great Highway runs along the beach at z (its westmost crossing of that line), or null past its ends. */
+function highwayX(z: number): number | null {
+  let best: number | null = null;
+  for (let i = 1; i < GREAT_HIGHWAY.length; i++) {
+    const [ax, az] = GREAT_HIGHWAY[i - 1]!;
+    const [bx, bz] = GREAT_HIGHWAY[i]!;
+    if ((z - az) * (z - bz) > 0 || az === bz) continue;
+    const x = ax + ((bx - ax) * (z - az)) / (bz - az);
+    if (best === null || x < best) best = x;
+  }
+  return best;
 }
 
 /** Ground the Cliff House stands on, and the view of it: no trees on the rise between it and the camera (north-east). */

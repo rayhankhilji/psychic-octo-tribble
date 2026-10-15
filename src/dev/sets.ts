@@ -459,3 +459,20 @@ Object.assign(SETS, {
       return { label, object: b.build().group, size: 16 };
     }),
 } satisfies Record<string, () => ShowItem[]>);
+
+// ─── Landscape: the land past the edge of the world: `?set=ls-unexplored&zoom=3` (and `&time=22`) ──
+import { FogBanks as UxFog, Unknowns as UxUnknowns, setFogLight as uxFogLight } from '../render/fog.ts';
+Object.assign(SETS, {
+  'ls-unexplored': (): ShowItem[] => {
+    const a = atmosphereAt(Number(new URLSearchParams(location.search).get('time') ?? 13));
+    return [0, 1].map((i) => {
+      const fog = new UxFog();
+      fog.add('far', { x: 0, z: 0, w: 9, d: 9, height: 1.6, spill: 0, billow: 5, heap: 3, haze: false, step: 0.6, seed: 5 + i });
+      fog.update(0);
+      const unknowns = new UxUnknowns([{ x: 0, y: 4.6, z: 0, size: 2.6 }], { title: 'Unexplored', detail: '?' });
+      const g = new THREE.Group();
+      g.add(fog.object, unknowns.object);
+      return { label: i ? 'unexplored (another seed)' : 'unexplored', object: g, size: 10, update: (_dt: number, time: number) => (uxFogLight(a), unknowns.update(a.night, time)) };
+    });
+  },
+} satisfies Record<string, () => ShowItem[]>);

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { AIRPORT_FILL, BLOCKS, GRID, ISLAND_COVE, ISLANDS, LANDMARKS, MARINA, SEA, inSignZone, TOWN_GROUND, TREASURE_COAST, WORLD_SPEC, coastDistance, fbm, gradeWeight, hillsPlan, isBeach, naturalHeight, polygonDistance, terrainHeight } from '../world/map.ts';
+import { AIRPORT_FILL, BLOCKS, GREAT_HIGHWAY, GRID, backdropTowns, ISLAND_COVE, ISLANDS, LANDMARKS, MARINA, SEA, inSignZone, TOWN_GROUND, TREASURE_COAST, WORLD_SPEC, coastDistance, fbm, gradeWeight, hillsPlan, isBeach, naturalHeight, polygonDistance, terrainHeight } from '../world/map.ts';
 import type { Atmosphere } from '../world/daylight.ts';
 
 /** Area the terrain mesh covers; beyond it, open water. */
@@ -32,6 +32,17 @@ const FOREST = new THREE.Color(0x6a8a4a);
 /** The estate's mown lawn: the same green as the lawn under the house. */
 const LAWN = new THREE.Color(0x82c757);
 
+const tileKey = (x: number, z: number) => Math.floor((x - AREA.x0 + 1e-6) / TILE) * 4096 + Math.floor((z - AREA.z0 + 1e-6) / TILE);
+let STREET_TILES: { seed: number; tiles: Set<number> } | null = null;
+/** The tiles the towns' streets run through (for this world). */
+function streetTiles(): Set<number> {
+  if (STREET_TILES?.seed === WORLD_SPEC.seed) return STREET_TILES.tiles;
+  const tiles = new Set<number>();
+  for (const t of backdropTowns()) for (const line of t.streets) for (const [x, z] of line) tiles.add(tileKey(x, z));
+  STREET_TILES = { seed: WORLD_SPEC.seed, tiles };
+  return tiles;
+}
+
 /** How finely each part of the world is meshed: cells per tile side (a power of two). */
 function tileCells(x0: number, z0: number): number {
   const x1 = x0 + TILE;
@@ -45,12 +56,20 @@ function tileCells(x0: number, z0: number): number {
   if (overlaps(F.x - F.r - 1, F.x + F.r + 1, F.z - F.r - 1, F.z + F.r + 1)) return 32;
   // The Marina Green and the harbour's shore, in the default view: a crisp lawn edge, not a smear.
   if (MARINA.green && overlaps(MARINA.green.x - 4.5, MARINA.green.x + 4.5, MARINA.green.z - 1, MARINA.z + 1.5)) return 16;
+  // The Great Highway over the dunes and its turns in to the grid: fine enough that the ground never laps over the road
+  // (a coarse cell across a dune's crest rises above a road draped on the true ground).
+  const edge = GRID.bx0 * 5 - 2.5;
+  const gz = GREAT_HIGHWAY.map((p) => p[1]);
+  if (overlaps(Math.min(...GREAT_HIGHWAY.map((p) => p[0])) - 1.4, edge + 0.6, Math.min(...gz) - 1.4, Math.max(...gz) + 1.4)) return 16;
+  // The towns, whose streets are graded into the ground. On the hillsides a street is cut into a steep slope, and a
+  // coarser cell across it would rise over its uphill edge and bury it in places: tiles a hillside town's streets
+  // run through get the Hills' detail.
+  if (TOWN_GROUND.slice(0, 4).some(([ax0, ax1, az0, az1]) => overlaps(ax0, ax1, az0, az1)) && streetTiles().has(tileKey(x0, z0))) return 16;
   // Islands, the Presidio and Lands End, the airport, Sausalito and the Golden Gate headlands.
   const A = ISLANDS.angel;
   const dg = LANDMARKS.goldenGate.x + 34.6;
   if (overlaps(4, 42, -12, 48) || overlaps(-50, -18 + Math.max(0, dg), -6, 34) || overlaps(12, 31, -56, -31) || overlaps(-24, -8, 30, 46)) return 8;
   if (overlaps(F.x - 6.5, F.x + 6.5, F.z - 6.5, F.z + 6.5) || overlaps(A.x - A.r - 2, A.x + A.r + 2, A.z - A.r - 2, A.z + A.r + 2)) return 8;
-  // The towns, whose streets are graded into the ground.
   if (TOWN_GROUND.some(([ax0, ax1, az0, az1]) => overlaps(ax0, ax1, az0, az1))) return 8;
   // Wherever the coast runs inside the playable world: beaches need a fine edge.
   const cx = x0 + TILE / 2;

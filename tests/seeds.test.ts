@@ -7,6 +7,7 @@ import {
   CIVIC_BLOCK,
   EMBARCADERO,
   GREAT_HIGHWAY,
+  GRID,
   HAS,
   HELIPAD,
   HILLS_HOME,
@@ -127,9 +128,24 @@ describe('seeded worlds', () => {
         if (x < 9) expect(intoStreets(x, z), `Embarcadero point ${i}`).toBeLessThan(-0.45);
         expect(coastDistance(x, z)).toBeLessThan(-0.3);
       }
+      // The Great Highway runs along the beach clear of the blocks, and turns in at both ends to meet
+      // the grid's west street at a crossing: it never stops short in the dunes.
+      const ends = [GREAT_HIGHWAY[0]!, GREAT_HIGHWAY.at(-1)!];
+      for (const [x, z] of ends) {
+        expect(x).toBe(GRID.bx0 * 5 - 2.5);
+        expect(Math.abs(((z - 2.5) / 5) % 1)).toBeLessThan(1e-9);
+        expect(intoStreets(x, z)).toBeCloseTo(0.5);
+      }
       for (const [x, z] of GREAT_HIGHWAY) {
-        expect(intoStreets(x, z)).toBeLessThan(-0.4);
+        if (ends.every((e) => Math.hypot(x - e[0], z - e[1]) > 2.2)) expect(intoStreets(x, z)).toBeLessThan(-0.4);
         expect(coastDistance(x, z)).toBeLessThan(-0.8);
+      }
+      // The windmill stands in the park beside the highway, its tulip garden clear of the road and the streets.
+      if (HAS.windmill) {
+        const m = LANDMARKS.windmill;
+        for (const [x, z] of GREAT_HIGHWAY) expect(Math.hypot(x - m.x, z - m.z)).toBeGreaterThan(1.75);
+        expect(intoStreets(m.x, m.z)).toBeLessThan(-1.35);
+        expect(Math.abs(terrainHeight(m.x, m.z))).toBeLessThan(0.02);
       }
       for (const [x, z] of PRESIDIO_PKWY.slice(0, -1)) expect(intoStreets(x, z)).toBeLessThan(-0.4);
 

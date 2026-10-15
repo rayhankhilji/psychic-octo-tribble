@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLOW } from './geo.ts';
 import { atmosphereAt, type Atmosphere } from '../world/daylight.ts';
 import { rng } from '../world/rng.ts';
@@ -55,6 +56,12 @@ export interface FogSpec {
   keep?: (x: number, z: number) => number;
   /** Areas the tooltip answers over, when the bank's shape (`keep`) leaves gaps in its footprint. The whole footprint otherwise. */
   picks?: { x: number; z: number; w: number; d: number }[];
+  /** Grid spacing of the surface: coarser for the broad banks over far country, seen from a long way off. */
+  step?: number;
+  /** How heaped up the top is: 1 for the low marine layer over a block; more for cloud banks with rounded heads. */
+  heap?: number;
+  /** The thin haze spilling out round the bank's foot (into the streets round a block). On by default. */
+  haze?: boolean;
   seed: number;
 }
 
@@ -312,8 +319,9 @@ function stratum(out: Out, spec: FogSpec, s: Stratum, slot: number, order: (x: n
   const wob = [r() * 6.28, r() * 6.28, r() * 6.28];
   const ex = s.hx + 0.5;
   const ez = s.hz + 0.5;
-  const nx = Math.max(4, Math.ceil((2 * ex) / STEP));
-  const nz = Math.max(4, Math.ceil((2 * ez) / STEP));
+  const step = spec.step ?? STEP;
+  const nx = Math.max(4, Math.ceil((2 * ex) / step));
+  const nz = Math.max(4, Math.ceil((2 * ez) / step));
   const cols = nx + 1;
   const first = out.pos.length / 3;
   const pos: number[] = [];
@@ -462,15 +470,16 @@ function bankGeometry(spec: FogSpec, slot: number): BankGeo {
 
   const out = new Out();
   // Low stratus: wide and thin, out over the streets.
-  stratum(out, spec, { ox: 0, oz: 0, hx: hx + spill, hz: hz + spill, base: 0, thick: H * 0.35, wander: 0.35, bumps: bumps(5, spec.w, spec.d, [0.6, 1.2], [0.02, 0.06]), density: 0.5, edge: 1.1 }, slot, order, floor, r);
+  if (spec.haze !== false) stratum(out, spec, { ox: 0, oz: 0, hx: hx + spill, hz: hz + spill, base: 0, thick: H * 0.35, wander: 0.35, bumps: bumps(5, spec.w, spec.d, [0.6, 1.2], [0.02, 0.06]), density: 0.5, edge: 1.1 }, slot, order, floor, r);
   // The bank itself: a sea of low billows over the land, reaching halfway across the streets,
   // heaped up here and there into crowns that catch the sun. One surface, so nothing in it crosses.
   const holes = spec.ground ? [] : bumps(1, spec.w * 0.5, spec.d * 0.5, [0.35, 0.5], [-H * 0.8, -H * 0.6]);
   const B = spec.billow ?? 1;
+  const heap = spec.heap ?? 1;
   // A dozen billows to a city block's worth of fog, however big the bank.
   const area = (spec.w * spec.d) / 16;
-  const billows = bumps(Math.round((12 * area) / (B * B)), spec.w, spec.d, [0.55 * B, 0.95 * B], [(H * 0.35) / B, (H * 0.9) / B]);
-  const crowns = bumps(Math.max(1, Math.round((2 * Math.sqrt(area)) / B)), spec.w * 0.6, spec.d * 0.6, [0.6 * B, 0.9 * B], [H * 0.8, H * 1.2]);
+  const billows = bumps(Math.round((12 * area) / (B * B)), spec.w, spec.d, [0.55 * B, 0.95 * B], [(H * 0.35 * heap) / B, (H * 0.9 * heap) / B]);
+  const crowns = bumps(Math.max(1, Math.round((2 * Math.sqrt(area) * heap) / B)), spec.w * (heap > 1 ? 0.9 : 0.6), spec.d * (heap > 1 ? 0.9 : 0.6), [0.6 * B, 0.9 * B], [H * 0.8, H * 1.2]);
   stratum(out, spec, { ox: 0, oz: 0, hx: hx + spill * 0.85, hz: hz + spill * 0.85, base: H * 0.1, thick: H * 0.45, wander: 0.3, bumps: [...billows, ...crowns, ...holes], density: 0.95, edge: 0.6, solid: true }, slot, order, floor, r);
 
   // Wisps: thin, soft sheets lying just over the bank, drifting. Density below zero marks a wisp.
@@ -750,4 +759,164 @@ export function cloudBank(x: number, z: number, w: number, d: number, seed: numb
   fog.add('bank', { x, z, w, d, seed });
   fog.update(0);
   return { group: fog.object };
+}
+
+// ─── Unexplored land ────────────────────────────────────────────────────────
+
+/** The brand's cream, and the deeper sand of its sides, so the glyph keeps its shape against white fog. */
+const CREAM = new THREE.Color(0xf6eedf);
+const CREAM_SIDE = new THREE.Color(0xd6bb8e);
+/** Its faint warm glow after dark. */
+const EMBER = new THREE.Color(0xffc98a);
+
+/**
+ * A question mark, 1 tall, centred on the origin and facing +z: the hook and
+ * stem as one rounded stroke (a circle's arc easing into a short straight
+ * stem), and the dot under it, extruded with a soft bevel. The faces are
+ * cream and the bevelled sides a deeper sand.
+ */
+function questionGeometry(): THREE.BufferGeometry {
+  const W = 0.15;
+  const cy = 0.69;
+  const R = 0.19;
+  // The stroke's centreline: round over the top from the left, in toward the middle, then down.
+  const line: [number, number][] = [];
+  for (let k = 0; k <= 22; k++) {
+    const a = THREE.MathUtils.degToRad(166 - (k / 22) * 211);
+    line.push([Math.cos(a) * R, cy + Math.sin(a) * R]);
+  }
+  const [ex, ey] = line.at(-1)!;
+  for (let k = 1; k <= 8; k++) {
+    const t = k / 8;
+    const u = 1 - t;
+    line.push([u * u * ex + 2 * u * t * 0.004, u * u * ey + 2 * u * t * 0.47 + t * t * 0.4]);
+  }
+  line.push([0, 0.36]);
+  const left: THREE.Vector2[] = [];
+  const right: THREE.Vector2[] = [];
+  for (let i = 0; i < line.length; i++) {
+    const [px, py] = line[i]!;
+    const [ax, ay] = line[Math.max(0, i - 1)]!;
+    const [bx, by] = line[Math.min(line.length - 1, i + 1)]!;
+    const tl = Math.hypot(bx - ax, by - ay) || 1;
+    const nx = -(by - ay) / tl;
+    const ny = (bx - ax) / tl;
+    left.push(new THREE.Vector2(px + (nx * W) / 2, py + (ny * W) / 2));
+    right.push(new THREE.Vector2(px - (nx * W) / 2, py - (ny * W) / 2));
+  }
+  // Round caps at both ends.
+  const cap = (p: [number, number], from: THREE.Vector2): THREE.Vector2[] => {
+    const a0 = Math.atan2(from.y - p[1], from.x - p[0]);
+    return Array.from({ length: 7 }, (_, k) => new THREE.Vector2(p[0] + Math.cos(a0 - ((k + 1) / 8) * Math.PI) * (W / 2), p[1] + Math.sin(a0 - ((k + 1) / 8) * Math.PI) * (W / 2)));
+  };
+  const outline = [...left, ...cap(line.at(-1)!, left.at(-1)!), ...right.reverse(), ...cap(line[0]!, right.at(-1)!)];
+  const hook = new THREE.Shape(outline);
+  const dot = new THREE.Shape().absarc(0, 0.08, 0.085, 0, Math.PI * 2, false);
+  const geo = new THREE.ExtrudeGeometry([hook, dot], { depth: 0.07, bevelEnabled: true, bevelThickness: 0.035, bevelSize: 0.026, bevelSegments: 2, curveSegments: 12 });
+  // Caps cream, sides (the bevel) deeper sand: ExtrudeGeometry puts the caps in group 0 and the sides in group 1.
+  const n = geo.getAttribute('position').count;
+  const color = new Float32Array(n * 3);
+  for (const g of geo.groups) {
+    const c = g.materialIndex === 0 ? CREAM : CREAM_SIDE;
+    for (let i = g.start; i < g.start + g.count; i++) color.set([c.r, c.g, c.b], i * 3);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(color, 3));
+  const caps = geo.groups.filter((g) => g.materialIndex === 0).map((g) => [g.start, g.start + g.count] as const);
+  geo.clearGroups();
+  geo.translate(0, -0.5, -0.035);
+  // Smooth round the bevel; the faces stay dead flat (they're fans of long thin triangles off the outline, and any
+  // bevel normal blended into them would streak across the face).
+  const out = toCreasedNormals(geo, Math.PI / 3.2);
+  const nrm = out.getAttribute('normal') as THREE.BufferAttribute;
+  const pos = out.getAttribute('position') as THREE.BufferAttribute;
+  for (const [a, b] of caps) for (let i = a; i < b; i++) nrm.setXYZ(i, 0, 0, pos.getZ(i) > 0 ? 1 : -1);
+  return out;
+}
+
+/** A spot for a question mark: where it floats (its middle), and how tall it is. */
+export interface UnknownSpot {
+  x: number;
+  y: number;
+  z: number;
+  size: number;
+}
+
+/**
+ * Question marks over the land past the edge of the world: a few rounded
+ * cream glyphs floating over its fog, turned to whoever is looking, bobbing
+ * and swaying slowly out of step, with a faint warm glow after dark. All of
+ * them are one instanced mesh, solid, so the soft-shadow pass sees them as
+ * they're drawn (a see-through glyph would take on the shading of the fog
+ * behind it). Each has an invisible box the tooltip picks against.
+ */
+export class Unknowns {
+  readonly object = new THREE.Group();
+  /** Tooltip targets, one per question mark (each already has its `userData.tip`). */
+  readonly picks: THREE.Group[] = [];
+  private material: THREE.MeshStandardMaterial;
+  private mesh: THREE.InstancedMesh;
+  private spots: readonly UnknownSpot[];
+  private time = 0;
+  private dir = new THREE.Vector3();
+  private euler = new THREE.Euler(0, 0, 0, 'YXZ');
+  private quat = new THREE.Quaternion();
+  private at = new THREE.Vector3();
+  private scale = new THREE.Vector3();
+  private matrix = new THREE.Matrix4();
+
+  constructor(spots: readonly UnknownSpot[], tip: { title: string; detail: string }) {
+    this.spots = spots;
+    this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0, emissive: CREAM, emissiveIntensity: 0.16 });
+    this.mesh = new THREE.InstancedMesh(questionGeometry(), this.material, Math.max(1, spots.length));
+    this.mesh.count = spots.length;
+    this.mesh.name = 'Unexplored (question marks)';
+    this.mesh.castShadow = false;
+    this.mesh.receiveShadow = false;
+    // A handful of glyphs that move every frame: cheaper to draw than to keep a bounding sphere current.
+    this.mesh.frustumCulled = false;
+    // Turned to the camera as it's drawn, whichever way the view has been rotated: leaned most of the way
+    // back toward its height, so it reads square-on and still stands like a thing in the world.
+    this.mesh.onBeforeRender = (_r, _s, camera) => {
+      camera.getWorldDirection(this.dir);
+      const yaw = Math.atan2(-this.dir.x, -this.dir.z);
+      const pitch = 0.75 * Math.asin(Math.min(1, Math.max(-1, -this.dir.y)));
+      this.place(yaw, pitch);
+    };
+    this.place(Math.PI / 4, 0.45);
+    this.object.add(this.mesh);
+    for (const s of spots) {
+      const proxy = new THREE.Group();
+      const box = new THREE.Mesh(pickBox, pickMaterial);
+      box.visible = false;
+      box.scale.set(s.size * 0.8, s.size * 1.1, s.size * 0.8);
+      box.position.set(s.x, s.y, s.z);
+      proxy.add(box);
+      proxy.userData.tip = tip;
+      this.picks.push(proxy);
+      this.object.add(proxy);
+    }
+  }
+
+  /** Each glyph faces the camera, bobbing and swaying out of step with the others (its phase from where it floats). */
+  private place(yaw: number, pitch: number) {
+    const t = this.time;
+    for (let i = 0; i < this.spots.length; i++) {
+      const s = this.spots[i]!;
+      const phase = s.x * 0.37 + s.z * 0.61;
+      this.euler.set(-pitch, yaw + 0.08 * Math.sin(t * 0.55 + phase * 1.7), 0);
+      this.quat.setFromEuler(this.euler);
+      this.at.set(s.x, s.y + 0.07 * s.size * Math.sin(t * 0.8 + phase), s.z);
+      this.scale.setScalar(s.size);
+      this.mesh.setMatrixAt(i, this.matrix.compose(this.at, this.quat, this.scale));
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** A faint warm glow as night falls (bloom picks it up); by day a touch of its own cream, so it reads against white fog from afar. */
+  update(night: number, time: number) {
+    this.time = time;
+    const n = smoothstep(0.35, 0.9, night);
+    this.material.emissive.copy(CREAM).lerp(EMBER, n);
+    this.material.emissiveIntensity = 0.16 + 0.16 * n;
+  }
 }

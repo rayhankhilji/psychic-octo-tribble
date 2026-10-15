@@ -532,6 +532,8 @@ function pads(): readonly [number, number, number, number, number][] {
     // Your island estate: about 3 × 3, level with the plateau.
     [ISLANDS.founder.x, ISLANDS.founder.z, 2.3, 3.3, ISLANDS.founder.h],
     [ISLANDS.launch.x, ISLANDS.launch.z, 1.6, 2.2, ISLANDS.launch.h],
+    // The windmill's tulip garden, level with the park beside the dunes.
+    ...(HAS.windmill ? [[LANDMARKS.windmill.x, LANDMARKS.windmill.z, 1.35, 1.6, 0] as [number, number, number, number, number]] : []),
   ]);
 }
 let PADS: [number, number, number, number, number][] | null = null;
@@ -1563,13 +1565,23 @@ function grades(): Map<number, Grade[]> {
   const plan = hillsPlan();
   const list: Grade[] = [];
   const weight = (d: number, core: number, blend: number) => 1 - smooth(core, core + blend, d);
-  const capsule = (ax: number, az: number, ay: number, bx: number, bz: number, by: number, core: number, blend: number) => {
+  /**
+   * A level (or ramped) band along a segment. With `extend`, past its ends the ramp carries on at its own slope rather
+   * than levelling off: on a street climbing a slope in short segments, each segment's rounded end reaches over its
+   * neighbours, and a level end would set a step into the road at every point.
+   */
+  const capsule = (ax: number, az: number, ay: number, bx: number, bz: number, by: number, core: number, blend: number, extend = false) => {
     const r = core + blend;
+    const ex = bx - ax;
+    const ez = bz - az;
+    const ll = ex * ex + ez * ez || 1;
     list.push({
       x0: Math.min(ax, bx) - r, x1: Math.max(ax, bx) + r, z0: Math.min(az, bz) - r, z1: Math.max(az, bz) + r,
       at(x, z) {
         const { d, t } = segment(x, z, ax, az, bx, bz);
-        return d < r ? [weight(d, core, blend), ay + (by - ay) * t] : null;
+        if (d >= r) return null;
+        const along = extend ? Math.max(-1, Math.min(2, ((x - ax) * ex + (z - az) * ez) / ll)) : t;
+        return [weight(d, core, blend), ay + (by - ay) * along];
       },
     });
   };
@@ -1626,16 +1638,18 @@ function grades(): Map<number, Grade[]> {
       }
     }
   }
-  // The towns: their streets and lots, more lightly (they're seen from afar).
+  // The towns: their streets and lots, more lightly (they're seen from afar). The lots go in first, so where a
+  // pad's edge reaches a street (a street running up the slope past the terraces) the street's grade wins and the
+  // terrace never stands across the road.
   for (const town of backdropTowns()) {
+    for (const l of town.lots) rect(l.x, l.z, l.rot, TOWN_PAD.w / 2, TOWN_PAD.d / 2, l.y, 0.24);
     for (const line of town.streets) {
       for (let i = 1; i < line.length; i++) {
         const [ax, az, ay] = line[i - 1]!;
         const [bx, bz, by] = line[i]!;
-        capsule(ax, az, ay, bx, bz, by, TOWN_STREET / 2 + 0.12, 0.4);
+        capsule(ax, az, ay, bx, bz, by, TOWN_STREET / 2 + 0.12, 0.4, true);
       }
     }
-    for (const l of town.lots) rect(l.x, l.z, l.rot, TOWN_PAD.w / 2, TOWN_PAD.d / 2, l.y, 0.24);
   }
   GRADES = new Map();
   for (const g of list) {
@@ -1800,6 +1814,8 @@ function assign(spec: WorldSpec): boolean {
     const sx = PITCH * Math.round((gx + 2.1 - 2.5) / PITCH) + 2.5;
     PRESIDIO_PKWY = [[gx, 5.4], [gx + 0.4, 2.6], [gx + 1.6, 0], [sx, -2.5]];
   }
+  const beach = GREAT_HIGHWAY;
+  GREAT_HIGHWAY = joinHighway(beach);
   PKWY_JOIN = [PRESIDIO_PKWY.at(-1)![0], 0];
 
   // Landmarks and the sites things are bought for.
@@ -1813,7 +1829,7 @@ function assign(spec: WorldSpec): boolean {
       coitTower: { x: -5, z: 6 },
       palaceOfFineArts: { x: -25, z: 5 },
       sutroTower: { x: -23, z: -35 },
-      windmill: { x: -40.5, z: -15 },
+      windmill: millSpot(beach, -15),
       conservatory: { x: -16.5, z: -14.6 },
       cliffHouse: { x: -46.8, z: -1.6 },
       sign: { x: -14 + 5.6 * Math.SQRT1_2, z: -36 + 5.6 * Math.SQRT1_2 },
@@ -1821,6 +1837,7 @@ function assign(spec: WorldSpec): boolean {
       bayBridge: { z: -6.5, x0: 11.6, x1: 56 },
     };
     HAS = spec.has;
+    PADS = null;
     PIER = { x0: -10.4, x1: -6.4, z0: 10.6, z1: 22 };
     MARINA = { x: -21.4, z: 12.2, green: { x: -20.5, z: 9.6, w: 7, d: 1.3 } };
     MARINA_SLOTS = [-23.2, -21.4, -19.6].map((x) => ({ x, z: 14.6 }));
@@ -1835,7 +1852,7 @@ function assign(spec: WorldSpec): boolean {
     coitTower: spec.telegraph ?? { x: -5, z: 6 },
     palaceOfFineArts: presidioTop ? { x: presidioTop.bx * PITCH, z: presidioTop.bz * PITCH } : { x: gx + 9.6, z: 5 },
     sutroTower: spec.peaks.sutro ? { x: spec.peaks.sutro[0], z: spec.peaks.sutro[1] } : C,
-    windmill: { x: GREAT_HIGHWAY[1]![0] - 0.7, z: strip ? strip.blocks[0]!.bz * PITCH : -15 },
+    windmill: millSpot(beach, strip ? strip.blocks[0]!.bz * PITCH : -15),
     conservatory: strip ? { x: bigCentre.x1 - 4, z: bigCentre.z + 0.4 } : { x: bigCentre.x1 - 2.6, z: bigCentre.z1 - 1.4 },
     cliffHouse: { x: xb - 2.6, z: -1.6 },
     sign: signSpot(spec.signU),
@@ -1843,6 +1860,7 @@ function assign(spec: WorldSpec): boolean {
     bayBridge: { z: -6.5, x0: 11.6, x1: 56 },
   };
   HAS = { ...spec.has, palace: spec.has.palace && !!presidioTop, windmill: spec.has.windmill && !!strip, conservatory: spec.has.conservatory && !!big };
+  PADS = null;
   const pz = Math.min(10.6, northShore(spec.pierX) - 0.4);
   const pz0 = BLOCKS.some((b) => b.bz === 2) ? northShore(spec.pierX) - 0.4 : pz;
   PIER = { x0: spec.pierX - 2, x1: spec.pierX + 2, z0: pz0, z1: pz0 + 11.4 };
@@ -1886,6 +1904,68 @@ function embarcaderoZ(x: number): number {
     if ((x - ax) * (x - bx) <= 0 && ax !== bx) return az + ((bz - az) * (x - ax)) / (bx - ax);
   }
   return 9.6;
+}
+
+/** Where a road drawn as a polyline crosses z (clamped to its ends): its x there. */
+function lineX(line: readonly Pt[], z: number): number {
+  const lo = line.reduce((a, p) => (p[1] < a[1] ? p : a));
+  const hi = line.reduce((a, p) => (p[1] > a[1] ? p : a));
+  if (z <= lo[1]) return lo[0];
+  if (z >= hi[1]) return hi[0];
+  for (let i = 1; i < line.length; i++) {
+    const [ax, az] = line[i - 1]!;
+    const [bx, bz] = line[i]!;
+    if ((z - az) * (z - bz) <= 0 && az !== bz) return ax + ((bx - ax) * (z - az)) / (bz - az);
+  }
+  return lo[0];
+}
+
+/**
+ * The Great Highway: along Ocean Beach, turning in at either end on a gentle
+ * curve to meet the grid's west street at a crossing (Sloat Boulevard in the
+ * south, Fulton at the north end of the park), so it never runs on into the
+ * dunes or the woods. `beach` is the line along the sand, south to north.
+ * A world without two crossings on its west street keeps the beach line.
+ */
+function joinHighway(beach: Pt[]): Pt[] {
+  const edge = GRID.bx0 * PITCH - 2.5;
+  const zs: number[] = [];
+  for (const b of BLOCKS) {
+    if (b.bx !== GRID.bx0 || !(b.use === 'city' || b.use === 'market' || b.use === 'hq' || b.use === 'civic')) continue;
+    zs.push(b.bz * PITCH - 2.5, b.bz * PITCH + 2.5);
+  }
+  if (zs.length < 2) return beach;
+  const z0 = Math.min(...zs);
+  const z1 = Math.max(...zs);
+  /** A quarter turn from heading along the beach (south or north) to heading east onto the crossing at (edge, zj). */
+  const turn = (zj: number, dir: -1 | 1): Pt[] => {
+    const x = lineX(beach, zj - dir * 1.5);
+    const R = Math.max(0.6, Math.min(1.5, edge - x));
+    const cx = x + R;
+    const cz = zj - dir * R;
+    const arc: Pt[] = [];
+    for (let k = 0; k <= 6; k++) {
+      const a = Math.PI - dir * (k / 6) * (Math.PI / 2);
+      arc.push([cx + Math.cos(a) * R, cz + Math.sin(a) * R]);
+    }
+    if (edge - cx > 0.05) arc.push([edge, zj]);
+    return arc;
+  };
+  const south = turn(z0, -1).reverse();
+  const north = turn(z1, 1);
+  const lo = south.at(-1)![1] + 0.4;
+  const hi = north[0]![1] - 0.4;
+  return [...south, ...beach.filter(([, z]) => z > lo && z < hi), ...north];
+}
+
+/**
+ * The Dutch windmill at the west end of Golden Gate Park: in the park beside
+ * the Great Highway (its tulip garden clear of the road), south of JFK Drive
+ * and north of the park's south street. `zc` is the middle of the park.
+ */
+function millSpot(beach: readonly Pt[], zc: number): { x: number; z: number } {
+  const z = zc - 0.4;
+  return { x: lineX(beach, z) + 0.45 + 1.7, z };
 }
 
 /** The middle of a group of blocks, and its north-east extent. */

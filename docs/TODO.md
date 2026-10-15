@@ -36,6 +36,8 @@ Built and committed (2026-10-13): accounts, billing, the paywall, onboarding, th
 - [ ] **Optional:** GA4 through Composio (Composio Pro, an auth config restricted to `analytics.readonly`, `CONNECT_VIA=composio`). Amplitude and Mixpanel are possible later; Plausible never (its daily salt inflates users).
 - [ ] Left from this wave: GTAO noise crawls faintly when panning at High (needs world-anchored noise in the AO pass); the plane prices ($12M/$30M/$50M) deviate from the gate-scaling rule on purpose; the ceremony's crowd could scale with real customers.
 
+- [x] The windmill stands in Golden Gate Park beside the Great Highway; the highway meets the grid at both ends; town streets no longer buried; unexplored land under permanent fog with "?" glyphs (`unexploredLand()`, `Unknowns`; tooltip "Unexplored · ?"). Left: the camera's pan limit (`LIMIT` in stage.ts) can't centre on the south glyphs; steep contour streets have jagged cut banks up close.
+
 ## P1: Design pass follow-ups (2026-10-13)
 
 - [x] **Re-render the launch images after the fog change** (done; rerun after big visual changes): `node tools/brand-assets.mjs social --base=<dev url>` (the social kit) and `node tools/email-assets.mjs` (the invite's city picture) still show the old cloud look.
