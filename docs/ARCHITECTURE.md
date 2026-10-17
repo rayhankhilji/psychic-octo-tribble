@@ -31,8 +31,9 @@ Everything above `src/render` is **pure and unit-tested** (`tests/`). The same n
 |---|---|
 | `src/main.ts` | The `App`: loads live data (`/api/timeline`) or the demo, runs the replay/timeline, applies saved actions, connects HUD/GameUI handlers to the City and Stage, and builds the share image. Reads URL params (below). |
 | `src/data/` | `types.ts` (Snapshot = one day of metrics), `stripe.ts` (subscriptions → MRR history), `github.ts`, `merge.ts`, `demo.ts`. |
-| `src/world/map.ts` | **The Bay geometry.** No rendering. Coastline polygons (MAINLAND, MARIN, EAST_BAY), ISLANDS, hills (Twin Peaks, Sutro, Telegraph…), `terrainHeight(x,z)`, the block lattice and each block's use (`hq`, `city`, `market`, `park`, `presidio`, `hill`, `civic`), Market Street, arterial polylines (EMBARCADERO, GREAT_HIGHWAY, PRESIDIO_PKWY, BAY_APPROACH, AIRPORT_ROAD), `LANDMARKS`, site coordinates (pier, marina, airport, launch). |
-| `src/world/layout.ts` | Which blocks are districts or neighbourhoods, lots per block (12 edge lots, 10 homes, 2 corner tree lots), home kinds by density, `planWorld()`. |
+| `src/world/seed.ts`, `worldgen.ts`, `routes.ts` | **Seeded worlds.** `setWorldSeed(n)` (once, before the City is built; `?seed=N` previews one) picks the map. `generateWorld(seed)` draws a `WorldSpec`: coast, Golden Gate crossing, island, Twin Peaks and the Hills plan, parks, which landmarks, towns, palettes. `classicWorld()` is seed 0, today's hand-made map exactly. `routes.ts` finds the water routes for each world. Every seed keeps the same 34 home blocks, build blocks and HQ, so the economy is identical for every seed (tested over 50+ seeds). |
+| `src/world/map.ts` | **The Bay geometry.** No rendering. Seed-dependent exports are `export let` live bindings set by `applyWorld()` on load and on `setWorldSeed`: read them at use, never copy them into module-level constants. Seed 0 (`WORLD_SPEC.classic`) keeps the hand-made code paths. The values below are seed 0's; downtown, HQ and the build blocks, Market's diagonal from the Ferry Building, the Bay Bridge, Yerba Buena, Treasure Island, the airport and the downtown home are fixed in every world. Coastline polygons (MAINLAND, MARIN, EAST_BAY), ISLANDS, hills (Twin Peaks, Sutro, Telegraph…), `terrainHeight(x,z)`, the block lattice and each block's use (`hq`, `city`, `market`, `park`, `presidio`, `hill`, `civic`), Market Street, arterial polylines (EMBARCADERO, GREAT_HIGHWAY, PRESIDIO_PKWY, BAY_APPROACH, AIRPORT_ROAD), `LANDMARKS`, site coordinates (pier, marina, airport, launch, the airport `HELIPAD`). Also the plans the scenery draws: `hillsPlan()` (TinyTown Hills streets on the contours and the houses on their terraces, tested for no overlaps), `backdropTowns()` (Daly City, Sausalito, the Oakland and Berkeley hills), and terrain helpers (`naturalHeight`, `traceContour`, `snapToContour`). The block plan uses a frozen copy of the old hill function, so block uses can't drift when the terrain is re-sculpted. |
+| `src/world/layout.ts` | Which blocks are districts or neighbourhoods, lots per block (12 edge lots, 10 homes, 2 corner tree lots), home kinds by density, `planWorld()`. Each home's `seed` is packed (`packHomeSeed`/`readHomeSeed`): its lot role (corner side street, pocket-park side), its lot, the density ring and a seed shared by the whole block, so a block reads as one street. Homes sit behind a street wall `SETBACK` (0.2) in from the block edge, over a `SIDEWALK` of 0.1. |
 | `src/world/daylight.ts` | `atmosphereAt(hour, wet)`: keyframed sun, sky, fog, exposure and bloom, plus `night` 0–1. Follows the local clock. |
 | `src/world/events.ts`, `history.ts` | Day-to-day events (with copy that quotes the real number) and rain rules. |
 | `src/game/catalog.ts` | Every buyable item (price, upkeep, unlock MRR, placement, model key), `HOME_TIERS` (house ladder), `BUILD_BLOCKS`, `REGIONS`, sites. |
@@ -42,22 +43,30 @@ Everything above `src/render` is **pure and unit-tested** (`tests/`). The same n
 | `src/render/post.ts` | Post pipeline: `EffectComposer` (HalfFloat, MSAA ×4) → `SolidAO` (GTAO that hides sprites and transparent objects) → `UnrealBloom` (strength `bloom·(0.2+0.8·night)`) → `OutputPass` → `GradeShader` (tilt-shift golden-spiral blur, grade, vignette, grain). |
 | `src/render/city.ts` | **`City`**: owns the scene, lights (sun with shadow camera following the view, hemi, warm night fill), sky/fog per hour, and reconciles everything metric-driven: homes (via `Batch`), districts and items (with `Construction` sites), HQ, founder homes, vehicles on sites, tents and decay, highlights for placement. Calls `update()` on traffic, life, scenery, rain, fireworks, train and moon. |
 | `src/render/scenery.ts` | Everything metrics don't drive: terrain and water, roads, Market Street plazas and flatirons, parks, the waterfront and piers, marina, airport, island, suburbs, the sign, bridge lights. |
-| `src/render/landmarks.ts` | Golden Gate, Bay Bridge, Ferry Building, Coit Tower, Palace of Fine Arts, Sutro Tower, windmill, City Hall, the TINYTOWN sign. |
-| `src/render/terrain.ts` | One sculpted terrain mesh (vertex colours: beach, grass, chaparral, rock) and the water `ShaderMaterial` (depth texture, waves, fresnel, specular, surf). |
-| `src/render/buildings.ts` | Homes (`home(kind, seed)`), trees (`tree`, `palm`, kinds round/cypress/plane/ficus/eucalyptus), `neighbourhoodGrounds()`. |
+| `src/render/landmarks.ts` | Golden Gate, Bay Bridge, Ferry Building, Coit Tower, Palace of Fine Arts, Sutro Tower, windmill, Conservatory, Cliff House, City Hall, the TINYTOWN sign (marquee bulbs on its `floodlights` material). A small road toolkit builds the bridges' curved, sloped decks, ramps and embankments, and `bridgeLanes()` gives traffic the same geometry. |
+| `src/render/terrain.ts` | One sculpted terrain mesh, tiled by detail (0.3 on the Hills, 0.6 on coasts and islands, coarser far away, edges stitched), with vertex colours by slope and use (beach, grass, gold and sage chaparral, ravines, cut banks, forest floor, riprap) and the water `ShaderMaterial` (depth texture, waves, fresnel, specular, surf). |
+| `src/render/buildings.ts` | Homes (`home(kind, seed)`) in nine street families (Sunset, Marina, cottage; Italianate, Queen Anne, Stick; Edwardian, brick, deco), with finished corners; trees (`tree`, `palm`, kinds round/plane/pine/cypress/ficus/eucalyptus); `neighbourhoodGrounds()` (curbs, street trees, lamps, mid-block gardens and pools by ring, a corner store every third block). Cheap boxes (`bx`/`ledge`) skip hidden faces: call `seal(b)` before `build()`. |
 | `src/render/towers.ts` | Downtown: `tower`, `pyramid`, `spire`, `deco`, `campus`, `headquarters(name, floors, seed, level)` with sign and beacon. |
 | `src/render/models.ts` | `itemModel(model, x, z, seed)` for every catalogue item, `founderHome`, `plane`, `airliner`, `yacht`, `rocket`, `cloudBank`, `plotMarker`, `encampment`. |
 | `src/render/traffic.ts` | `Traffic`: lane graph from `roadNetwork(STREET_BLOCKS)` plus arterials, instanced car models, bridge streams, pedestrians. API: `setRoads`, `setCount`, `setLuxury`, `update`. |
-| `src/render/life.ts` | `Life`: ferries, container ship, sailboats, airliners, cable cars, kites, gulls, fog, cloud shadows, wakes. |
+| `src/render/life.ts` | `Life`: ferries, container ship, sloops, tugs, airliners, cable cars, kites, gulls, fog, cloud shadows, wakes (`Wake`). Boat models (`ferryBoat`, `containerShip`, `tugBoat`, `sloop`) are plain GeoBuilder models, batched. |
 | `src/render/effects.ts` | `Rain`, `Train` (the F-line), `Fireworks`, `densify`. |
 | `src/render/batch.ts` | `Batch`: draws hundreds of GeoBuilder models as one `BatchedMesh` per material, with per-model transform, glow level and tooltip. |
 | `src/render/construction.ts` | Building-site animation around a new building. |
 | `src/render/moon.ts` | Screen-pinned moon shown during rocket flights (with the moon house at tier 6). |
+| `src/render/moonscene.ts` | `MoonScene` (the lunar set, built on the first trip) and `MoonTrip` (the trip cinematic and its overlay). `Stage.play(cinematic)` swaps the scene and camera through `Post.setView`. |
+| `src/render/ceremony.ts`, `src/ui/ceremony.ts` | The grand opening: on the first open of a founder's own city, a ribbon cutting on Civic Center Plaza (`CeremonySet`: stage, banner, bunting, crowd, ribbon, confetti) played as a `Cinematic` in the main scene (`Ceremony`), with letterbox bars, a title card with the real numbers and a Skip pill (`CeremonyOverlay`). `wantsCeremony()` decides; `main.ts` holds the HUD and the server's `lastSeen` until it's over. |
+| `src/render/exhaust.ts` | Rocket flame and smoke/dust particles, shared by the bay and the moon. |
+| `src/audio/*` | The synthesised soundscape: `engine.ts` (`Sound`), `ambience.ts`, `sfx.ts`, `cues.ts` (pure: feed kind → sound, rate limits). |
+| `src/ui/recap*.ts`, `src/ui/mux.ts` | The growth clip: the share sheet and recorder, the overlay painter, the pure schedule and camera path, MP4/WebM muxers. |
 | `src/render/geo.ts` | **`GeoBuilder`** and the shared materials (see below). |
 | `src/render/palette.ts` | Colour palette. |
 | `src/ui/` | `hud.ts` (top bar, metrics, timeline dock, feed/toasts, tooltips, dialogs), `game-ui.ts` (city card, build menu, home ladder, placement), `brand.ts` (logo geometry → SVG and canvas), `icons.ts` (one stroke icon family), `dom.ts` (helpers, count-up numbers), `loader.ts` (boot screen), `thumbnails.ts` (offscreen renderer for item thumbnails), `styles.css` (design tokens and all styles). |
 | `src/dev/` | `showcase.html` + `showcase.ts` + `sets.ts`: a dev-only grid of models under game lighting. Not in the production build. |
-| `server/` | `index.ts` (HTTP + static), `sources.ts` (Stripe, GitHub), `timeline.ts`, `static.ts` (path-safe static serving). |
+| `server/` | The hosted API: see **Server** below. |
+| `src/api/` | `contract.ts` (every route's shapes, shared with the server), `client.ts` (typed calls), `auth.ts` + `supabase.ts` (sign-in; supabase-js lazy-loaded), `boot.ts` (which screen for which state), `pricing.ts`, `mock.ts` (dev-only `?mockapi=<state>`). |
+| `src/ui/hosted.ts`, `signin.ts`, `plans.ts`, `onboarding.ts`, `account.ts`, `waitlist.ts`, `turnstile.ts` | The hosted shell, in its own lazy chunk: call to action, sign-in, the paywall, onboarding, the account menu, the waitlist screen. |
+| `admin.html`, `src/admin/` | The internal console (overview, waitlist waves, users, comps, audit), for `ADMIN_EMAILS` only. |
 | `tools/` | Headless screenshot and perf scripts (see DEV_WORKFLOW). |
 
 ## World coordinates (memorise these)
@@ -95,24 +104,24 @@ Primitives:
 
 Colours are hex or linear RGB triples; values above 1 glow under bloom. `build()` returns `{ group, glow }`.
 
-**Glow:** shared uniforms `GLOW.night`, `GLOW.time` and `GLOW.day`. A per-vertex `winRand` attribute staggers which windows light first at dusk and adds flicker. (It was renamed from `rand`, which clashed with a GLSL built-in name; the shader cache key is `tinytown-glow-3`.)
+**Glow:** shared uniforms `GLOW.night`, `GLOW.time` and `GLOW.day`. A per-vertex `winRand` attribute staggers which windows light first at dusk; a few switch off and on again slowly (`lightsOut`, a 2 s fade every 131 s). Night light points never shrink below ~1.6 px (they grow and dim instead), and bloom picks out bright parts at full resolution with a soft threshold (`SteadyBloom`), so nothing pumps as the camera moves. (It was renamed from `rand`, which clashed with a GLSL built-in name; the shader cache key is `tinytown-glow-3`.)
 
 **Environment map:** `setEnvironment(tex, k)` applies it only to glass (1.25·k) and smooth (0.18·k). **Don't use `scene.environment`**: it overrides per-material intensity and washes everything out.
 
-**Homes go through `Batch`** (`BatchedMesh` per bucket). Home models must therefore use only the standard GeoBuilder materials and add no extra child objects (lights, sprites). BatchedMesh needs `frustumCulled = false` and `perObjectFrustumCulled = true`, because the whole-batch bounding sphere goes stale as homes come and go.
+**Most models go through `Batch`** (`BatchedMesh` per bucket): homes, neighbourhood grounds, plot items, founder homes, planes and yachts (City), boats, airliners and cable cars (Life), static landmarks and scenery parts (Scenery). `Batch.add` merges meshes using the shared buckets and the stock lit layers (`glowMaterial`, Kit's `windowMaterial`/`neonMaterial`/`screenMaterial`, recognised by `customProgramCacheKey`, while their colour is still white). Anything else (custom materials, sprites, lines, instanced meshes) is moved onto the model's proxy and keeps its own draw calls, so the proxy must be added to the scene. Per model: `touch(key)` after moving its proxy, `setGlow` for light fades, `setVisible`, `setTip`. BatchedMesh needs `frustumCulled = false` and `perObjectFrustumCulled = true`, because the whole-batch bounding sphere goes stale as models come and go. **Never mutate a shared material** (`solidMaterial`, `smoothMaterial`, …) for one model: it changes every model in the game.
 
 ## Budgets
 
 | Thing | Triangles |
 |---|---|
-| Home (about 350 at once) | ≤ ~1,500 (measured average about 1,280) |
+| Home (about 350 at once) | ≤ ~1,500 (measured averages: house ~810, townhouse ~1,200, flats ~1,210) |
 | Tree or palm (thousands) | ≤ ~120 |
 | Tower | ≤ ~8k |
 | Plot item | ≤ ~5k |
 | Vehicle (plane, yacht) | ≤ ~3k |
 | Car model (instanced) | ≤ ~600 |
 
-- **Draw calls:** a grown city should stay at a few hundred. Batching cut it from about 1,080 to about 376, but the newest models brought it back up to 755 (see TODO P1). Re-measure with `tools/perf.mjs`.
+- **Draw calls:** a grown city should stay at a few hundred. It's **263** after the second session's batching (it had crept to 755). Re-measure with `tools/perf.mjs`, which also lists the costliest objects (add `&debug` to measure a frozen build).
 - **Per frame:** update instance matrices only, with no per-frame allocations in hot loops.
 
 ## Rendering gotchas (learned the hard way)
@@ -136,7 +145,11 @@ Colours are hex or linear RGB triples; values above 1 glow under bloom. `build()
 
 ## Server
 
-- `npm start` serves `dist/` and `/api/timeline` on :8787.
-- Env vars (`.env.example`): `TINYTOWN_NAME`, `STRIPE_SECRET_KEY` (restricted, read-only Subscriptions), `GITHUB_REPO`, `GITHUB_TOKEN` (private repos only).
-- No dependencies beyond Node ≥ 22.18, which runs TypeScript natively.
+The design is `docs/INFRA.md`, the setup `docs/SETUP.md`, security `docs/SECURITY.md`, releases `docs/RELEASE.md`, the launch `docs/LAUNCH.md` and incidents `docs/RUNBOOK.md`.
+
+- **One handler** (`server/app.ts`, web Request → Response) for every route in `src/api/contract.ts`. Locally `server/index.ts` serves it with `dist/`; on Vercel `server/build-vercel.mjs` bundles it into one Node function (Build Output API), with the security headers, branded 404s and the crons.
+- **No server dependencies:** Supabase, Stripe, GitHub, PostHog, Resend and Sentry are plain `fetch` (`server/retry.ts`: timeouts, safe retries); crypto is `node:crypto`. Node ≥ 22.18 runs the TypeScript natively, so no enums or parameter properties.
+- **Local mode:** without `SUPABASE_URL`, `/api/config` says `hosted: false` and the `.env` integrations (`TINYTOWN_NAME`, `STRIPE_SECRET_KEY`, `GITHUB_REPO`) work exactly as before.
+- **Modules:** `context.ts` (auth, rate limits), `state.ts` (the caller's profile, plan and rows in one call per request via `user_state()`, `requirePaid` via billing's `hasAccess`), `ratelimit.ts` (Postgres-backed), `billing.ts` + `stripe-api.ts` (Checkout, portal, webhook), `stripe-app.ts` and `github-app.ts` (founders' connections), `users.ts` + `posthog.ts`, `world.ts` + `game.ts` (server-checked actions: every build is re-simulated), `hosted-timeline.ts` (per-founder timeline, stored history wins), `account.ts` (export, delete), `access.ts` + `admin.ts` (waitlist, console), `email.ts` + `email/` + `notify.ts` (Resend), `cron.ts` + `pipelines/` (hourly, daily, weekly jobs), `health.ts` + `log.ts` + `analytics.ts` (health, telemetry, logs, Sentry, funnel). New route areas plug in through `extensions.ts`.
+- **Database:** Supabase Postgres, `supabase/migrations/0001…0006`, row-level security on with no policies: only the server (service role) reads or writes.
 - Static serving refuses path traversal; this is tested.

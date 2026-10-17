@@ -1,0 +1,8 @@
+# TinyTown. Everything public may be crawled; the API and the admin page may not.
+User-agent: *
+Allow: /
+Disallow: /api
+Disallow: /admin.html
+
+# Replace YOUR-DOMAIN with the live address before launch (also in sitemap.xml).
+Sitemap: https://YOUR-DOMAIN/sitemap.xml

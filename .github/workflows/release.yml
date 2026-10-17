@@ -1,0 +1,44 @@
+# Turns a release tag into a GitHub Release with notes generated from the
+# merged pull requests. Tags mark what went to production; how and when to tag
+# is in docs/RELEASE.md. Nothing is built or deployed here: Vercel already
+# deployed the commit when it reached main.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: GitHub Release
+    if: github.repository == 'rayhankhilji/psychic-octo-tribble'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      # A tag that isn't on main is a mistake (or a hotfix that skipped review):
+      # say so rather than publish it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the tag is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::${GITHUB_REF_NAME} points at a commit that isn't on main."
+            exit 1
+          fi
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Releases drafted in GitHub's UI create their tag themselves: leave those alone.
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "${GITHUB_REF_NAME} already has a release."
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"

@@ -1,0 +1,44 @@
+# Weekly dependency updates, one pull request per ecosystem for the routine
+# minor and patch bumps, so the week's upgrades are reviewed (and CI'd) together.
+# Major versions arrive as their own pull requests. Security fixes don't wait for
+# the schedule: Dependabot security updates open them as soon as an advisory lands
+# (Settings → Advanced Security, docs/RELEASE.md).
+#
+# `target-branch: main` because the repository's default branch may not be main.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: main
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    # A release has to be a week old before we take it: most compromised
+    # packages are caught and pulled within days.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: Deps
+      prefix-development: Deps (dev)
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    # "/" covers .github/workflows and the local actions in .github/actions.
+    directories: ['/', '/.github/actions/*']
+    target-branch: main
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: CI
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]

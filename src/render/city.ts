@@ -3,20 +3,23 @@ import { disposeGroup, GeoBuilder, GLOW, glassMaterial, glowMaterial, setEnviron
 import { PALETTE } from './palette.ts';
 import { home, neighbourhoodGrounds, tree, type Built } from './buildings.ts';
 import { headquarters, type HQ } from './towers.ts';
-import { cloudBank, encampment, founderHome, itemModel, plane, plotMarker, rocket, yacht } from './models.ts';
+import { encampment, ESTATE_HELIPAD, founderHome, helicopter, HELI_ROTOR, itemModel, plane, plotMarker, rocket, yacht } from './models.ts';
 import { Fireworks, Rain, Train } from './effects.ts';
+import { FogBanks, setFogLight } from './fog.ts';
 import { Moon } from './moon.ts';
+import { Exhaust } from './exhaust.ts';
 import { Traffic } from './traffic.ts';
 import { Life, SHADOW_ONLY_LAYER } from './life.ts';
 import { Construction } from './construction.ts';
+import { festival, protest, protestBanner } from './mood.ts';
 import { Batch } from './batch.ts';
-import { AIRPORT_SLOTS, DOWNTOWN_HOME, HILLS_HOME, ISLAND, LAUNCH, MARINA_SLOTS, SUPERYACHT, Scenery, hillHeight } from './scenery.ts';
+import { AIRPORT_SLOTS, DOWNTOWN_HOME, HILLS_HOME, MARINA_SLOTS, SUPERYACHT, Scenery, hillHeight, type SceneryState } from './scenery.ts';
 import { BUILD_BLOCKS, HOME_TIERS, HQ_FLOOR_CAP, ITEMS } from '../game/catalog.ts';
 import { decayOf, type GameEvent, type GameState } from '../game/economy.ts';
 import { atmosphereAt, localHour, type Atmosphere } from '../world/daylight.ts';
 import { hash, rng } from '../world/rng.ts';
 import { BLOCK, HQ_BLOCK, PITCH, blockCentre, type BlockCoord, type WorldPlan } from '../world/layout.ts';
-import { BLOCKS, EMBARCADERO, LANDMARKS, MARKET_END, MARKET_START, WORLD, type Pt } from '../world/map.ts';
+import { BLOCKS, EMBARCADERO, HELIPAD, ISLANDS, LANDMARKS, MARINA, MARKET_END, MARKET_START, PIER, WORLD, WORLD_SPEC, type Pt } from '../world/map.ts';
 import type { WorldEvent } from '../world/events.ts';
 
 export interface Tip {
@@ -52,10 +55,17 @@ interface Fade {
   target: number;
 }
 
-/** Blocks on the street grid: every city block has its streets, built up or not. */
-const STREET_BLOCKS: BlockCoord[] = BLOCKS.filter((b) => b.use === 'city' || b.use === 'market' || b.use === 'hq' || b.use === 'civic').map(({ bx, bz }) => ({ bx, bz }));
+/** Blocks on the street grid: every city block has its streets, built up or not. (Read when a City is built: the map depends on the world's seed.) */
+const streetBlocks = (): BlockCoord[] => BLOCKS.filter((b) => b.use === 'city' || b.use === 'market' || b.use === 'hq' || b.use === 'civic').map(({ bx, bz }) => ({ bx, bz }));
 /** The F-line: vintage streetcars from the Castro down Market and along the Embarcadero to the Wharf. */
-const F_LINE: Pt[] = [MARKET_END, MARKET_START, ...EMBARCADERO.slice(EMBARCADERO.findIndex(([, z]) => z > MARKET_START[1]), EMBARCADERO.findIndex(([x]) => x < -9) + 1)];
+const fLine = (): Pt[] => [MARKET_END, MARKET_START, ...EMBARCADERO.slice(EMBARCADERO.findIndex(([, z]) => z > MARKET_START[1]), EMBARCADERO.findIndex(([x]) => x < PIER.x0 + 1.4) + 1)];
+
+/** The rocket's part of a moon trip, on the bay. */
+export type RocketPhase = 'ascent' | 'away' | 'landing';
+/** Seconds the rocket sits on the pad with its engines lit before it climbs. */
+export const ROCKET_IGNITION = 1.6;
+/** Seconds from high above the bay to touching down on the pad. */
+export const ROCKET_LANDING = 5.2;
 
 const easeOutBack = (t: number) => 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2;
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
@@ -70,7 +80,7 @@ export class City {
   readonly rain = new Rain(24);
   readonly moon = new Moon();
   private camera: THREE.OrthographicCamera | null = null;
-  readonly train = new Train(F_LINE, (x, z) => Math.max(0, hillHeight(x, z)) + 0.012);
+  readonly train = new Train(fLine(), (x, z) => Math.max(0, hillHeight(x, z)) + 0.012);
   readonly traffic = new Traffic();
   /** Objects with `userData.tip` for hover tooltips. */
   readonly pickables: THREE.Object3D[] = [];
@@ -78,21 +88,41 @@ export class City {
   private name: string;
   private seed: number;
   private homes = new Map<string, THREE.Object3D>();
-  /** Every home in a few draw calls. */
+  /** Homes waiting to be built, a few per frame. */
+  private pendingHomes = new Map<string, { h: WorldPlan['homes'][number]; tip: Tip; animate: boolean }>();
+  /** Which lot each built home stands on, and which home stands on each lot. */
+  private lotOf = new Map<string, number>();
+  private homeOnLot = new Map<number, string>();
+  private homesReady = false;
+  /** Expensive builds waiting their turn, keyed so a newer request replaces an older one. */
+  private jobs = new Map<string, () => void>();
+  private worldReady = false;
+  private tentTarget = -1;
+  /** After a jump (not a replay step), build faster: the user is waiting on it. */
+  private hurry = false;
+  /** Every home and every neighbourhood's grounds, in a few draw calls. */
   private homeBatch = new Batch();
-  private grounds = new Map<number, THREE.Group>();
+  /** Batch proxies for the neighbourhood grounds, by neighbourhood index. */
+  private grounds = new Map<number, THREE.Object3D>();
   private hq: (HQ & { floors: number; level: number }) | null = null;
   private game: GameState | null = null;
-  private builds = new Map<string, { group: THREE.Group; fade?: Fade; lit: boolean }>();
+  private builds = new Map<string, { group: THREE.Object3D; fade?: Fade; lit: boolean }>();
   private markers = new Map<string, THREE.Group>();
   private bases = new Map<string, THREE.Group>();
+  /** Karl the Fog over the build blocks that aren't open yet: one mesh for all of them. */
+  private fog = new FogBanks();
+  /** Each fogged block's pick proxy (it carries the tooltip). */
   private blockClouds = new Map<string, THREE.Group>();
-  private homesOfFounder = new Map<string, THREE.Group>();
+  private homesOfFounder = new Map<string, THREE.Object3D>();
   private tents: { count: number; group: THREE.Group } | null = null;
   private highlights = new THREE.Group();
   private rocketObj: THREE.Group | null = null;
-  private launch: { t: number; done: () => void } | null = null;
-  private flame: THREE.Mesh;
+  /** The rocket's part of a moon trip, on the bay (see `flyRocket`). */
+  private launch: { phase: RocketPhase; t: number } | null = null;
+  /** The founder's helicopter, once the island is theirs: parked on a pad, or in the air between the airport and the island. */
+  private heli: Heli | null = null;
+  /** Flame, steam and smoke under the rocket, made on its first flight. */
+  private exhaust: Exhaust | null = null;
   private trainStopped = false;
   private lampsFailing = false;
   private roadsKey = '';
@@ -101,6 +131,16 @@ export class City {
   private fades = new Set<Fade>();
   private homeFades = new Map<string, Fade>();
   private beaconLevel = 0;
+  /** The festival or protest on Civic Center Plaza, if the mood calls for one. */
+  private mood: { key: string; proxy: THREE.Object3D } | null = null;
+  /** The grand opening (render/ceremony.ts) has the plaza: the festival or protest steps aside. */
+  private ceremonyOn = false;
+  /** The ceremony is holding the TINYTOWN sign dark until its cue. */
+  private signHeld = false;
+  /** What the scenery was last told, so the sign can be held and let go without a new day. */
+  private sceneryState: SceneryState | null = null;
+  /** Fireworks waiting their turn in a show. */
+  private volleys: { at: THREE.Vector3; count: number; spread: number; delay: number }[] = [];
   private sun: THREE.DirectionalLight;
   private hemi: THREE.HemisphereLight;
   private warm: THREE.PointLight;
@@ -108,6 +148,8 @@ export class City {
   private life: Life;
   /** Building sites in progress, keyed by the building going up. */
   private sites = new Map<THREE.Object3D, Construction>();
+  /** Bought things drawn through the batch: their proxy → batch key. */
+  private batched = new Map<THREE.Object3D, string>();
   private wilds: THREE.Group | null = null;
   private pools: THREE.MeshBasicMaterial | null = null;
   private plan: WorldPlan | null = null;
@@ -142,16 +184,14 @@ export class City {
 
     this.scenery = new Scenery(seed);
     this.life = new Life(seed);
+    // Cars give way to the F-line streetcars and the Powell cable cars.
+    this.traffic.blocked = (x, z, r) => this.train.blocks(x, z, r) || this.life.blocks(x, z, r);
     this.scene.add(this.life.object);
     this.scene.add(this.homeBatch.object);
-    this.pickables.push(...this.homeBatch.object.children);
+    this.pickables.push(this.homeBatch.object);
     sc.layers.enable(SHADOW_ONLY_LAYER);
-    this.flame = new THREE.Mesh(
-      new THREE.ConeGeometry(0.2, 1.2, 10).rotateX(Math.PI).translate(0, -0.5, 0),
-      glowMaterial({ color: new THREE.Color(3, 1.6, 0.4), transparent: true, opacity: 0.9 }),
-    );
-    this.flame.visible = false;
     this.scene.add(this.scenery.object, this.roadLayer, this.fireworks.object, this.rain.object, this.moon.object, this.train.object, this.traffic.object, this.highlights);
+    this.scene.add(this.fog.object);
   }
 
   // ─── Reconciliation ─────────────────────────────────────────────────────
@@ -162,7 +202,7 @@ export class City {
     this.game = game;
     const open = BUILD_BLOCKS.filter((b) => game.openBlocks.includes(b.id));
     this.activeBlocks = [HQ_BLOCK, ...plan.neighbourhoods.map(({ bx, bz }) => ({ bx, bz })), ...open.map(({ bx, bz }) => ({ bx, bz }))];
-    this.syncRoads(STREET_BLOCKS);
+    this.syncRoads(streetBlocks());
     this.syncWilds(this.activeBlocks);
     const level = game.hqLevel;
     this.syncHQ(level === 0 ? 1 : Math.min(HQ_FLOOR_CAP[level]!, plan.hqFloors - 2), level, animate);
@@ -172,12 +212,14 @@ export class City {
     this.syncBuilds(game, animate);
     this.syncFounder(game, animate);
     this.syncVehicles(game, animate);
+    this.syncHelicopter(game.home.tier >= 5, animate);
     this.syncTents(game.unhoused);
+    this.syncMood(game, animate);
 
     const decay = decayOf(game.maintenance);
     this.trainStopped = decay.trainStopped;
     this.lampsFailing = decay.lampsFailing;
-    this.scenery.setState({
+    const scenery: SceneryState = {
       hills: game.regions.hills,
       island: game.regions.island,
       launch: game.regions.launchpad,
@@ -186,7 +228,9 @@ export class City {
       signLit: !decay.signDark,
       lampsFailing: decay.lampsFailing,
       bridgeRusting: decay.bridgeRusting,
-    });
+    };
+    this.sceneryState = scenery;
+    this.scenery.setState(this.signHeld ? { ...scenery, signLit: false } : scenery, animate);
     for (const [key, b] of this.builds) {
       if (!b.fade) continue;
       const item = ITEMS.get(key.split('|')[1]!);
@@ -200,6 +244,44 @@ export class City {
     // plan.traffic tops out at 46; the lane graph is happy with up to ~120 cars.
     this.traffic.setCount(Math.round(plan.traffic * 2.6));
     this.traffic.setBlocks(this.activeBlocks);
+    // The first world is built whole, behind the loading screen; later changes spread over frames.
+    if (!this.worldReady) {
+      this.runJobs(Infinity);
+      this.worldReady = true;
+    } else if (!animate) {
+      this.runJobs(16);
+      this.hurry = true;
+    }
+  }
+
+  /** Anything animating right now (pop-ins, building sites, fireworks, a launch): the stage keeps full frame rate. */
+  get lively(): boolean {
+    return this.anims.length > 0 || this.fog.busy || this.scenery.fogBusy || this.sites.size > 0 || this.busy || this.volleys.length > 0 || this.launch !== null || !!this.exhaust?.busy || !!this.heli?.flight || (this.heli?.spin ?? 0) > 0;
+  }
+
+  /** Builds everything still queued, now (for screenshots and tests). */
+  finishBuilding() {
+    this.runJobs(Infinity);
+    this.buildHomes(Infinity);
+  }
+
+  /** Still building homes or grounds queued by the last change (screenshot tools wait on this). */
+  get busy(): boolean {
+    return this.jobs.size > 0 || this.pendingHomes.size > 0;
+  }
+
+  private defer(key: string, job: () => void) {
+    this.jobs.delete(key);
+    this.jobs.set(key, job);
+  }
+
+  private runJobs(budgetMs: number) {
+    const t0 = performance.now();
+    for (const [key, job] of this.jobs) {
+      if (performance.now() - t0 > budgetMs) break;
+      this.jobs.delete(key);
+      job();
+    }
   }
 
   private activeBlocks: BlockCoord[] = [HQ_BLOCK];
@@ -226,33 +308,97 @@ export class City {
 
   /** Objects you can click: plots and placement highlights first. */
   get clickables(): THREE.Object3D[] {
-    return [...this.highlights.children, ...this.markers.values(), ...this.pickables];
+    return [...this.highlights.children, ...this.markers.values(), ...this.pickables, ...this.scenery.pickables];
   }
 
-  /** Fly the rocket up out of sight and back. Calls `done` when it has landed. */
-  launchRocket(done: () => void): boolean {
-    if (!this.rocketObj || this.launch) return false;
-    this.launch = { t: 0, done };
-    this.rocketObj.add(this.flame);
-    this.flame.visible = true;
+  /** The founder owns a rocket, standing on the pad (or flying). */
+  get hasRocket(): boolean {
+    return this.rocketObj !== null;
+  }
+
+  /** The rocket's model, for the moon to copy (it lands the same ship there). */
+  get rocketModel(): THREE.Object3D | null {
+    return this.rocketObj;
+  }
+
+  /**
+   * The rocket's moves on the bay, for the moon trip, which runs the clock
+   * and calls this every frame with the seconds since the move began:
+   * `'ascent'` lights the engines and climbs out of the sky, `'away'` keeps
+   * it out of sight while it's on the moon, `'landing'` brings it down onto
+   * the pad on a long burn, and `null` parks it, engines off. False without
+   * a rocket.
+   */
+  flyRocket(phase: RocketPhase | null, t = 0): boolean {
+    if (!phase) {
+      this.launch = null;
+      this.exhaust?.clear();
+      this.rocketObj?.position.set(ISLANDS.launch.x, this.rocketBase, ISLANDS.launch.z);
+      if (this.rocketObj) this.rocketObj.visible = true;
+      return !!this.rocketObj;
+    }
+    if (!this.rocketObj) return false;
+    if (!this.exhaust) {
+      this.exhaust = new Exhaust('air');
+      this.scene.add(this.exhaust.object);
+    }
+    if (this.launch) {
+      this.launch.phase = phase;
+      this.launch.t = t;
+    } else this.launch = { phase, t };
     return true;
   }
 
+  /** Where the rocket is (its middle), for the camera to follow: the same vector each call. */
+  readonly rocketAt = (): THREE.Vector3 => {
+    const r = this.rocketObj;
+    return r ? this.rocketPos.set(r.position.x, r.position.y + 2, r.position.z) : this.rocketPos.set(ISLANDS.launch.x, this.rocketBase + 2, ISLANDS.launch.z);
+  };
+  private rocketPos = new THREE.Vector3();
+
+  /** Where the helicopter is parked, or null without one. */
+  get helicopterPad(): 'airport' | 'island' | null {
+    return this.heli?.pad ?? null;
+  }
+
+  /** Where the helicopter is right now, for the camera to follow (the same vector each call). */
+  readonly helicopterAt = (): THREE.Vector3 => (this.heli ? this.heliAt.copy(this.heli.group.position) : this.heliAt.set(HELIPAD.x, 0, HELIPAD.z));
+  private heliAt = new THREE.Vector3();
+
+  /** Fly the helicopter to the other pad: the airport to the island, or home again. False if it can't go. */
+  flyHelicopter(done: (to: 'airport' | 'island') => void): boolean {
+    const h = this.heli;
+    if (!h || h.flight) return false;
+    const to = h.pad === 'airport' ? 'island' : 'airport';
+    const from = h.group.position.clone();
+    const end = padTop(to);
+    const dist = Math.hypot(end.x - from.x, end.z - from.z);
+    h.flight = { t: 0, from, to: end, cruise: dist / HELI_SPEED, dest: to, done, yaw0: h.group.rotation.y, yaw1: Math.atan2(-(end.z - from.z), end.x - from.x) };
+    return true;
+  }
+
+  /** The TINYTOWN sign on its hillside, for the camera when it relights. */
+  signFocus(): THREE.Vector3 {
+    return new THREE.Vector3(LANDMARKS.sign.x, hillHeight(LANDMARKS.sign.x, LANDMARKS.sign.z) + 0.6, LANDMARKS.sign.z);
+  }
+
   /** Where to point the camera for a site. */
-  focusOf(what: 'airport' | 'marina' | 'pier' | 'hills' | 'island' | 'launchpad'): THREE.Vector3 {
+  focusOf(what: 'downtown' | 'airport' | 'marina' | 'pier' | 'hills' | 'island' | 'launchpad'): THREE.Vector3 {
     switch (what) {
+      case 'downtown':
+        return new THREE.Vector3(1, 0, -3);
       case 'airport':
         return new THREE.Vector3(21.5, 0, -43);
       case 'marina':
-        return new THREE.Vector3(-21.4, 0, 12.8);
+        return new THREE.Vector3(MARINA.x, 0, MARINA.z + 0.6);
       case 'pier':
-        return new THREE.Vector3(-8.4, 0, 16);
+        return new THREE.Vector3((PIER.x0 + PIER.x1) / 2, 0, PIER.z0 + 5.4);
       case 'hills':
         return new THREE.Vector3(HILLS_HOME.x, hillHeight(HILLS_HOME.x, HILLS_HOME.z), HILLS_HOME.z);
       case 'island':
-        return new THREE.Vector3(ISLAND.x, hillHeight(ISLAND.x, ISLAND.z), ISLAND.z);
+        return new THREE.Vector3(ISLANDS.founder.x, hillHeight(ISLANDS.founder.x, ISLANDS.founder.z), ISLANDS.founder.z);
       case 'launchpad':
-        return new THREE.Vector3(LAUNCH.x, 1, LAUNCH.z);
+        return new THREE.Vector3(ISLANDS.launch.x, 1, ISLANDS.launch.z);
     }
   }
 
@@ -266,9 +412,67 @@ export class City {
         this.beaconLevel = Math.max(this.beaconLevel, 1.6);
         this.train.pulse();
       } else if (e.type === 'customers.joined' && e.total === 1) {
-        const first = this.homes.values().next().value;
-        if (first) this.fireworks.launch(first.position.clone().setY(1), 1, 0);
+        // The first home may still be queued for building: aim at its lot.
+        const first = this.plan?.homes[0];
+        if (first) this.fireworks.launch(new THREE.Vector3(first.x, 1, first.z), 1, 0);
+      } else if (e.type === 'customers.joined' && CUSTOMER_MILESTONES.some((m) => e.total >= m && e.total - e.count < m)) {
+        this.show(new THREE.Vector3(1, 0.5, -2), 1);
+      } else if (e.type === 'district.unlocked') {
+        // An MRR milestone: fired from barges in the bay off the Ferry Building, like New Year's Eve in SF.
+        // The bigger the number, the bigger the show. (Rockets climb 4–6 units before they burst.)
+        const pier = LANDMARKS.ferryBuilding;
+        this.show(new THREE.Vector3(pier.x + 3.5, 0.3, pier.z + 1), e.threshold >= 10_000 ? 3 : e.threshold >= 1_000 ? 2 : 1);
       }
+    }
+  }
+
+  // ─── The grand opening (render/ceremony.ts) ─────────────────────────────
+
+  /**
+   * The ceremony takes the plaza (on) or gives it back (off): the festival
+   * or protest is hidden while its set stands there, and the sign is held
+   * dark until the ceremony switches it on.
+   */
+  setCeremony(on: boolean) {
+    this.ceremonyOn = on;
+    const key = this.mood ? this.batched.get(this.mood.proxy) : undefined;
+    if (key) this.homeBatch.setVisible(key, !on);
+    this.holdSign(on);
+  }
+
+  /** The sign's upkeep is paid: it's lit when nothing is holding it. */
+  get signLit(): boolean {
+    return this.sceneryState?.signLit ?? true;
+  }
+
+  /** Holds the TINYTOWN sign dark, at once, or lets it come back on (with its usual flicker) if it's paid for. */
+  holdSign(dark: boolean) {
+    this.signHeld = dark;
+    const s = this.sceneryState;
+    if (!s) return;
+    this.scenery.setState({ ...s, signLit: s.signLit && !dark }, true);
+    // Straight to dark rather than sputtering out on camera (when the scenery offers it).
+    if (dark) (this.scenery as Scenery & { snapSign?: (lit: boolean) => void }).snapSign?.(false);
+  }
+
+  /** A fireworks show at a point, for the ceremony's way home. */
+  fireworksShow(at: THREE.Vector3, size: 1 | 2 | 3) {
+    this.show(at, size);
+  }
+
+  /** A short fireworks show: volleys across a few seconds that build to a finale. */
+  private show(at: THREE.Vector3, size: 1 | 2 | 3) {
+    const volleys = 2 + size * 2;
+    for (let i = 0; i < volleys; i++) {
+      const last = i === volleys - 1;
+      const a = (i / volleys) * Math.PI * 2;
+      const r = last ? 0 : 1.2 + size * 0.6;
+      this.volleys.push({
+        at: new THREE.Vector3(at.x + Math.cos(a) * r, at.y + (i % 2) * 0.8, at.z + Math.sin(a) * r),
+        count: last ? 3 + size * 2 : 1 + (i % 2),
+        spread: last ? 2.5 + size : 1.5,
+        delay: i * 0.45 + (last ? 0.5 : 0),
+      });
     }
   }
 
@@ -280,7 +484,7 @@ export class City {
         if (b) this.fireworks.launch(new THREE.Vector3(blockCentre(b).x, 1.5, blockCentre(b).z), 3, 2.5);
       } else if (e.type === 'home.moved' || e.type === 'sign.lit') {
         const where = HOME_TIERS[this.game?.home.tier ?? 0]!.where;
-        const at = e.type === 'sign.lit' ? new THREE.Vector3(LANDMARKS.sign.x, hillHeight(LANDMARKS.sign.x, LANDMARKS.sign.z) + 2, LANDMARKS.sign.z) : where === 'hills' ? new THREE.Vector3(HILLS_HOME.x, hillHeight(HILLS_HOME.x, HILLS_HOME.z) + 1, HILLS_HOME.z) : where === 'island' || where === 'moon' ? new THREE.Vector3(ISLAND.x, 2, ISLAND.z) : new THREE.Vector3(DOWNTOWN_HOME.x, 1.5, DOWNTOWN_HOME.z);
+        const at = e.type === 'sign.lit' ? new THREE.Vector3(LANDMARKS.sign.x, hillHeight(LANDMARKS.sign.x, LANDMARKS.sign.z) + 2, LANDMARKS.sign.z) : where === 'hills' ? new THREE.Vector3(HILLS_HOME.x, hillHeight(HILLS_HOME.x, HILLS_HOME.z) + 1, HILLS_HOME.z) : where === 'island' || where === 'moon' ? new THREE.Vector3(ISLANDS.founder.x, 2, ISLANDS.founder.z) : new THREE.Vector3(DOWNTOWN_HOME.x, 1.5, DOWNTOWN_HOME.z);
         this.fireworks.launch(at, 4, 2);
       } else if (e.type === 'region.opened') {
         const at = this.focusOf(e.region === 'launchpad' ? 'launchpad' : e.region === 'pier' ? 'pier' : e.region === 'marina' ? 'marina' : e.region === 'hills' ? 'hills' : 'island');
@@ -313,8 +517,8 @@ export class City {
     add(LANDMARKS.ferryBuilding.x, LANDMARKS.ferryBuilding.z, 1);
     add(LANDMARKS.coitTower.x, LANDMARKS.coitTower.z + 3);
     if (this.activeBlocks.length > 6) add(LANDMARKS.sign.x, LANDMARKS.sign.z, 3);
-    if (this.game?.regions.island) add(ISLAND.x, ISLAND.z, ISLAND.r + 1);
-    if (this.game?.regions.marina) add(-21, 13, 2);
+    if (this.game?.regions.island) add(ISLANDS.founder.x, ISLANDS.founder.z, ISLANDS.founder.r + 1);
+    if (this.game?.regions.marina) add(MARINA.x + 0.4, MARINA.z + 0.8, 2);
     return { x0: Math.max(WORLD.x0, box.x0), x1: Math.min(WORLD.x1, box.x1), z0: Math.max(WORLD.z0, box.z0), z1: Math.min(WORLD.z1, box.z1) };
   }
 
@@ -379,60 +583,81 @@ export class City {
 
   private syncNeighbourhoods(plan: WorldPlan, animate: boolean) {
     const wanted = new Set(plan.neighbourhoods.map((n) => n.index));
-    for (const [n, g] of this.grounds) {
-      if (!wanted.has(n)) {
-        this.grounds.delete(n);
-        this.remove(g, animate);
-      }
+    for (const key of this.jobs.keys()) if (key.startsWith('nb:') && !wanted.has(Number(key.slice(3)))) this.jobs.delete(key);
+    for (const [n, proxy] of this.grounds) {
+      if (wanted.has(n)) continue;
+      this.grounds.delete(n);
+      const key = `nb:${n}`;
+      const done = () => this.homeBatch.remove(key);
+      this.anims = this.anims.filter((a) => a.obj !== proxy);
+      // Grounds are built in world space around the origin, so they only ever scale in y.
+      if (animate) this.anims.push({ obj: proxy, t: 0, dur: 0.45, delay: 0, grow: false, axis: 'y', from: 1, done, batchKey: key });
+      else done();
     }
     for (const n of plan.neighbourhoods) {
-      if (this.grounds.has(n.index)) continue;
-      const { group } = neighbourhoodGrounds(n.bx, n.bz, n.index, hash(this.seed, 'nb', n.index));
-      group.userData.tip = { title: n.name, detail: `Neighbourhood ${n.index + 1} · ten homes` } satisfies Tip;
-      this.add(group, animate, 'y', 0.6);
-      this.grounds.set(n.index, group);
+      const key = `nb:${n.index}`;
+      if (this.grounds.has(n.index) || this.jobs.has(key)) continue;
+      this.defer(key, () => {
+        const tip = { title: n.name, detail: `Neighbourhood ${n.index + 1} · ten homes` } satisfies Tip;
+        const proxy = this.homeBatch.add(key, neighbourhoodGrounds(n.bx, n.bz, n.index, hash(this.seed, 'nb', n.index)), tip);
+        this.grounds.set(n.index, proxy);
+        if (animate) {
+          proxy.scale.y = 0.0001;
+          this.homeBatch.touch(key);
+          this.anims.push({ obj: proxy, t: 0, dur: 0.6, delay: 0, grow: true, axis: 'y', from: 0, batchKey: key });
+        }
+      });
     }
   }
 
   private syncHomes(plan: WorldPlan, animate: boolean) {
     const wanted = new Map(plan.homes.map((h) => [h.key, h]));
+    const lots = new Set(plan.homes.map((h) => h.index));
+    for (const key of this.pendingHomes.keys()) if (!wanted.has(key)) this.pendingHomes.delete(key);
     let i = 0;
-    for (const [key, proxy] of this.homes) {
+    for (const key of this.homes.keys()) {
       if (wanted.has(key)) continue;
-      this.homes.delete(key);
-      const fade = this.homeFades.get(key);
-      if (fade) {
-        fade.target = 0;
-        this.homeFades.delete(key);
-      }
-      // Lights go out first, then the house is packed away.
-      const done = () => {
-        this.homeBatch.remove(key);
-        if (fade) this.fades.delete(fade);
-      };
-      this.anims = this.anims.filter((a) => a.obj !== proxy);
-      if (animate) this.anims.push({ obj: proxy, t: 0, dur: 0.45, delay: 0.5 + (i++ % 20) * 0.04, grow: false, axis: 'xyz', from: 1, done, batchKey: key });
-      else done();
+      // A home being replaced on its lot stays until its successor is built (see buildHomes).
+      if (lots.has(this.lotOf.get(key)!)) continue;
+      this.removeHome(key, animate, i++);
     }
     const rph = plan.residentsPerHome;
-    let stagger = 0;
     for (const h of plan.homes) {
-      if (this.homes.has(h.key)) continue;
-      const built = home(h.kind, h.seed);
-      built.group.position.set(h.x, 0, h.z);
-      built.group.rotation.y = h.rot;
+      if (this.homes.has(h.key) || this.pendingHomes.has(h.key)) continue;
       const tip = {
         title: rph === 1 ? 'A home' : `Home of ${rph.toLocaleString('en-US')} residents`,
         detail: `${neighbourhoodLabel(plan, h.neighbourhood)} · your users live here while MRR covers $0.20 each`,
       } satisfies Tip;
+      this.pendingHomes.set(h.key, { h, tip, animate });
+    }
+    // The first world is built at once (behind the loading screen); after that, a few homes per frame.
+    if (!this.homesReady) {
+      this.buildHomes(Infinity);
+      this.homesReady = true;
+    } else if (!animate) this.buildHomes(24);
+  }
+
+  /** Builds queued homes until `budgetMs` is spent, so growth never freezes a frame. */
+  private buildHomes(budgetMs: number) {
+    const t0 = performance.now();
+    let stagger = 0;
+    for (const [key, { h, tip, animate }] of this.pendingHomes) {
+      if (performance.now() - t0 > budgetMs) break;
+      this.pendingHomes.delete(key);
+      const old = this.homeOnLot.get(h.index);
+      if (old !== undefined && old !== key) this.removeHome(old, animate, 0);
+      const built = home(h.kind, h.seed);
+      built.group.position.set(h.x, 0, h.z);
+      built.group.rotation.y = h.rot;
       const hasGlow = !!built.glow;
-      const key = h.key;
       const proxy = this.homeBatch.add(key, built, tip);
       this.homes.set(key, proxy);
+      this.lotOf.set(key, h.index);
+      this.homeOnLot.set(h.index, key);
       if (animate) {
         proxy.scale.setScalar(0.0001);
         this.homeBatch.touch(key);
-        this.anims.push({ obj: proxy, t: 0, dur: 0.7, delay: Math.min(stagger++ * 0.06, 1.2), grow: true, axis: 'xyz', from: 0, batchKey: key });
+        this.anims.push({ obj: proxy, t: 0, dur: 0.7, delay: Math.min(stagger++ * 0.06, 0.6), grow: true, axis: 'xyz', from: 0, batchKey: key });
       }
       if (hasGlow) {
         const fade: Fade = { apply: (level) => this.homeBatch.setGlow(key, level), level: animate ? 0 : 1, target: 1 };
@@ -441,6 +666,28 @@ export class City {
         this.homeFades.set(key, fade);
       }
     }
+  }
+
+  /** Lights go out first, then the house is packed away. */
+  private removeHome(key: string, animate: boolean, order: number) {
+    const proxy = this.homes.get(key);
+    if (!proxy) return;
+    this.homes.delete(key);
+    const lot = this.lotOf.get(key);
+    this.lotOf.delete(key);
+    if (lot !== undefined && this.homeOnLot.get(lot) === key) this.homeOnLot.delete(lot);
+    const fade = this.homeFades.get(key);
+    if (fade) {
+      fade.target = 0;
+      this.homeFades.delete(key);
+    }
+    const done = () => {
+      this.homeBatch.remove(key);
+      if (fade) this.fades.delete(fade);
+    };
+    this.anims = this.anims.filter((a) => a.obj !== proxy);
+    if (animate) this.anims.push({ obj: proxy, t: 0, dur: 0.45, delay: 0.5 + (order % 20) * 0.04, grow: false, axis: 'xyz', from: 1, done, batchKey: key });
+    else done();
   }
 
   private syncRoads(blocks: BlockCoord[]) {
@@ -528,6 +775,10 @@ export class City {
     const key = [...taken].sort().join(';');
     if (key === this.wildsKey) return;
     this.wildsKey = key;
+    this.defer('wilds', () => this.buildWilds(taken));
+  }
+
+  private buildWilds(taken: Set<string>) {
     if (this.wilds) {
       this.scene.remove(this.wilds);
       disposeGroup(this.wilds);
@@ -549,7 +800,7 @@ export class City {
 
   // ─── The founder's city ─────────────────────────────────────────────────
 
-  /** Pavements under open build blocks, for-sale signs on empty plots, clouds over closed land. */
+  /** Pavements under open build blocks, for-sale signs on empty plots, fog over closed land. */
   private syncLand(game: GameState, animate: boolean) {
     for (const block of BUILD_BLOCKS) {
       const open = game.openBlocks.includes(block.id);
@@ -570,19 +821,19 @@ export class City {
         this.bases.delete(block.id);
       }
       if (!open && !cloud) {
-        const g = cloudBank(c.x, c.z, BLOCK + 0.6, BLOCK + 0.6, hash(this.seed, 'cloud', block.id), 0.5).group;
-        g.userData.tip = {
-          title: `${block.name} (under cloud)`,
-          detail: block.gate > game.peakMrr ? `Clears at $${block.gate.toLocaleString('en-US')} MRR` : 'Clears once every open plot is built on',
-        } satisfies Tip;
-        this.scene.add(g);
+        // The fog spills half a street past the block on every side.
+        const g = this.fog.add(block.id, { x: c.x, z: c.z, w: BLOCK, d: BLOCK, seed: hash(this.seed, 'cloud', block.id) });
+        g.userData.tip = { title: `${block.name} (in the fog)`, detail: fogDetail(block.gate, game.peakMrr) } satisfies Tip;
         this.pickables.push(g);
         this.blockClouds.set(block.id, g);
       } else if (open && cloud) {
+        // Burns off: thins from the edges, lifts and is gone in about a second.
         this.blockClouds.delete(block.id);
-        this.remove(cloud, animate);
+        const i = this.pickables.indexOf(cloud);
+        if (i >= 0) this.pickables.splice(i, 1);
+        this.fog.remove(block.id, animate);
       } else if (cloud) {
-        cloud.userData.tip.detail = block.gate > game.peakMrr ? `Clears at $${block.gate.toLocaleString('en-US')} MRR` : 'Clears once every open plot is built on';
+        cloud.userData.tip.detail = fogDetail(block.gate, game.peakMrr);
       }
     }
 
@@ -625,11 +876,9 @@ export class City {
       if (this.builds.has(key)) continue;
       const item = ITEMS.get(w.item)!;
       const built = itemModel(item.model, w.x, w.z, hash(this.seed, key));
-      built.group.userData.tip = { title: item.name, detail: `${item.blurb} · upkeep ${short(item.price * item.upkeep)}/mo` } satisfies Tip;
-      this.add(built.group, false, 'y', 1.1);
-      if (animate) this.construct(built.group, item.placement.kind === 'plot' && item.placement.size === 4 ? 3.4 : 2.6);
-      const fade = this.track(built, animate ? 0 : 1, 1);
-      this.builds.set(key, { group: built.group, fade, lit: true });
+      const { proxy, box, fade } = this.place(key, built, { title: item.name, detail: `${item.blurb} · upkeep ${short(item.price * item.upkeep)}/mo` }, animate ? 0 : 1);
+      if (animate) this.construct(proxy, item.placement.kind === 'plot' && item.placement.size === 4 ? 3.4 : 2.6, box);
+      this.builds.set(key, { group: proxy, fade, lit: true });
       if (animate) this.fireworks.launch(new THREE.Vector3(w.x, 1.5, w.z), 1, 0.5);
     }
   }
@@ -660,7 +909,7 @@ export class City {
     }
     if (tier >= 5) {
       const o = name(5);
-      wanted.set(`island|${o.id}`, { option: o.id, x: ISLAND.x, y: hillHeight(ISLAND.x, ISLAND.z) - 0.02, z: ISLAND.z, rot: Math.PI / 4, title: tier === 5 ? `Your home: ${o.name}` : 'Your island estate', detail: tier === 6 ? 'You live on the moon now. Buy a rocket to visit.' : o.blurb });
+      wanted.set(`island|${o.id}`, { option: o.id, x: ISLANDS.founder.x, y: hillHeight(ISLANDS.founder.x, ISLANDS.founder.z) - 0.02, z: ISLANDS.founder.z, rot: ESTATE_TURN, title: tier === 5 ? `Your home: ${o.name}` : 'Your island estate', detail: tier === 6 ? 'You live on the moon now. Buy a rocket to visit.' : o.blurb });
     }
     for (const [key, g] of this.homesOfFounder) {
       if (wanted.has(key)) continue;
@@ -670,16 +919,15 @@ export class City {
     for (const [key, w] of wanted) {
       const have = this.homesOfFounder.get(key);
       if (have) {
-        have.userData.tip = { title: w.title, detail: w.detail } satisfies Tip;
+        this.homeBatch.setTip(this.batched.get(have)!, { title: w.title, detail: w.detail } satisfies Tip);
         continue;
       }
       const built = founderHome(w.option, hash(this.seed, key), w.museum);
       built.group.position.set(w.x, w.y, w.z);
       built.group.rotation.y = w.rot;
-      built.group.userData.tip = { title: w.title, detail: w.detail } satisfies Tip;
-      this.add(built.group, animate, 'xyz', 0.9);
-      this.track(built, animate ? 0 : 1, 1);
-      this.homesOfFounder.set(key, built.group);
+      const { proxy } = this.place(`founder|${key}`, built, { title: w.title, detail: w.detail }, animate ? 0 : 1);
+      this.grow(proxy, animate, 'xyz', 0.9);
+      this.homesOfFounder.set(key, proxy);
     }
   }
 
@@ -697,17 +945,21 @@ export class City {
         const slot = MARINA_SLOTS[yacht_++];
         if (slot) wanted.set(`site:marina:${i}|${o.item}`, () => ({ ...yacht('day', hash(this.seed, i)), at: new THREE.Vector3(slot.x, -0.36, slot.z), rot: Math.PI, title: item.name, detail: item.blurb }));
       } else if (o.site === 'launchpad') {
-        wanted.set(`site:launch|rocket`, () => ({ ...rocket(i), at: new THREE.Vector3(LAUNCH.x, this.rocketBase, LAUNCH.z), rot: 0, title: 'Your rocket', detail: 'Open Your home to fly to the moon.' }));
+        wanted.set(`site:launch|rocket`, () => ({ ...rocket(i), at: new THREE.Vector3(ISLANDS.launch.x, this.rocketBase, ISLANDS.launch.z), rot: 0, title: 'Your rocket', detail: 'Open Your home to fly to the moon.' }));
       }
     });
     if (game.home.tier >= 5) {
-      wanted.set('site:superyacht|yacht', () => ({ ...yacht('super', 7), at: new THREE.Vector3(SUPERYACHT.x, -0.34, SUPERYACHT.z), rot: Math.PI / 2, title: 'Your superyacht', detail: 'Came with the island.' }));
+      wanted.set('site:superyacht|yacht', () => ({ ...yacht('super', 7), at: new THREE.Vector3(SUPERYACHT.x, -0.34, SUPERYACHT.z), rot: (Math.PI / 2) * WORLD_SPEC.estate.flip, title: 'Your superyacht', detail: 'Came with the island.' }));
     }
     for (const [key, b] of this.builds) {
       if (!key.startsWith('site:') || wanted.has(key)) continue;
       this.builds.delete(key);
       if (b.fade) this.fades.delete(b.fade);
-      if (b.group === this.rocketObj) this.rocketObj = null;
+      if (b.group === this.rocketObj) {
+        // Scrubbed back to before the rocket mid-flight: the flight ends with it.
+        this.rocketObj = null;
+        this.launch = null;
+      }
       this.remove(b.group, animate);
     }
     for (const [key, make] of wanted) {
@@ -715,21 +967,53 @@ export class City {
       const v = make();
       v.group.position.copy(v.at);
       v.group.rotation.y = v.rot;
-      v.group.userData.tip = { title: v.title, detail: v.detail } satisfies Tip;
-      this.add(v.group, animate, 'xyz', 0.8);
-      const fade = this.track(v, animate ? 0 : 1, 1);
-      this.builds.set(key, { group: v.group, fade, lit: true });
-      if (key.startsWith('site:launch')) this.rocketObj = v.group;
+      const tip = { title: v.title, detail: v.detail } satisfies Tip;
+      if (key.startsWith('site:launch')) {
+        // The rocket flies, flame and all, so it stays a real object.
+        v.group.userData.tip = tip;
+        this.add(v.group, animate, 'xyz', 0.8);
+        this.builds.set(key, { group: v.group, fade: this.track(v, animate ? 0 : 1, 1), lit: true });
+        this.rocketObj = v.group;
+        continue;
+      }
+      const { proxy, fade } = this.place(key, v, tip, animate ? 0 : 1);
+      this.grow(proxy, animate, 'xyz', 0.8);
+      this.builds.set(key, { group: proxy, fade, lit: true });
     }
+  }
+
+  /** A street festival when the city is happy, a protest at City Hall when it isn't. */
+  private syncMood(game: GameState, animate: boolean) {
+    const sat = game.satisfaction;
+    const parts = (['housing', 'upkeep', 'amenities', 'momentum'] as const).map((k) => [k, sat[k]] as const);
+    const weakest = parts.reduce((a, b) => (b[1] < a[1] ? b : a))[0];
+    const want = sat.score >= MOOD.festival ? 'festival' : sat.score < MOOD.protest ? `protest:${weakest}` : null;
+    if (this.mood?.key === want) {
+      if (this.mood) this.homeBatch.setTip(this.batched.get(this.mood.proxy)!, moodTip(game, weakest));
+      return;
+    }
+    if (this.mood) {
+      this.remove(this.mood.proxy, animate);
+      this.mood = null;
+    }
+    if (!want) return;
+    const built = want === 'festival' ? festival(hash(this.seed, 'festival')) : protest(hash(this.seed, 'protest'), protestBanner(weakest));
+    const { proxy } = this.place(`mood|${want}`, built, moodTip(game, weakest), animate ? 0 : 1);
+    this.grow(proxy, animate, 'y', 0.8);
+    this.mood = { key: want, proxy };
+    if (this.ceremonyOn) this.homeBatch.setVisible(this.batched.get(proxy)!, false);
   }
 
   /** Tents for the people your city can't house. More people, more tents (up to a point). */
   private syncTents(unhoused: number) {
     const count = unhoused <= 0 ? 0 : Math.min(TENT_SPOTS.length, Math.max(2, Math.round(Math.sqrt(unhoused) * 1.4)));
-    if (this.tents?.count === count) {
-      if (this.tents) this.tents.group.userData.tip = tentTip(unhoused);
-      return;
-    }
+    if (this.tents) this.tents.group.userData.tip = tentTip(unhoused);
+    if (count === this.tentTarget) return;
+    this.tentTarget = count;
+    this.defer('tents', () => this.buildTents(count, unhoused));
+  }
+
+  private buildTents(count: number, unhoused: number) {
     if (this.tents) {
       this.scene.remove(this.tents.group);
       const i = this.pickables.indexOf(this.tents.group);
@@ -750,16 +1034,51 @@ export class City {
   private add(obj: THREE.Object3D, animate: boolean, axis: 'xyz' | 'y', dur: number, delay = 0) {
     this.scene.add(obj);
     this.pickables.push(obj);
+    this.grow(obj, animate, axis, dur, delay);
+  }
+
+  /** Pop an object in from nothing. */
+  private grow(obj: THREE.Object3D, animate: boolean, axis: 'xyz' | 'y', dur: number, delay = 0) {
     if (!animate) return;
     if (axis === 'xyz') obj.scale.setScalar(0.0001);
     else obj.scale.y = 0.0001;
+    this.touchBatched(obj);
     this.anims.push({ obj, t: 0, dur, delay, grow: true, axis, from: 0 });
   }
 
+  /**
+   * Draws a bought model through the shared batch (a few draw calls for the
+   * whole city). Returns its proxy, already in the scene and pickable, its
+   * world box for building sites, and a fade for its lights.
+   */
+  private place(key: string, built: Built, tip: Tip, level: number): { proxy: THREE.Object3D; box: THREE.Box3; fade?: Fade } {
+    const box = new THREE.Box3().setFromObject(built.group);
+    const hasLights = !!built.glow;
+    const batchKey = `b:${key}`;
+    const proxy = this.homeBatch.add(batchKey, built, tip);
+    this.batched.set(proxy, batchKey);
+    // Parts that couldn't be merged ride on the proxy, so it lives in the scene.
+    this.scene.add(proxy);
+    this.pickables.push(proxy);
+    let fade: Fade | undefined;
+    if (hasLights) {
+      fade = { apply: (l) => this.homeBatch.setGlow(batchKey, l), level, target: 1 };
+      fade.apply!(level);
+      this.fades.add(fade);
+    }
+    return { proxy, box, fade };
+  }
+
+  /** A batched model's proxy moved: copy it to the batch. */
+  private touchBatched(obj: THREE.Object3D) {
+    const key = this.batched.get(obj);
+    if (key) this.homeBatch.touch(key);
+  }
+
   /** Raise a building behind scaffolding, with a crane and dust. */
-  private construct(obj: THREE.Object3D, duration: number) {
+  private construct(obj: THREE.Object3D, duration: number, box?: THREE.Box3) {
     this.sites.get(obj)?.dispose();
-    const site = new Construction(obj, duration);
+    const site = new Construction(obj, duration, box);
     this.scene.add(site.object);
     this.sites.set(obj, site);
   }
@@ -773,9 +1092,15 @@ export class City {
     const i = this.pickables.indexOf(obj);
     if (i >= 0) this.pickables.splice(i, 1);
     this.anims = this.anims.filter((a) => a.obj !== obj);
+    const key = this.batched.get(obj);
     const done = () => {
-      this.scene.remove(obj);
-      disposeGroup(obj);
+      if (key) {
+        this.homeBatch.remove(key);
+        this.batched.delete(obj);
+      } else {
+        this.scene.remove(obj);
+        disposeGroup(obj);
+      }
     };
     if (animate) this.anims.push({ obj, t: 0, dur: 0.45, delay, grow: false, axis: 'xyz', from: 1, done });
     else done();
@@ -790,6 +1115,11 @@ export class City {
   }
 
   update(dt: number, time: number) {
+    // A few milliseconds of building per frame, so growth never stutters.
+    if (!this.busy) this.hurry = false;
+    // A jump the user asked for fills in within a few frames; a replay step trickles in.
+    if (this.jobs.size) this.runJobs(this.hurry ? 16 : 3);
+    if (this.pendingHomes.size) this.buildHomes(this.hurry ? 40 : 4);
     for (const a of this.anims) {
       if (a.delay > 0) {
         a.delay -= dt;
@@ -801,22 +1131,23 @@ export class City {
       if (a.axis === 'xyz') a.obj.scale.setScalar(s);
       else a.obj.scale.y = s;
       if (a.batchKey) this.homeBatch.touch(a.batchKey);
+      else this.touchBatched(a.obj);
       if (a.t >= 1) a.done?.();
     }
     this.anims = this.anims.filter((a) => a.t < 1);
-    this.homeBatch.update();
+    this.fog.update(dt);
 
     for (const f of this.fades) {
       if (Math.abs(f.level - f.target) < 0.001) {
         if (f.target === 0 && f.level === 0) this.fades.delete(f);
         continue;
       }
-      // Lights come on with a flicker, go off smoothly.
+      // Lights ease on and off. (They used to come on with a random dip on some frames, which at
+      // night, with dozens of homes lighting up through a replay, read as faulty wiring.)
       const step = f.target > f.level ? dt * 1.4 : -dt * 2;
       f.level = f.target > f.level ? Math.min(f.target, f.level + step) : Math.max(f.target, f.level + step);
-      const flicker = f.target > f.level && f.level > 0.2 && Math.random() < 0.15 ? 0.3 : 1;
-      if (f.apply) f.apply(f.level * flicker);
-      else f.mat!.color.copy(f.base!).multiplyScalar(f.level * flicker);
+      if (f.apply) f.apply(f.level);
+      else f.mat!.color.copy(f.base!).multiplyScalar(f.level);
     }
 
     // HQ beacon: a slow heartbeat, flaring on pushes and releases.
@@ -827,18 +1158,27 @@ export class City {
     }
 
     for (const [obj, site] of this.sites) {
-      if (site.update(dt)) continue;
+      const going = site.update(dt);
+      this.touchBatched(obj);
+      if (going) continue;
       site.dispose();
       this.sites.delete(obj);
     }
+    // After the animations and building sites have moved their proxies.
+    this.homeBatch.update();
 
     this.updateSky(dt, time);
     this.updateLaunch(dt);
+    this.updateHelicopter(dt);
     for (const h of this.highlights.children) (h as THREE.Mesh).scale.y = 1 + 0.12 * Math.sin(time * 4);
     this.rain.update(dt);
     this.moon.home = (this.game?.home.tier ?? 0) >= 6;
     // The iso view has no sky, so the moon only rises for rocket flights, as their destination.
-    if (this.camera) this.moon.update(dt, this.camera, 0, !!this.launch && this.launch.t > 2 && this.launch.t < 11);
+    if (this.camera) this.moon.update(dt, this.camera, 0, this.launch?.phase === 'ascent' && this.launch.t > 1.6);
+    if (this.volleys.length) {
+      for (const v of this.volleys) if ((v.delay -= dt) <= 0) this.fireworks.launch(v.at, v.count, v.spread);
+      this.volleys = this.volleys.filter((v) => v.delay > 0);
+    }
     this.fireworks.update(dt);
     this.train.update(dt);
     this.traffic.update(dt);
@@ -846,37 +1186,120 @@ export class City {
     this.life.update(dt, time, this.atmosphere);
   }
 
+  private syncHelicopter(owned: boolean, animate: boolean) {
+    if (!owned) {
+      if (this.heli) {
+        if (this.heli.fade) this.fades.delete(this.heli.fade);
+        this.remove(this.heli.group, animate);
+        this.heli = null;
+      }
+      return;
+    }
+    if (this.heli) return;
+    // Its own object, not a batch entry: it flies, and the rotor turns.
+    const { body, rotor } = helicopter(hash(this.seed, 31));
+    const group = new THREE.Group();
+    group.add(body.group, rotor.group);
+    rotor.group.position.set(HELI_ROTOR.x, HELI_ROTOR.y, HELI_ROTOR.z);
+    group.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.castShadow = true;
+    });
+    group.position.copy(padTop('airport'));
+    // Nose to the north-east, towards the camera, ready to go.
+    group.rotation.y = -Math.PI / 4;
+    group.userData.tip = { title: 'Your helicopter', detail: 'Open Your home to fly to your island.' } satisfies Tip;
+    this.pickables.push(group);
+    this.add(group, animate, 'xyz', 0.8);
+    this.heli = { group, rotor: rotor.group, fade: this.track(body, animate ? 0 : 1, 1), pad: 'airport', spin: 0, flight: null };
+  }
+
+  private updateHelicopter(dt: number) {
+    const h = this.heli;
+    if (!h) return;
+    const f = h.flight;
+    const g = h.group;
+    // Rotor: spools up on the pad before lift-off, winds down after touchdown.
+    const flying = !!f && f.t < f.cruise + HELI_UP + HELI_DOWN;
+    h.spin = flying ? Math.min(1, h.spin + dt / 1.5) : Math.max(0, h.spin - dt / 3);
+    if (h.spin > 0) h.rotor.rotation.y += dt * 34 * h.spin;
+    if (!f) return;
+    f.t += dt;
+    // Wait for the rotor, then lift, cruise and settle.
+    const t = f.t - 1.2;
+    const up = HELI_UP;
+    const hop = 1.1;
+    if (t <= 0) return;
+    if (t < up) {
+      const u = easeInOut(t / up);
+      g.position.set(f.from.x, f.from.y + hop * u, f.from.z);
+      g.rotation.y = lerpAngle(f.yaw0, f.yaw1, u);
+      g.rotation.z = 0;
+    } else if (t < up + f.cruise) {
+      const u = (t - up) / f.cruise;
+      const s = easeInOut(u);
+      // Up to cruising height and back down in one long arc: nose down at speed, a flare to slow before the pad.
+      const y = THREE.MathUtils.lerp(f.from.y, f.to.y, s) + hop + HELI_CRUISE * Math.sin(Math.PI * Math.min(1, u * 1.15));
+      g.position.set(THREE.MathUtils.lerp(f.from.x, f.to.x, s), Math.max(y, f.to.y + hop * 0.6), THREE.MathUtils.lerp(f.from.z, f.to.z, s));
+      g.rotation.y = f.yaw1;
+      g.rotation.z = -0.15 * Math.sin(Math.PI * u) - 0.1 * Math.sin(2 * Math.PI * u);
+    } else if (t < up + f.cruise + HELI_DOWN) {
+      const u = easeInOut((t - up - f.cruise) / HELI_DOWN);
+      g.position.set(f.to.x, f.to.y + hop * (1 - u), f.to.z);
+      g.rotation.z = 0;
+    } else {
+      g.position.copy(f.to);
+      g.rotation.z = 0;
+      h.pad = f.dest;
+      h.flight = null;
+      g.userData.tip = { title: 'Your helicopter', detail: f.dest === 'island' ? 'Parked on your island. Open Your home to fly back.' : 'Open Your home to fly to your island.' } satisfies Tip;
+      f.done(f.dest);
+    }
+  }
+
   /** Top of the launch pad, where the rocket stands. */
   private get rocketBase(): number {
-    return hillHeight(LAUNCH.x, LAUNCH.z) + 0.07;
+    return hillHeight(ISLANDS.launch.x, ISLANDS.launch.z) + 0.07;
   }
 
   private updateLaunch(dt: number) {
+    const x = this.exhaust;
+    if (!x) return;
     const l = this.launch;
     const r = this.rocketObj;
-    if (!l || !r) return;
-    l.t += dt;
     const base = this.rocketBase;
-    if (l.t < 6) {
-      // Lift-off: slow, then fast, out of sight
-      r.position.y = base + 0.4 * l.t * l.t * l.t;
-      this.flame.scale.setScalar(1 + Math.random() * 0.3);
-      if (Math.random() < 0.5) this.fireworks.launch(new THREE.Vector3(LAUNCH.x, base + 0.1, LAUNCH.z), 0, 0);
-    } else if (l.t < 9) {
-      r.visible = false;
-    } else if (l.t < 14) {
-      // Coming home: a gentle powered landing
-      r.visible = true;
-      const u = (l.t - 9) / 5;
-      r.position.y = base + 40 * (1 - u) ** 3;
-    } else {
-      r.position.y = base;
-      r.remove(this.flame);
-      this.flame.visible = false;
-      this.launch = null;
-      l.done();
+    const pad = this.tmpPad.set(ISLANDS.launch.x, base, ISLANDS.launch.z);
+    // Smoke takes the light of the hour: sunlit cream by day, blue-grey by night, warm at dusk.
+    const a = this.atmosphere;
+    x.ambient.setRGB(...a.fog).multiplyScalar(0.55 + 0.45 * (1 - a.night)).lerp(this.tmpSmoke.setRGB(0.95, 0.93, 0.9), 0.45 * (1 - a.night));
+    if (!l || !r) {
+      // Parked (or the rocket went away mid-flight): engines off, let the last smoke drift off.
+      x.thrust = 0;
+      x.update(dt, r ? r.position : pad, base);
+      return;
     }
+    const t = l.t;
+    r.visible = l.phase !== 'away';
+    if (l.phase === 'ascent') {
+      // Ignition: the engines light and steam rolls off the pad while the clamps hold it,
+      // then a slow, heavy climb that keeps on accelerating, out of the top of the sky.
+      const hold = ROCKET_IGNITION;
+      x.thrust = Math.min(1, t / 0.5);
+      const c = Math.max(0, t - hold);
+      const shake = t < hold + 0.6 ? 0.006 * Math.min(1, t / 0.4) : 0;
+      r.position.set(pad.x + (Math.random() - 0.5) * shake, base + Math.min(120, 0.55 * c * c + 0.2 * c * c * c), pad.z + (Math.random() - 0.5) * shake);
+    } else if (l.phase === 'away') {
+      x.thrust = 0;
+      r.position.set(pad.x, base + 80, pad.z);
+    } else {
+      // Home: falling from high above on a long burn, slowing to a stop on the pad.
+      const u = Math.min(1, t / ROCKET_LANDING);
+      x.thrust = u < 1 ? 0.55 + 0.45 * u : Math.max(0, 1 - (t - ROCKET_LANDING) / 0.5);
+      r.position.set(pad.x, base + 26 * (1 - u) ** 2.4, pad.z);
+    }
+    x.update(dt, r.position, base);
   }
+  private tmpPad = new THREE.Vector3();
+  private tmpSmoke = new THREE.Color();
 
   /** Sun, sky and lights for the current hour (local clock unless overridden). */
   private sunDir = new THREE.Vector3(0, 1, 0);
@@ -913,6 +1336,8 @@ export class City {
     GLOW.night.value = a.night;
     GLOW.time.value = time;
     setEnvironment(glassMaterial.envMap, 0.25 + 0.75 * (1 - a.night));
+    // Fog over locked land: sunlit by day, golden at sunset, moonlit silver-blue at night.
+    setFogLight(a);
     if (this.pools) this.pools.opacity = 0.45 * a.night * (this.lampsFailing ? 0.25 : 1);
     if (this.hq) this.hq.sign.color.setScalar(1 + 1.2 * a.night);
     this.warm.intensity = 8 * a.night;
@@ -920,6 +1345,30 @@ export class City {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
+
+/** Satisfaction scores that bring people out onto Civic Center Plaza. */
+const MOOD = { festival: 85, protest: 40 };
+
+/** The mood's tooltip always quotes the real score, and the real reason behind a protest. */
+function moodTip(game: GameState, weakest: 'housing' | 'upkeep' | 'amenities' | 'momentum'): Tip {
+  const score = game.satisfaction.score;
+  if (score >= MOOD.festival) return { title: 'Street festival', detail: `Satisfaction ${score}/100. People love living here.` };
+  const why = {
+    housing: `${game.unhoused.toLocaleString('en-US')} people have no home. Housing needs $0.20 MRR per user`,
+    upkeep: `Upkeep is only ${Math.round(game.maintenance)}% funded`,
+    amenities: 'Too few parks and places to go for the people here',
+    momentum: game.satisfaction.momentum < 0.5 ? 'MRR fell over the last four weeks' : 'MRR has barely grown in four weeks',
+  }[weakest];
+  return { title: 'Protest at City Hall', detail: `Satisfaction ${score}/100. ${why}.` };
+}
+
+/** What a fogged block's tooltip says about when it opens. */
+function fogDetail(gate: number, peakMrr: number): string {
+  return gate > peakMrr ? `The fog lifts at $${gate.toLocaleString('en-US')} MRR` : 'The fog lifts once every open plot is built on';
+}
+
+/** Paying-customer counts worth a fireworks show. */
+const CUSTOMER_MILESTONES = [10, 100, 1_000, 10_000, 100_000];
 
 function neighbourhoodLabel(plan: WorldPlan, n: number): string {
   return plan.neighbourhoods.find((x) => x.index === n)?.name ?? 'Neighbourhood';
@@ -994,4 +1443,41 @@ export function roadNetwork(blocks: BlockCoord[]): { cells: RoadCell[] } {
     }
   }
   return { cells: [...seen.values()] };
+}
+
+interface Heli {
+  group: THREE.Group;
+  rotor: THREE.Object3D;
+  fade?: Fade;
+  pad: 'airport' | 'island';
+  /** Rotor speed, 0 (still) to 1 (flying). */
+  spin: number;
+  flight: { t: number; from: THREE.Vector3; to: THREE.Vector3; cruise: number; dest: 'airport' | 'island'; yaw0: number; yaw1: number; done: (to: 'airport' | 'island') => void } | null;
+}
+
+/** Map units a second at cruise, and the seconds spent lifting off and settling. */
+const HELI_SPEED = 7;
+const HELI_UP = 2.2;
+const HELI_DOWN = 2.6;
+/** Extra height at the top of the arc, over the hop off the pad. */
+const HELI_CRUISE = 4;
+
+/** Where the skids rest: the airport's pad, or the one every island estate has by the house (turned with the estate). */
+function padTop(pad: 'airport' | 'island'): THREE.Vector3 {
+  if (pad === 'airport') return new THREE.Vector3(HELIPAD.x, 0.03, HELIPAD.z);
+  const p = new THREE.Vector3(ESTATE_HELIPAD.x, 0, ESTATE_HELIPAD.z).applyAxisAngle(UP, ESTATE_TURN);
+  return p.add(new THREE.Vector3(ISLANDS.founder.x, hillHeight(ISLANDS.founder.x, ISLANDS.founder.z) - 0.02 + ESTATE_HELIPAD.y, ISLANDS.founder.z));
+}
+
+const UP = new THREE.Vector3(0, 1, 0);
+/** The island estate faces the camera: turned an eighth of a turn. */
+const ESTATE_TURN = Math.PI / 4;
+
+function easeInOut(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+}
+
+function lerpAngle(a: number, b: number, t: number): number {
+  const d = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+  return a + d * t;
 }

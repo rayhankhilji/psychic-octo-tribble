@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { GeoBuilder, glowMaterial, type ColorLike } from './geo.ts';
 import { densify } from './effects.ts';
-import { LANDMARKS, RUNWAY, SEA, type Pt } from '../world/map.ts';
+import { Batch } from './batch.ts';
+import { LANDMARKS, MARINA, PIER, RUNWAY, SEA, type Pt } from '../world/map.ts';
+import { bayRoutes } from '../world/routes.ts';
 import { hash, pick, rng } from '../world/rng.ts';
 import type { Atmosphere } from '../world/daylight.ts';
 
@@ -21,20 +23,26 @@ const NAV_GREEN: ColorLike = [0.3, 3, 0.6];
 const NAV_WHITE: ColorLike = [3, 3, 2.8];
 const CABIN: ColorLike = [1.7, 1.2, 0.65];
 
-// ─── Routes on the water (checked against the coastline: ≥1 unit offshore) ──
+// Routes on the water come from `world/routes.ts`: this world's own, at least a unit offshore.
 
-const FERRY_SAUSALITO: Pt[] = [[13.6, -1.2], [16, 5], [9, 14.5], [4.5, 22], [3.5, 32], [-10, 31.5], [-20, 29.5], [-24.2, 27.6]];
-const FERRY_OAKLAND: Pt[] = [[13.6, -2.2], [20, -10.5], [33, -12.6], [45, -11], [54, -8]];
-const SHIPPING_LANE: Pt[] = [[-110, 14], [-60, 14.5], [-34.6, 15.4], [-22, 18.5], [-13.5, 23], [-11, 30], [4, 34], [22, 29], [40, 18], [53.5, 12]];
-/** Sailing loops: centre, radii. */
-const SAIL_LOOPS: [number, number, number, number][] = [[10, 20, 6, 5], [-18, 18.5, 5, 2.5], [20, 8, 4, 3], [12, 24, 4.5, 3.5]];
 /** Powell Street cable car: from the turntable at Market up to the wharf. */
 const CABLE_LINE = { x: -2.5, z0: -11.9, z1: 7.2 };
+
+/** A lamp's flash over one beat (0–1): up in 0.05, gone by 0.2, smooth both ways. */
+function flash(t: number): number {
+  return THREE.MathUtils.smoothstep(t, 0, 0.05) * (1 - THREE.MathUtils.smoothstep(t, 0.08, 0.2));
+}
 
 interface Mover {
   obj: THREE.Object3D;
   wake?: Wake;
   update(dt: number, time: number): void;
+}
+
+/** A model drawn through the batch: `obj` is its proxy, `key` its batch entry. */
+interface Batched {
+  obj: THREE.Object3D;
+  key: string;
 }
 
 export class Life {
@@ -43,19 +51,32 @@ export class Life {
   private fog: { sprite: THREE.Sprite; base: THREE.Vector3; speed: number; phase: number; mat: THREE.SpriteMaterial }[] = [];
   private shadows: { obj: THREE.Object3D; speed: number }[] = [];
   private gulls: Gulls;
+  /** Every boat, airliner, cable car and kite in a few draw calls. */
+  private batch = new Batch(64, 80_000);
+  private batched: Batched[] = [];
+  private cableCarObjs: THREE.Object3D[] = [];
+  private fogTint = new THREE.Color();
+  private white = new THREE.Color(1, 1, 1);
 
   constructor(seed: number) {
     const r = rng(hash(seed, 'life'));
+    this.object.add(this.batch.object);
+    const routes = bayRoutes();
     // Ferries back and forth; the Oakland one ducks under the Bay Bridge.
-    this.ferry(FERRY_SAUSALITO, 0.55, 0.1, 0x2f6a4f);
-    this.ferry(FERRY_OAKLAND, 0.6, 0.55, 0x2a5a8a);
+    this.ferry(routes.sausalito, 0.55, 0.1, 0x2f6a4f);
+    this.ferry(routes.oakland, 0.6, 0.55, 0x2a5a8a);
     // A container ship sailing in through the Golden Gate, bound for Oakland.
-    this.ship(SHIPPING_LANE, 0.42);
-    for (let i = 0; i < SAIL_LOOPS.length; i++) {
-      const [cx, cz, rx, rz] = SAIL_LOOPS[i]!;
+    this.ship(routes.shipping, 0.42);
+    // A tug pottering along the waterfront between the Ferry Building and the wharf.
+    this.harbourTug(routes.tug, 0.2);
+    // Sloops tacking round their loops; the last keeps a steady course.
+    const loops = routes.sails;
+    for (let i = 0; i < loops.length - 1; i++) {
+      const [cx, cz, rx, rz] = loops[i]!;
       this.sailboat(cx, cz, rx, rz, r() * Math.PI * 2, (r() < 0.5 ? -1 : 1) * (0.05 + r() * 0.03), r);
     }
-    this.sailboat(10, 20, 4.2, 3.2, 2, 0.06, r);
+    const last = loops.at(-1);
+    if (last) this.sailboat(last[0], last[1], last[2], last[3], 2, 0.06, r);
     this.airliners(seed);
     this.cableCars();
     this.kites(r);
@@ -67,139 +88,97 @@ export class Life {
 
   // ─── Boats ──────────────────────────────────────────────────────────────
 
-  private ferry(route: Pt[], speed: number, start: number, trim: number) {
-    const b = new GeoBuilder();
-    // Twin-hull catamaran: two slim hulls, a white double-deck cabin, green trim.
-    for (const s of [-1, 1]) b.rbox(1.1, 0.1, 0.16, 0, -0.06, s * 0.12, 0xf4f4f0, 0.04);
-    b.rbox(1.0, 0.04, 0.46, 0, 0.03, 0, trim, 0.02);
-    b.rbox(0.82, 0.16, 0.4, -0.04, 0.06, 0, 0xf8f8f4, 0.03);
-    b.rbox(0.52, 0.12, 0.34, -0.1, 0.22, 0, 0xf8f8f4, 0.03);
-    b.box(0.86, 0.02, 0.44, -0.04, 0.22, 0, trim);
-    b.box(0.16, 0.06, 0.2, 0.1, 0.34, 0, 0xf8f8f4);
-    b.quad(0.14, 0.04, 0.181, 0.37, 0, 'x+', [0.4, 0.55, 0.7], true, 0.2);
-    for (const s of [1, -1] as const) {
-      for (let k = 0; k < 9; k++) b.quad(0.06, 0.06, -0.4 + k * 0.085, 0.15, s * 0.201, s > 0 ? 'z+' : 'z-', CABIN, true, 0.12 + (k % 4) * 0.2);
-      for (let k = 0; k < 5; k++) b.quad(0.06, 0.05, -0.3 + k * 0.085, 0.29, s * 0.171, s > 0 ? 'z+' : 'z-', CABIN, true, 0.15 + (k % 3) * 0.2);
-    }
-    b.cylinder(0.006, 0.006, 0.14, 0.12, 0.36, 0, 0x333333, 4);
-    b.blob(0.02, 0.12, 0.5, 0, NAV_WHITE, true);
-    b.blob(0.015, 0.0, 0.24, 0.23, NAV_GREEN, true);
-    b.blob(0.015, 0.0, 0.24, -0.23, NAV_RED, true);
-    const obj = this.built(b);
+  /**
+   * Moves a boat along a route, back and forth (ferries) or round and round
+   * (the container ship), easing into the piers. Its wake trails from the bow.
+   */
+  private sail(obj: THREE.Object3D, wake: Wake, route: Pt[], o: { speed: number; start: number; loop: boolean; length: number; bob: number; dwell?: number; lag?: number; side?: number }) {
     const path = new THREE.CatmullRomCurve3(densify(route, 2).map(([x, z]) => new THREE.Vector3(x, SEA, z)), false, 'centripetal');
     const len = path.getLength();
-    const wake = new Wake(0.22, 1);
-    this.object.add(obj, wake.mesh);
-    let d = start * len;
+    let d = o.start * len;
     let dir = 1;
     let wait = 0;
     const tmp = new THREE.Vector3();
+    const bow = new THREE.Vector3();
+    const last = new THREE.Vector3();
     this.movers.push({
       obj,
       wake,
       update: (dt, time) => {
+        let respawn = false;
         if (wait > 0) wait -= dt;
-        else {
+        else if (o.loop) {
+          d += o.speed * dt;
+          if (d > len) d -= len;
+        } else {
           // Ease into and out of the piers.
           const edge = Math.min(d, len - d);
-          const v = speed * THREE.MathUtils.clamp(edge / 3, 0.2, 1);
-          d += dir * v * dt;
+          d += dir * o.speed * THREE.MathUtils.clamp(edge / 3, 0.2, 1) * dt;
           if (d > len || d < 0) {
             d = THREE.MathUtils.clamp(d, 0, len);
             dir = -dir;
-            wait = 6;
+            wait = o.dwell ?? 6;
           }
         }
-        const u = d / len;
+        // An escort keeps station a little behind and to one side of its ship.
+        const at = o.lag ? (d - o.lag + len) % len : d;
+        const u = THREE.MathUtils.clamp(at / len, 0, 1);
+        last.copy(obj.position);
         path.getPointAt(u, obj.position);
         path.getTangentAt(u, tmp);
         if (dir < 0) tmp.negate();
-        obj.rotation.y = Math.atan2(-tmp.z, tmp.x);
-        obj.position.y = SEA + 0.02 + Math.sin(time * 1.3 + start * 9) * 0.008;
-        obj.rotation.z = Math.sin(time * 0.9 + start) * 0.015;
-        wake.update(dt, obj.position, wait > 0 ? 0 : 1);
-      },
-    });
-  }
-
-  private ship(route: Pt[], speed: number) {
-    const b = new GeoBuilder();
-    const L = 4.4;
-    // Hull: dark red bottom, navy topsides, a raked bow, the bridge aft.
-    const hull = new THREE.Shape([
-      new THREE.Vector2(-L / 2, -0.28),
-      new THREE.Vector2(L / 2 - 0.3, -0.28),
-      new THREE.Vector2(L / 2, 0.02),
-      new THREE.Vector2(L / 2 + 0.06, 0.2),
-      new THREE.Vector2(-L / 2 + 0.05, 0.2),
-      new THREE.Vector2(-L / 2, 0.05),
-    ]);
-    const g = new THREE.ExtrudeGeometry(hull, { depth: 0.62, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.03, bevelSegments: 1 });
-    g.translate(0, 0, -0.31);
-    b.transformed(g, new THREE.Matrix4(), 0x22324a);
-    b.box(L - 0.1, 0.1, 0.7, 0, -0.28, 0, 0x8a2a24);
-    b.box(L * 0.92, 0.02, 0.62, 0, 0.2, 0, 0x6b6f78);
-    const r = rng(77);
-    const colours = [0xc84a3a, 0x2f6fa8, 0x2f8a6a, 0xe0a030, 0x6a6a72, 0xd8d0c0, 0x8a3a6a] as const;
-    for (let i = 0; i < 12; i++) {
-      for (let j = 0; j < 3; j++) {
-        const h = 1 + Math.floor(r() * 3);
-        for (let k = 0; k < h; k++) b.box(0.24, 0.12, 0.17, -L / 2 + 0.95 + i * 0.26, 0.22 + k * 0.125, -0.19 + j * 0.19, pick(r, colours));
-      }
-    }
-    b.box(0.42, 0.55, 0.6, -L / 2 + 0.38, 0.22, 0, 0xf2f0ea);
-    b.box(0.5, 0.05, 0.72, -L / 2 + 0.4, 0.77, 0, 0xf2f0ea);
-    b.windows({ w: 0.42, d: 0.6, x: -L / 2 + 0.38, z: 0, y0: 0.22, rows: 4, rowHeight: 0.13, cols: 4, faces: ['x+', 'z+', 'z-'] }, r, 0.7, CABIN, { w: 0.06, h: 0.05 });
-    b.box(0.12, 0.3, 0.14, -L / 2 + 0.25, 0.82, 0, 0x2a2a2e);
-    b.box(0.13, 0.05, 0.15, -L / 2 + 0.25, 1.0, 0, 0xc84a3a);
-    b.blob(0.03, -L / 2 + 0.38, 0.95, 0, NAV_WHITE, true);
-    b.blob(0.03, L / 2, 0.42, 0, NAV_WHITE, true);
-    const obj = this.built(b);
-    const path = new THREE.CatmullRomCurve3(densify(route, 3).map(([x, z]) => new THREE.Vector3(x, SEA, z)), false, 'centripetal');
-    const len = path.getLength();
-    const wake = new Wake(0.6, 1.4);
-    this.object.add(obj, wake.mesh);
-    let d = len * 0.35;
-    const tmp = new THREE.Vector3();
-    this.movers.push({
-      obj,
-      wake,
-      update: (dt, time) => {
-        d += speed * dt;
-        let respawn = false;
-        if (d > len) {
-          d = 0;
-          respawn = true;
+        if (o.side) {
+          obj.position.x -= tmp.z * o.side;
+          obj.position.z += tmp.x * o.side;
         }
-        const u = d / len;
-        path.getPointAt(u, obj.position);
-        path.getTangentAt(u, tmp);
+        if (obj.position.distanceToSquared(last) > 4) respawn = true;
         obj.rotation.y = Math.atan2(-tmp.z, tmp.x);
-        obj.position.y = SEA + 0.04 + Math.sin(time * 0.6) * 0.01;
+        obj.position.y = SEA + 0.02 + Math.sin(time * 1.1 + o.start * 9) * o.bob;
+        obj.rotation.z = Math.sin(time * 0.8 + o.start * 5) * o.bob * 1.6;
+        obj.rotation.x = Math.sin(time * 0.6 + o.start * 3) * o.bob;
         if (respawn) wake.reset();
-        wake.update(dt, obj.position, 1);
+        bow.copy(obj.position).addScaledVector(tmp, o.length / 2);
+        wake.update(dt, bow, wait > 0 ? 0 : 1);
       },
     });
   }
 
-  private sailboat(cx: number, cz: number, rx: number, rz: number, phase: number, rate: number, r: () => number) {
-    const b = new GeoBuilder();
-    const hull = new THREE.Shape([new THREE.Vector2(-0.24, 0), new THREE.Vector2(0.18, 0), new THREE.Vector2(0.3, 0.07), new THREE.Vector2(-0.26, 0.07)]);
-    const g = new THREE.ExtrudeGeometry(hull, { depth: 0.12, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 1 });
-    g.translate(0, -0.02, -0.06);
-    b.transformed(g, new THREE.Matrix4(), pick(r, [0xf8f8f4, 0x1c2a3a, 0xf8f8f4, 0x8a2a24] as const), 'smooth');
-    b.box(0.2, 0.04, 0.1, -0.04, 0.07, 0, 0xe8dcc4);
-    b.cylinder(0.006, 0.008, 0.62, 0.02, 0.07, 0, 0xd8d8d8, 4);
-    const main = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(0, 0.56), new THREE.Vector2(-0.26, 0.02)]);
-    b.transformed(new THREE.ShapeGeometry(main), new THREE.Matrix4().makeTranslation(0.015, 0.1, 0), 0xfbfaf6, 'smooth');
-    const jib = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(0, 0.48), new THREE.Vector2(0.24, 0.0)]);
-    b.transformed(new THREE.ShapeGeometry(jib), new THREE.Matrix4().makeTranslation(0.03, 0.1, 0.003), r() < 0.3 ? 0xe85a4a : 0xf4f0e6, 'smooth');
-    b.blob(0.012, 0.02, 0.7, 0, NAV_WHITE, true);
+  /** A ferry shuttling to and fro along its route. */
+  private ferry(route: Pt[], speed: number, start: number, trim: number) {
+    const b = ferryBoat(trim);
     const obj = this.built(b);
-    const sails = obj;
-    const wake = new Wake(0.08, 0.6);
+    const wake = new Wake(0.2, 1.1, 0.5);
+    this.object.add(obj, wake.mesh);
+    this.sail(obj, wake, route, { speed, start, loop: false, length: 1.36, bob: 0.008 });
+  }
+
+  /** A container ship bound for Oakland, in through the Golden Gate, with a tug off her quarter. */
+  private ship(route: Pt[], speed: number) {
+    const b = containerShip();
+    const obj = this.built(b);
+    const wake = new Wake(0.5, 1.6, 1.4);
+    this.object.add(obj, wake.mesh);
+    this.sail(obj, wake, route, { speed, start: 0.35, loop: true, length: 4.6, bob: 0.003 });
+    // A tug escorts her in, off her quarter
+    const tugObj = this.tug(0xb8352a, 0x1c1c20);
+    const tugWake = new Wake(0.1, 0.8, 0.4);
+    this.object.add(tugObj, tugWake.mesh);
+    this.sail(tugObj, tugWake, route, { speed, start: 0.35, loop: true, length: 0.56, bob: 0.01, lag: 3.4, side: 0.75 });
+  }
+
+  private tug(hullColour: number, boot: number): THREE.Object3D {
+    const b = tugBoat(hullColour, boot);
+    return this.built(b);
+  }
+
+  /** A sloop tacking round its loop. */
+  private sailboat(cx: number, cz: number, rx: number, rz: number, phase: number, rate: number, r: () => number) {
+    const b = sloop(r);
+    const obj = this.built(b);
+    const wake = new Wake(0.06, 0.7, 0.3);
     this.object.add(obj, wake.mesh);
     let a = phase;
+    const bow = new THREE.Vector3();
     this.movers.push({
       obj,
       wake,
@@ -209,14 +188,23 @@ export class Life {
         const z = cz + Math.sin(a) * rz;
         const dx = -Math.sin(a) * rx * Math.sign(rate);
         const dz = Math.cos(a) * rz * Math.sign(rate);
+        const heading = Math.atan2(-dz, dx);
         obj.position.set(x, SEA + 0.02, z);
-        obj.rotation.set(0, Math.atan2(-dz, dx), 0);
         // Heel away from the wind and pitch over the chop.
-        sails.rotateX(0.18 + Math.sin(time * 0.7 + phase) * 0.04);
-        sails.rotateZ(Math.sin(time * 1.6 + phase) * 0.03);
-        wake.update(dt, obj.position, 0.7);
+        obj.rotation.set(0.18 + Math.sin(time * 0.7 + phase) * 0.04, heading, Math.sin(time * 1.6 + phase) * 0.03, 'YXZ');
+        const l = Math.hypot(dx, dz) || 1;
+        bow.set(x + (dx / l) * 0.31, SEA, z + (dz / l) * 0.31);
+        wake.update(dt, bow, 0.7);
       },
     });
+  }
+
+  /** A tug pottering between the piers and the Ferry Building. */
+  private harbourTug(route: Pt[], start: number) {
+    const obj = this.tug(0x2f6a4f, 0x1c1c20);
+    const wake = new Wake(0.1, 0.8, 0.4);
+    this.object.add(obj, wake.mesh);
+    this.sail(obj, wake, route, { speed: 0.4, start, loop: false, length: 0.56, bob: 0.01, dwell: 10 });
   }
 
   // ─── Airliners ──────────────────────────────────────────────────────────
@@ -286,23 +274,27 @@ export class Life {
           const pitch = flat > 0.004 ? Math.atan2(q.y - p.y, flat) : 0;
           obj.rotation.set(bank, heading, pitch, 'YZX');
           obj.visible = t < cycle - 4;
-          const blink = (time * 1.1 + offset) % 1;
-          strobe.color.setScalar(blink < 0.06 ? 3 : 0);
-          beacon.color.setRGB(3, 0.2, 0.15).multiplyScalar(blink > 0.5 && blink < 0.58 ? 1 : 0);
+          // Strobes and beacon flash once a second, offset by half a beat. Each flash rises and
+          // falls over a few frames: a one-frame flash lands on a frame or misses it entirely at
+          // 30 fps, which reads as a glitch rather than a light.
+          const blink = (time + offset) % 1;
+          strobe.color.setScalar(3 * flash(blink));
+          beacon.color.setRGB(3, 0.2, 0.15).multiplyScalar(flash((blink + 0.5) % 1));
         },
       });
     }
   }
 
   /** A narrow-body airliner along +x, ~2.4 long, with its own strobe and beacon. */
-  private airliner(seed: number): { obj: THREE.Group; strobe: THREE.MeshBasicMaterial; beacon: THREE.MeshBasicMaterial } {
+  private airliner(seed: number): { obj: THREE.Object3D; strobe: THREE.MeshBasicMaterial; beacon: THREE.MeshBasicMaterial } {
     const r = rng(seed);
     const livery = pick(r, [0x1f4e9a, 0xc8302a, 0x2a7a6a, 0x5a2a8a] as const);
     const b = new GeoBuilder();
     const L = 2.4;
     // Fuselage: a lathe profile laid along x.
     const prof: [number, number][] = [[0.0, 0], [0.07, 0.03], [0.12, 0.12], [0.14, 0.3], [0.145, 0.6], [0.145, 1.75], [0.13, 2.0], [0.09, 2.25], [0.03, 2.4], [0, 2.4]];
-    const fus = new THREE.LatheGeometry(prof.map(([rr, h]) => new THREE.Vector2(rr, h)), 16).rotateZ(-Math.PI / 2).translate(L / 2, 0.42, 0);
+    // Nose (h = 0) forward along +x, tail cone aft.
+    const fus = new THREE.LatheGeometry(prof.map(([rr, h]) => new THREE.Vector2(rr, h)), 16).rotateZ(Math.PI / 2).translate(L / 2, 0.42, 0);
     b.transformed(fus, new THREE.Matrix4(), 0xf6f6f4, 'smooth');
     // Livery cheatline and belly
     b.box(1.9, 0.03, 0.296, -0.05, 0.4, 0, livery);
@@ -325,6 +317,10 @@ export class Life {
       b.transformed(eng, new THREE.Matrix4().makeTranslation(0.08, 0.24, s * 0.42), 0xdcdfe6, 'smooth');
       b.cylinder(0.058, 0.058, 0.01, 0.245, 0.18, s * 0.42, 0x3a3f48, 12, false);
       b.box(0.12, 0.05, 0.03, 0.02, 0.29, s * 0.42, 0xcfd3da);
+      // Pylon, flap-track fairings under the wing, and a landing light in the wing root
+      b.box(0.16, 0.06, 0.02, 0.06, 0.3, s * 0.42, 0xdcdfe6);
+      for (const [fx, fz] of [[-0.18, 0.3], [-0.3, 0.62], [-0.42, 0.9]] as const) b.box(0.14, 0.03, 0.025, fx, 0.29, s * fz, 0xd0d3da);
+      b.blob(0.016, 0.24, 0.32, s * 0.2, NAV_WHITE, true);
       b.blob(0.018, -0.52, 0.38, s * 1.2, s > 0 ? NAV_GREEN : NAV_RED, true);
     }
     // Tail: fin in livery, tailplanes
@@ -342,10 +338,8 @@ export class Life {
       b.cylinder(0.035, 0.035, 0.03, gx, 0.02, gz, 0x1c1c20, 8);
     }
     b.blob(0.02, 0.9, 0.3, 0, NAV_WHITE, true);
-    const { group } = b.build();
-    group.traverse((o) => {
-      o.castShadow = true;
-    });
+    // The body is batched; the blinking lights ride on its proxy.
+    const group = this.built(b);
     const strobe = glowMaterial({ color: new THREE.Color(3, 3, 3) });
     const beacon = glowMaterial({ color: new THREE.Color(3, 0.2, 0.15) });
     for (const [x, yy, z, m] of [[-0.5, 0.42, 1.21, strobe], [-0.5, 0.42, -1.21, strobe], [-1.22, 1.03, 0, strobe], [0, 0.58, 0, beacon], [0, 0.26, 0, beacon]] as const) {
@@ -372,6 +366,7 @@ export class Life {
     for (const [start, lane] of [[0.15, 0.24], [0.65, -0.24]] as const) {
       const car = this.cableCar();
       this.object.add(car);
+      this.cableCarObjs.push(car);
       let d = start * (z1 - z0);
       let dir = lane > 0 ? 1 : -1;
       let wait = 0;
@@ -398,31 +393,63 @@ export class Life {
     }
   }
 
-  /** Powell Street cable car along +x: open benches at the ends, closed cabin in the middle. */
-  private cableCar(): THREE.Group {
+  /**
+   * A Powell Street cable car along +x: a closed saloon in the middle with
+   * its windows, open ends with outward-facing benches and riders on the
+   * running boards, a long clerestory roof with destination boards, and the
+   * gripman at the front.
+   */
+  private cableCar(): THREE.Object3D {
     const b = new GeoBuilder();
-    const L = 0.6;
-    b.box(L, 0.05, 0.22, 0, 0.03, 0, 0x6b2a22);
-    b.box(L * 0.5, 0.16, 0.2, 0, 0.08, 0, 0xc8402e);
-    b.box(L * 0.5 + 0.004, 0.035, 0.204, 0, 0.08, 0, 0xf2e2b8);
+    const L = 0.62;
+    const red = 0xa8282a;
+    const cream = 0xf2e6c4;
+    const wood = 0x7a4a2a;
+    // Trucks, running boards and the floor
+    for (const wx of [-0.2, 0.2]) {
+      b.box(0.14, 0.03, 0.16, wx, 0.0, 0, 0x2a2a2e);
+      for (const wz of [-0.07, 0.07]) b.cylinder(0.026, 0.026, 0.016, wx, 0.008, wz, 0x1c1c20, 8);
+    }
+    b.box(L, 0.035, 0.2, 0, 0.03, 0, 0x3a2a22);
+    b.box(L - 0.04, 0.012, 0.25, 0, 0.05, 0, wood);
+    // The saloon: red panels below, cream above, windows all round
+    b.box(0.28, 0.07, 0.2, 0, 0.065, 0, red);
+    b.box(0.282, 0.012, 0.202, 0, 0.13, 0, 0xd4af37);
+    b.box(0.28, 0.1, 0.2, 0, 0.142, 0, cream);
+    b.box(0.284, 0.06, 0.204, 0, 0.158, 0, 0x2c3a48, 'glass');
     for (const s of [1, -1] as const) {
-      for (let k = 0; k < 4; k++) b.quad(0.05, 0.06, -0.11 + k * 0.073, 0.19, s * 0.101, s > 0 ? 'z+' : 'z-', CABIN, true, 0.2 + k * 0.15);
-      // Open ends: benches and posts
-      b.box(0.14, 0.03, 0.18, s * 0.22, 0.08, 0, 0x8a5a32);
-      for (const pz of [-0.09, 0.09]) b.box(0.012, 0.18, 0.012, s * 0.29, 0.08, pz, 0x6b2a22);
-      b.blob(0.016, s * 0.3, 0.13, 0, s > 0 ? NAV_WHITE : [2.6, 0.3, 0.2], true);
+      for (let k = 0; k < 4; k++) b.quad(0.052, 0.05, -0.105 + k * 0.07, 0.188, s * 0.103, s > 0 ? 'z+' : 'z-', CABIN, true, 0.15 + k * 0.17);
+      b.quad(0.12, 0.05, s * 0.143, 0.188, 0, s > 0 ? 'x+' : 'x-', CABIN, true, 0.3);
     }
-    b.rbox(L + 0.04, 0.035, 0.25, 0, 0.26, 0, 0xf2e2b8, 0.015);
-    b.box(L * 0.4, 0.03, 0.18, 0, 0.29, 0, 0x6b2a22);
-    // A few riders hanging off the running boards
+    // Open ends: outward-facing benches, a bulkhead and corner posts
+    for (const e of [-1, 1]) {
+      const ex = e * 0.225;
+      b.box(0.15, 0.02, 0.06, ex, 0.09, 0, wood);
+      b.box(0.15, 0.06, 0.02, ex, 0.11, 0, wood);
+      b.box(0.15, 0.04, 0.2, ex, 0.065, 0, red);
+      for (const pz of [-0.095, 0.095]) for (const px of [0.15, 0.3]) b.box(0.012, 0.17, 0.012, e * px, 0.085, pz, red);
+      // Destination board, headlamp or tail lamp, and the bell on the roof
+      b.box(0.012, 0.035, 0.12, e * 0.305, 0.27, 0, 0xf8f4ea);
+      b.box(0.013, 0.012, 0.1, e * 0.305, 0.272, 0, 0x2a3a6a);
+      b.blob(0.016, e * 0.31, 0.1, 0, e > 0 ? NAV_WHITE : [2.6, 0.3, 0.2], true);
+    }
+    // The roof: a long low arch with a clerestory down the middle
+    b.rbox(L + 0.04, 0.03, 0.25, 0, 0.255, 0, cream, 0.012, 'solid');
+    b.box(L * 0.55, 0.025, 0.12, 0, 0.283, 0, cream);
+    b.box(L * 0.55 + 0.004, 0.012, 0.124, 0, 0.29, 0, 0x2c3a48, 'glass');
+    b.cylinder(0.012, 0.016, 0.02, 0.22, 0.285, 0, 0xd4af37, 6);
+    // Riders on the running boards and benches, and the gripman at the lever
     const r = rng(3);
-    for (let k = 0; k < 5; k++) {
-      const px = -0.24 + k * 0.12;
-      const pz = k % 2 ? 0.12 : -0.12;
-      b.box(0.028, 0.09, 0.028, px, 0.08, pz, pick(r, [0x2f6fa8, 0xe85a4a, 0xf2c84b, 0x3a3a3a, 0x8a5a9a] as const));
-      b.blob(0.018, px, 0.19, pz, 0xe0b090);
+    const coats = [0x2f6fa8, 0xe85a4a, 0xf2c84b, 0x3a3a3a, 0x8a5a9a, 0x5a8a4a] as const;
+    for (let k = 0; k < 6; k++) {
+      const px = (k < 3 ? -1 : 1) * (0.18 + (k % 3) * 0.05);
+      const pz = k % 2 ? 0.125 : -0.125;
+      b.box(0.028, 0.1, 0.028, px, 0.055, pz, pick(r, coats));
+      b.blob(0.017, px, 0.17, pz, pick(r, [0xe0b090, 0xb07850, 0x8a5a3a] as const));
     }
-    for (const wx of [-0.2, 0.2]) for (const wz of [-0.08, 0.08]) b.cylinder(0.03, 0.03, 0.02, wx, 0.0, wz, 0x2a2a2e, 8);
+    b.box(0.03, 0.1, 0.03, 0.17, 0.055, 0, 0x2a3a5a);
+    b.blob(0.017, 0.17, 0.17, 0, 0xe0b090);
+    b.box(0.006, 0.08, 0.006, 0.2, 0.06, 0.02, 0x2a2a2e);
     return this.built(b);
   }
 
@@ -431,16 +458,16 @@ export class Life {
   private kites(r: () => number) {
     const colours: ColorLike[] = [0xe85a4a, 0xf2c84b, 0x3aa3c8, 0x8a5ad8, 0x5ac46a];
     for (let i = 0; i < 4; i++) {
-      const ax = -23 + i * 1.6 + r() * 0.5;
-      const az = 9.4 + r() * 0.5;
+      // On the Marina Green (or the shore by the Marina, if this city has no green).
+      const g = MARINA.green;
+      const ax = (g ? g.x - 2.5 : MARINA.x - 1.6) + i * 1.6 + r() * 0.5;
+      const az = (g ? g.z - 0.2 : MARINA.z - 2.6) + r() * 0.5;
       const b = new GeoBuilder();
       const diamond = new THREE.Shape([new THREE.Vector2(0, 0.16), new THREE.Vector2(0.09, 0), new THREE.Vector2(0, -0.2), new THREE.Vector2(-0.09, 0)]);
-      b.transformed(new THREE.ShapeGeometry(diamond), new THREE.Matrix4(), colours[i % colours.length]!, 'smooth');
+      // Both faces of the sail, so it reads from any side without a double-sided material.
+      for (const turn of [0, Math.PI]) b.transformed(new THREE.ShapeGeometry(diamond), new THREE.Matrix4().makeRotationY(turn), colours[i % colours.length]!, 'smooth');
       for (let k = 0; k < 5; k++) b.box(0.03, 0.02, 0.005, Math.sin(k) * 0.02, -0.24 - k * 0.06, 0, colours[(i + 2) % colours.length]!);
       const kite = this.built(b);
-      kite.traverse((o) => {
-        if (o instanceof THREE.Mesh) (o.material as THREE.Material).side = THREE.DoubleSide;
-      });
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0xf8f8f8, transparent: true, opacity: 0.6 }));
       this.object.add(kite, line);
       const base = new THREE.Vector3(ax, 0.05, az);
@@ -465,7 +492,8 @@ export class Life {
     for (let i = 0; i < 70; i++) {
       // Most of the bank sits offshore and over the Marin Headlands; a tongue reaches through the Gate.
       const tongue = i < 22;
-      const x = tongue ? -44 + r() * 26 : -110 + r() * 68;
+      const gg = LANDMARKS.goldenGate.x + 34.6;
+      const x = tongue ? -44 + gg + r() * 26 : -110 + r() * 68;
       const z = tongue ? 12 + r() * 9 : -40 + r() * 80;
       const mat = new THREE.SpriteMaterial({ map: tex, color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, fog: false });
       const sprite = new THREE.Sprite(mat);
@@ -496,19 +524,27 @@ export class Life {
     }
   }
 
-  private built(b: GeoBuilder): THREE.Group {
-    const { group } = b.build();
-    group.traverse((o) => {
-      if (o instanceof THREE.Mesh) {
-        o.castShadow = true;
-        o.receiveShadow = true;
-      }
-    });
-    return group;
+  /** Whether a cable car is within `r` of (x, z): cars wait for it at junctions. */
+  blocks(x: number, z: number, r: number): boolean {
+    for (const c of this.cableCarObjs) if (Math.hypot(c.position.x - x, c.position.z - z) < r + 0.3) return true;
+    return false;
+  }
+
+  /** Adds a model to the batch and returns its proxy: move the proxy, and the batch follows each frame. */
+  private built(b: GeoBuilder): THREE.Object3D {
+    const key = `life:${this.batched.length}`;
+    const obj = this.batch.add(key, b.build(), null);
+    this.batched.push({ obj, key });
+    return obj;
   }
 
   update(dt: number, time: number, a: Atmosphere) {
     for (const m of this.movers) m.update(dt, time);
+    for (const { obj, key } of this.batched) {
+      this.batch.setVisible(key, obj.visible);
+      this.batch.touch(key);
+    }
+    this.batch.update();
     for (const w of this.movers) w.wake?.setLight(a);
     this.gulls.update(dt, time);
 
@@ -516,11 +552,11 @@ export class Life {
     const morning = Math.max(0, 1 - Math.abs(a.hour - 7.5) / 3.2);
     const evening = Math.max(0, 1 - Math.abs(a.hour - 19.5) / 3);
     const density = 0.25 + 0.75 * Math.max(morning, evening);
-    const tint = new THREE.Color(...a.fog).lerp(new THREE.Color(1, 1, 1), 0.55 - a.night * 0.4);
+    const tint = this.fogTint.setRGB(...a.fog).lerp(this.white, 0.55 - a.night * 0.4);
     for (const f of this.fog) {
       const x = f.base.x + ((time * f.speed + f.phase) % 30);
       // The tongue through the Gate advances and retreats with the density.
-      const reach = f.base.z > 11 && f.base.z < 22 && f.base.x > -45 ? density : 1;
+      const reach = f.base.z > 11 && f.base.z < 22 && f.base.x > LANDMARKS.goldenGate.x - 10.4 ? density : 1;
       f.sprite.position.set(x - 8 * (1 - reach), f.base.y + Math.sin(time * 0.2 + f.phase) * 0.15, f.base.z);
       const fade = Math.min(1, ((time * f.speed + f.phase) % 30) / 4, (30 - ((time * f.speed + f.phase) % 30)) / 4);
       f.mat.opacity = 0.55 * density * fade * reach;
@@ -537,52 +573,284 @@ export class Life {
   }
 }
 
+// ─── Boats ──────────────────────────────────────────────────────────────────
+
+/**
+ * A San Francisco Bay ferry along +x: a white hull with its line's colour at
+ * the sheer, two passenger decks of windows, an open sundeck aft, the
+ * wheelhouse on top, a pennant at the mast and the ensign at the stern.
+ */
+export function ferryBoat(trim: number): GeoBuilder {
+  const b = new GeoBuilder();
+  const L = 1.36;
+  hull(b, L, 0.42, 0.16, 0.34, 0xf4f4f0, trim, 0x1f2a36);
+  // Rubbing strake
+  b.box(L - 0.36, 0.02, 0.436, -0.08, 0.1, 0, 0x2a2e36);
+  // Main deck cabin with a window band all round
+  const cabin = (x0: number, x1: number, y: number, w: number, h: number) => {
+    const cx = (x0 + x1) / 2;
+    b.rbox(x1 - x0, h, w, cx, y, 0, 0xf8f8f4, 0.025, 'solid');
+    b.box(x1 - x0 + 0.004, h * 0.42, w + 0.004, cx, y + h * 0.36, 0, 0x2c3a48, 'glass');
+    const n = Math.round((x1 - x0) / 0.07);
+    for (const s of [1, -1] as const) {
+      for (let k = 0; k < n; k++) b.quad(0.05, h * 0.36, x0 + (k + 0.5) * ((x1 - x0) / n), y + h * 0.57, s * (w / 2 + 0.004), s > 0 ? 'z+' : 'z-', CABIN, true, 0.1 + ((k * 7) % 9) * 0.09);
+    }
+    b.box(x1 - x0 + 0.02, 0.015, w + 0.02, cx, y + h, 0, 0xdedcd4);
+    b.box(x1 - x0 + 0.024, 0.008, w + 0.024, cx, y + h - 0.004, 0, trim);
+  };
+  cabin(-0.5, 0.36, 0.14, 0.38, 0.14);
+  cabin(-0.3, 0.22, 0.295, 0.32, 0.12);
+  // Open sundeck aft: railings and a few benches
+  for (const s of [-1, 1]) b.box(0.18, 0.04, 0.008, -0.4, 0.31, s * 0.18, 0xe8e8e2);
+  b.box(0.008, 0.04, 0.36, -0.49, 0.31, 0, 0xe8e8e2);
+  for (const bx of [-0.44, -0.37]) b.box(0.03, 0.025, 0.24, bx, 0.3, 0, 0x8a5a32);
+  // Wheelhouse, with windows all round and a visor
+  b.rbox(0.16, 0.08, 0.24, 0.12, 0.42, 0, 0xf8f8f4, 0.02, 'solid');
+  b.box(0.164, 0.035, 0.244, 0.12, 0.445, 0, 0x22303c, 'glass');
+  b.box(0.2, 0.012, 0.3, 0.13, 0.5, 0, trim);
+  // Mast with radar, a pennant and the ensign at the stern
+  b.cylinder(0.006, 0.008, 0.2, 0.06, 0.51, 0, 0xdedad0, 4);
+  b.box(0.08, 0.008, 0.012, 0.06, 0.62, 0, 0x3a3f48);
+  b.box(0.06, 0.03, 0.003, 0.03, 0.66, 0, 0xd8423a);
+  b.cylinder(0.004, 0.004, 0.14, -0.62, 0.14, 0, 0xdedad0, 4);
+  flag(b, -0.64, 0.25, 0.07);
+  // Life rings and the name board
+  for (const s of [1, -1]) b.box(0.03, 0.03, 0.006, 0.3, 0.2, s * 0.193, 0xe8622c);
+  b.blob(0.02, 0.06, 0.73, 0, NAV_WHITE, true);
+  b.blob(0.015, 0.12, 0.47, 0.13, NAV_GREEN, true);
+  b.blob(0.015, 0.12, 0.47, -0.13, NAV_RED, true);
+  return b;
+}
+
+/** A container ship along +x: stacks of boxes, a white superstructure with bridge wings aft, its funnel behind. */
+export function containerShip(): GeoBuilder {
+  const b = new GeoBuilder();
+  const L = 4.6;
+  const W = 0.66;
+  hull(b, L, W, 0.17, 0.7, 0x24344c, 0xf2f0ea, 0x9a2c24, -0.3, 0x6b4a3a);
+  // Forecastle and its breakwater
+  b.box(0.42, 0.06, W - 0.06, L / 2 - 0.3, 0.15, 0, 0x8a3a30);
+  const bw = new THREE.Shape([new THREE.Vector2(-0.3, 0), new THREE.Vector2(0.3, 0), new THREE.Vector2(0, 0.14)]);
+  b.transformed(new THREE.ExtrudeGeometry(bw, { depth: 0.12, bevelEnabled: false }).rotateY(Math.PI / 2).translate(L / 2 - 0.52, 0.15, 0), new THREE.Matrix4(), 0xf2f0ea);
+  b.cylinder(0.012, 0.014, 0.32, L / 2 - 0.25, 0.21, 0, 0xf2f0ea, 5);
+  // Containers: bays of boxes, row by row, tier by tier, with lashing bridges between
+  const r = rng(77);
+  const colours = [0x3a7fb8, 0x2f8a6a, 0xc84a3a, 0xe0782c, 0x6a6a72, 0xd8d0c0, 0x8a3a6a, 0x3aa0c8, 0xd8a83a, 0x2a4a7a] as const;
+  const bays = 10;
+  const bayL = 0.28;
+  const x0 = -L / 2 + 1.0;
+  for (let i = 0; i < bays; i++) {
+    const bx = x0 + i * (bayL + 0.035);
+    const tall = 2 + Math.floor(r() * 3) - (i === bays - 1 ? 1 : 0);
+    for (let j = 0; j < 4; j++) {
+      const h = Math.max(1, tall - (j === 0 || j === 3 ? Math.floor(r() * 2) : 0));
+      for (let k = 0; k < h; k++) {
+        const c = pick(r, colours);
+        b.box(bayL - 0.012, 0.11, 0.142, bx, 0.16 + k * 0.115, -0.225 + j * 0.15, c);
+        // The door end, a shade darker
+        b.box(0.006, 0.09, 0.12, bx + bayL / 2 - 0.004, 0.17 + k * 0.115, -0.225 + j * 0.15, shade(c, 0.78));
+      }
+    }
+    if (i < bays - 1) b.box(0.012, 0.2, W - 0.08, bx + bayL / 2 + 0.017, 0.16, 0, 0x8a8f98);
+  }
+  // Superstructure aft: accommodation block, bridge deck with wings, mast and radar
+  const sx = -L / 2 + 0.55;
+  b.box(0.34, 0.6, W - 0.12, sx, 0.15, 0, 0xf4f2ec);
+  b.windows({ w: 0.34, d: W - 0.12, x: sx, z: 0, y0: 0.17, rows: 5, rowHeight: 0.11, cols: 4, faces: ['x+', 'z+', 'z-', 'x-'] }, r, 0.6, CABIN, { w: 0.05, h: 0.04 });
+  b.box(0.3, 0.1, W + 0.2, sx + 0.04, 0.74, 0, 0xf4f2ec); // bridge and its wings
+  b.box(0.304, 0.045, W - 0.1, sx + 0.04, 0.765, 0, 0x22303c, 'glass');
+  for (const s of [-1, 1]) b.box(0.08, 0.045, 0.14, sx + 0.12, 0.765, s * (W / 2 + 0.03), 0x22303c, 'glass');
+  b.box(0.34, 0.02, W + 0.24, sx + 0.04, 0.84, 0, 0xd8d4cc);
+  b.cylinder(0.008, 0.01, 0.26, sx + 0.02, 0.86, 0, 0xf4f2ec, 4);
+  b.box(0.12, 0.01, 0.02, sx + 0.02, 1.02, 0, 0x3a3f48);
+  // Funnel: company red with a white band, a black top
+  const fx = sx - 0.24;
+  b.box(0.2, 0.26, W - 0.24, fx, 0.17, 0, 0xe8e6e0); // engine casing
+  b.rbox(0.16, 0.36, 0.2, fx, 0.42, 0, 0xc8402e, 0.03, 'solid');
+  b.box(0.165, 0.06, 0.205, fx, 0.6, 0, 0xf2f0ea);
+  b.box(0.165, 0.05, 0.205, fx, 0.73, 0, 0x1c1c20);
+  // Lights: masthead, bridge wings, stern
+  b.blob(0.03, sx + 0.02, 1.14, 0, NAV_WHITE, true);
+  b.blob(0.03, L / 2 - 0.25, 0.55, 0, NAV_WHITE, true);
+  b.blob(0.022, sx + 0.12, 0.8, W / 2 + 0.1, NAV_GREEN, true);
+  b.blob(0.022, sx + 0.12, 0.8, -W / 2 - 0.1, NAV_RED, true);
+  return b;
+}
+
+/** A harbour tug along +x: a short, beamy hull ringed with fenders, a tall wheelhouse, a banded stack. */
+export function tugBoat(hullColour: number, boot: number): GeoBuilder {
+  const b = new GeoBuilder();
+  const L = 0.56;
+  hull(b, L, 0.26, 0.14, 0.18, hullColour, 0xf2f0ea, boot);
+  b.box(L - 0.06, 0.03, 0.27, -0.01, 0.1, 0, 0x1c1c20); // fender rail
+  b.rbox(0.07, 0.06, 0.18, L / 2 - 0.02, 0.06, 0, 0x1c1c20, 0.03); // bow fender
+  b.box(0.22, 0.09, 0.18, 0.0, 0.13, 0, 0xf2f0ea); // deckhouse
+  b.box(0.13, 0.08, 0.16, 0.05, 0.22, 0, 0xf2f0ea); // wheelhouse
+  b.box(0.134, 0.035, 0.164, 0.05, 0.25, 0, 0x22303c, 'glass');
+  for (const sd of [1, -1] as const) b.quad(0.09, 0.025, 0.05, 0.268, sd * 0.0825, sd > 0 ? 'z+' : 'z-', CABIN, true, 0.2);
+  b.quad(0.12, 0.025, 0.116, 0.268, 0, 'x+', CABIN, true, 0.3);
+  b.box(0.16, 0.012, 0.19, 0.05, 0.3, 0, hullColour);
+  b.cylinder(0.025, 0.03, 0.14, -0.06, 0.22, 0, 0x1c1c20, 8);
+  b.cylinder(0.031, 0.031, 0.03, -0.06, 0.27, 0, hullColour, 8);
+  b.cylinder(0.005, 0.005, 0.12, 0.06, 0.31, 0, 0xdedad0, 4);
+  b.box(0.03, 0.03, 0.03, -0.2, 0.1, 0, 0x6a6a72); // towing winch
+  b.blob(0.014, 0.06, 0.44, 0, NAV_WHITE, true);
+  return b;
+}
+
+/** A sloop along +x: a sleek hull, cabin top and cockpit, a tall mast with its boom, mainsail and jib. */
+export function sloop(r: () => number): GeoBuilder {
+  const b = new GeoBuilder();
+  const L = 0.62;
+  const colour = pick(r, [0xf8f8f4, 0x1c2a3a, 0xf8f8f4, 0x8a2a24, 0x2f5a7a] as const);
+  hull(b, L, 0.18, 0.08, 0.2, colour, 0xf8f8f4, colour === 0xf8f8f4 ? 0x2f5a7a : 0xf8f8f4);
+  b.box(L - 0.12, 0.012, 0.15, -0.02, 0.07, 0, 0xc8a878); // teak deck
+  b.rbox(0.18, 0.04, 0.11, 0.02, 0.075, 0, 0xf2efe6, 0.015, 'solid'); // cabin top
+  b.box(0.12, 0.02, 0.1, -0.17, 0.07, 0, 0x8a6a4a); // cockpit
+  // Mast, boom and the sails
+  const mx = 0.06;
+  b.cylinder(0.006, 0.008, 0.78, mx, 0.08, 0, 0xd8d8d8, 4);
+  b.box(0.3, 0.01, 0.01, mx - 0.15, 0.16, 0, 0xd8d8d8);
+  const main = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(0, 0.66), new THREE.Vector2(-0.05, 0.6), new THREE.Vector2(-0.29, 0.01)]);
+  const sailColour = 0xfbfaf6;
+  for (const turn of [0, Math.PI]) b.transformed(new THREE.ShapeGeometry(main).rotateY(turn), new THREE.Matrix4().makeTranslation(mx - 0.006, 0.17, 0), sailColour, 'smooth');
+  const jibColour = r() < 0.35 ? pick(r, [0xe85a4a, 0x3a7ac8, 0xf2c84b] as const) : 0xf4f0e6;
+  const jib = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(0, 0.58), new THREE.Vector2(0.24, 0.0)]);
+  for (const turn of [0, Math.PI]) b.transformed(new THREE.ShapeGeometry(jib).rotateY(turn), new THREE.Matrix4().makeTranslation(mx + 0.012, 0.1, 0.004), jibColour, 'smooth');
+  b.box(0.003, 0.003, 0.003, mx, 0.86, 0, 0xd8d8d8);
+  b.blob(0.012, mx, 0.87, 0, NAV_WHITE, true);
+  return b;
+}
+
+// ─── Boat parts ─────────────────────────────────────────────────────────────
+
+const IDENTITY = new THREE.Matrix4();
+
+/**
+ * A hull along +x: rounded at the stern, drawn to a point at the bow, sides
+ * from `base` (below the waterline) to the deck at `h`, with a boot-top
+ * stripe at the waterline and a sheer stripe along the deck edge.
+ */
+function hull(b: GeoBuilder, L: number, W: number, h: number, bow: number, colour: ColorLike, sheer: ColorLike, boot: ColorLike, base = -0.06, deck: ColorLike = 0xc9c4b8) {
+  const outline = (grow: number) => {
+    const hw = W / 2 + grow;
+    const x0 = -L / 2 - grow;
+    const x1 = L / 2 + grow;
+    const s = new THREE.Shape();
+    s.moveTo(x0 + hw * 0.4, -hw);
+    s.lineTo(x1 - bow, -hw);
+    s.quadraticCurveTo(x1 - bow * 0.2, -hw * 0.9, x1, 0);
+    s.quadraticCurveTo(x1 - bow * 0.2, hw * 0.9, x1 - bow, hw);
+    s.lineTo(x0 + hw * 0.4, hw);
+    s.quadraticCurveTo(x0, hw, x0, hw * 0.55);
+    s.lineTo(x0, -hw * 0.55);
+    s.quadraticCurveTo(x0, -hw, x0 + hw * 0.4, -hw);
+    return s;
+  };
+  // A band round the hull: the outline grown by `grow`, with the hull itself cut out of it.
+  const slab = (grow: number, y0: number, y1: number, color: ColorLike, band: boolean) => {
+    const shape = outline(grow);
+    if (band) shape.holes.push(outline(-0.012));
+    const g = new THREE.ExtrudeGeometry(shape, { depth: y1 - y0, bevelEnabled: false, curveSegments: 5 });
+    g.rotateX(-Math.PI / 2);
+    g.translate(0, y0, 0);
+    b.transformed(g, IDENTITY, color);
+  };
+  slab(0, base, h - 0.03, colour, false);
+  slab(0.004, -0.012, 0.03, boot, true);
+  slab(0.005, h - 0.03, h, sheer, true);
+  slab(-0.012, h - 0.03, h - 0.018, deck, false);
+}
+
+/** The Stars and Stripes, flying aft from a staff at (x, y). */
+function flag(b: GeoBuilder, x: number, y: number, w: number) {
+  const h = w * 0.56;
+  b.box(w, h, 0.004, x - w / 2, y - h, 0, 0xf4f2ec);
+  for (let k = 0; k < 4; k++) b.box(w, h / 7, 0.006, x - w / 2, y - h + k * ((2 * h) / 7), 0, 0xc8302a);
+  b.box(w * 0.42, h * 0.54, 0.008, x - w * 0.79, y - h * 0.54, 0, 0x2a3a7a);
+}
+
+/** A hex colour a shade darker. */
+function shade(c: number, k: number): number {
+  return tmpShade.setHex(c).multiplyScalar(k).getHex();
+}
+const tmpShade = new THREE.Color();
+
 // ─── Wakes ──────────────────────────────────────────────────────────────────
 
 const WAKE_POINTS = 48;
 
-/** A foamy V that spreads and fades behind a moving boat. */
-class Wake {
+/**
+ * A foamy Kelvin wake that spreads and fades behind a moving boat: two
+ * bright arms breaking up into flecks, and churned water from the screws
+ * down the middle that settles first. It trails from the bow, so the hull
+ * sits in its own bow wave.
+ */
+export class Wake {
   readonly mesh: THREE.Mesh;
-  private trail: THREE.Vector3[] = [];
-  private ages: number[] = [];
+  // The trail is a fixed ring of points, newest first: no allocations per frame.
+  private xs = new Float32Array(WAKE_POINTS);
+  private zs = new Float32Array(WAKE_POINTS);
+  private ages = new Float32Array(WAKE_POINTS);
+  private seeds = new Float32Array(WAKE_POINTS);
+  private n = 0;
+  private emitted = 0;
   private every = 0;
   private width: number;
   private life: number;
   private material: THREE.ShaderMaterial;
 
-  constructor(width: number, life: number) {
+  constructor(width: number, life: number, wash = 0.5) {
     this.width = width;
     this.life = 6 * life;
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(WAKE_POINTS * 2 * 3), 3));
-    geo.setAttribute('alpha', new THREE.BufferAttribute(new Float32Array(WAKE_POINTS * 2), 1));
-    geo.setAttribute('side', new THREE.BufferAttribute(new Float32Array(WAKE_POINTS * 2).map((_, i) => (i % 2 ? 1 : -1)), 1));
+    const count = WAKE_POINTS * 2;
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    geo.setAttribute('alpha', new THREE.BufferAttribute(new Float32Array(count), 1));
+    geo.setAttribute('trail', new THREE.BufferAttribute(new Float32Array(count * 2), 2));
+    geo.setAttribute('side', new THREE.BufferAttribute(new Float32Array(count).map((_, i) => (i % 2 ? 1 : -1)), 1));
     const idx: number[] = [];
     for (let i = 0; i < WAKE_POINTS - 1; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
     geo.setIndex(idx);
     this.material = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
-      uniforms: { uColor: { value: new THREE.Color(1, 1, 1) } },
+      uniforms: { uColor: { value: new THREE.Color(1, 1, 1) }, uWash: { value: wash } },
       vertexShader: /* glsl */ `
         attribute float alpha;
         attribute float side;
+        attribute vec2 trail;
         varying float vAlpha;
         varying float vSide;
+        varying vec2 vTrail;
         void main() {
           vAlpha = alpha;
           vSide = side;
+          vTrail = trail;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: /* glsl */ `
         uniform vec3 uColor;
+        uniform float uWash;
         varying float vAlpha;
         varying float vSide;
+        varying vec2 vTrail;
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
+        float noise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
         void main() {
-          // Bright edges (the two arms of the V), a softer churn in the middle.
-          float edge = smoothstep(0.35, 1.0, abs(vSide));
-          gl_FragColor = vec4(uColor, vAlpha * (0.35 + 0.65 * edge));
+          float s = abs(vSide);
+          // vTrail: x runs along the wake (fixed to the water), y is the age of the water here (0 to 1).
+          float n = noise(vec2(vTrail.x * 0.7, vSide * 3.0)) * 0.6 + noise(vec2(vTrail.x * 2.3, vSide * 9.0)) * 0.4;
+          float arms = smoothstep(0.45, 0.8, s) * (1.0 - smoothstep(0.88, 1.0, s));
+          arms *= 0.35 + 0.65 * smoothstep(0.2 + vTrail.y * 0.45, 0.75, n);
+          float wash = (1.0 - smoothstep(0.05, 0.45, s)) * (1.0 - smoothstep(0.0, 0.6, vTrail.y)) * (0.5 + 0.5 * n) * uWash;
+          float foam = max(arms, wash);
+          gl_FragColor = vec4(uColor, vAlpha * foam);
         }`,
     });
     this.mesh = new THREE.Mesh(geo, this.material);
@@ -591,8 +859,7 @@ class Wake {
   }
 
   reset() {
-    this.trail = [];
-    this.ages = [];
+    this.n = 0;
   }
 
   setLight(a: Atmosphere) {
@@ -600,44 +867,57 @@ class Wake {
   }
 
   update(dt: number, at: THREE.Vector3, moving: number) {
-    for (let i = 0; i < this.ages.length; i++) this.ages[i]! += dt;
+    const { xs, zs, ages, seeds } = this;
+    for (let i = 0; i < this.n; i++) ages[i]! += dt;
+    while (this.n > 0 && ages[this.n - 1]! > this.life) this.n--;
     this.every -= dt;
     if (this.every <= 0 && moving > 0) {
       this.every = this.life / WAKE_POINTS;
-      this.trail.unshift(at.clone());
-      this.ages.unshift(0);
-      if (this.trail.length > WAKE_POINTS) {
-        this.trail.pop();
-        this.ages.pop();
-      }
+      xs.copyWithin(1, 0, WAKE_POINTS - 1);
+      zs.copyWithin(1, 0, WAKE_POINTS - 1);
+      ages.copyWithin(1, 0, WAKE_POINTS - 1);
+      seeds.copyWithin(1, 0, WAKE_POINTS - 1);
+      xs[0] = at.x;
+      zs[0] = at.z;
+      ages[0] = 0;
+      seeds[0] = ++this.emitted;
+      this.n = Math.min(WAKE_POINTS, this.n + 1);
     }
-    const pos = this.mesh.geometry.attributes.position as THREE.BufferAttribute;
-    const alpha = this.mesh.geometry.attributes.alpha as THREE.BufferAttribute;
-    const n = this.trail.length;
+    const geo = this.mesh.geometry;
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    const alpha = geo.attributes.alpha as THREE.BufferAttribute;
+    const trail = geo.attributes.trail as THREE.BufferAttribute;
+    const n = this.n;
+    const y = SEA + 0.015;
     for (let i = 0; i < WAKE_POINTS; i++) {
       if (i >= n) {
         alpha.setX(i * 2, 0);
         alpha.setX(i * 2 + 1, 0);
         continue;
       }
-      const p = i === 0 ? at : this.trail[i]!;
-      const q = this.trail[Math.min(n - 1, i + 1)] ?? p;
-      let dx = p.x - q.x;
-      let dz = p.z - q.z;
+      const px = i === 0 ? at.x : xs[i]!;
+      const pz = i === 0 ? at.z : zs[i]!;
+      const j = Math.min(n - 1, i + 1);
+      let dx = px - xs[j]!;
+      let dz = pz - zs[j]!;
       const l = Math.hypot(dx, dz) || 1;
       dx /= l;
       dz /= l;
-      const age = this.ages[i]! / this.life;
-      const w = this.width * (0.35 + age * 2.2);
-      const y = SEA + 0.015;
-      pos.setXYZ(i * 2, p.x - dz * w, y, p.z + dx * w);
-      pos.setXYZ(i * 2 + 1, p.x + dz * w, y, p.z - dx * w);
-      const a = Math.max(0, 1 - age) ** 1.5 * 0.55 * moving * Math.min(1, i / 2);
+      const age = ages[i]! / this.life;
+      // The V opens fast behind the bow, then keeps spreading as it fades.
+      const w = this.width * (0.25 + Math.sqrt(age) * 2.1 + age * 1.5);
+      pos.setXYZ(i * 2, px - dz * w, y, pz + dx * w);
+      pos.setXYZ(i * 2 + 1, px + dz * w, y, pz - dx * w);
+      const a = Math.max(0, 1 - age) ** 1.3 * 0.95 * moving * Math.min(1, i / 1.5);
       alpha.setX(i * 2, a);
       alpha.setX(i * 2 + 1, a);
+      const along = i === 0 ? this.emitted + 1 : seeds[i]!;
+      trail.setXY(i * 2, along, age);
+      trail.setXY(i * 2 + 1, along, age);
     }
     pos.needsUpdate = true;
     alpha.needsUpdate = true;
+    trail.needsUpdate = true;
   }
 }
 
@@ -657,9 +937,9 @@ class Gulls {
 
   constructor(r: () => number) {
     const spots: [number, number, number][] = [
-      [-8.4, 16, 10],
+      [(PIER.x0 + PIER.x1) / 2, PIER.z0 + 5.4, 10],
       [12.4, -1.2, 6],
-      [-20.5, 12.5, 6],
+      [MARINA.x + 0.9, MARINA.z + 0.3, 6],
       [-2, 12, 6],
       [LANDMARKS.coitTower.x, LANDMARKS.coitTower.z, 4],
     ];
@@ -676,8 +956,16 @@ class Gulls {
       if (s < 0) g.scale(1, 1, 1);
       return g;
     };
-    const wingMat = new THREE.MeshStandardMaterial({ color: 0xe6e8ec, roughness: 0.8, side: THREE.DoubleSide });
-    this.wings = [new THREE.InstancedMesh(wing(1), wingMat, this.birds.length), new THREE.InstancedMesh(wing(-1), wingMat, this.birds.length)];
+    // Grey-white wings with black tips, like a western gull's.
+    const tipped = (g: THREE.BufferGeometry) => {
+      const pos = g.attributes.position!;
+      const col = new Float32Array(pos.count * 3);
+      for (let i = 0; i < pos.count; i++) col.set(Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i)) > 0.1 ? [0.16, 0.17, 0.19] : [0.86, 0.88, 0.9], i * 3);
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      return g;
+    };
+    const wingMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide });
+    this.wings = [new THREE.InstancedMesh(tipped(wing(1)), wingMat, this.birds.length), new THREE.InstancedMesh(tipped(wing(-1)), wingMat, this.birds.length)];
     for (const m of [this.body, ...this.wings]) {
       m.frustumCulled = false;
       m.castShadow = true;
@@ -686,7 +974,8 @@ class Gulls {
   }
 
   update(_dt: number, time: number) {
-    this.birds.forEach((b, i) => {
+    for (let i = 0; i < this.birds.length; i++) {
+      const b = this.birds[i]!;
       const a = b.phase + time * b.speed;
       this.p.set(b.cx + Math.cos(a) * b.r, b.y + Math.sin(time * 0.7 + b.phase) * 0.25, b.cz + Math.sin(a) * b.r);
       const heading = Math.atan2(-Math.cos(a) * Math.sign(b.speed), -Math.sin(a) * Math.sign(b.speed));
@@ -698,14 +987,15 @@ class Gulls {
       // Flap in bursts, then glide.
       const gliding = Math.sin(time * 0.4 + b.phase * 3) > 0.2;
       const flap = gliding ? 0.15 : Math.sin(time * b.flap + b.phase) * 0.6;
-      for (const [k, w] of this.wings.entries()) {
+      for (let k = 0; k < 2; k++) {
+        const w = this.wings[k]!;
         const side = k === 0 ? -1 : 1;
         this.e.set(bank + side * flap, heading, 0, 'YXZ');
         this.q.setFromEuler(this.e);
         this.m.compose(this.p, this.q, this.s);
         w.setMatrixAt(i, this.m);
       }
-    });
+    }
     this.body.instanceMatrix.needsUpdate = true;
     for (const w of this.wings) w.instanceMatrix.needsUpdate = true;
   }

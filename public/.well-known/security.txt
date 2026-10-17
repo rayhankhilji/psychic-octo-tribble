@@ -1,0 +1,7 @@
+# How to report a security problem in TinyTown (RFC 9116).
+# Replace [SECURITY EMAIL] and YOUR-DOMAIN before launch, and move Expires forward each year.
+Contact: mailto:[SECURITY EMAIL]
+Expires: 2027-10-13T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://YOUR-DOMAIN/.well-known/security.txt
+Policy: https://YOUR-DOMAIN/legal/contact.html

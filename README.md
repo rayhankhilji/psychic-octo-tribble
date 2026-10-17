@@ -1,6 +1,6 @@
 # TinyTown
 
-**Your startup, as a city you build.** Every real dollar of revenue becomes $10,000 to spend on your city: offices, parks, towers, a stadium, a university, planes, a rocket. Your users live there, and housing them costs money, so if your conversion rate is too low people end up homeless and the city runs down. Every extra digit of MRR moves you into a better house, from a hacker house to the Hills to your own island to the moon.
+**Your startup, as a city you build.** Every real dollar of revenue becomes $10,000 to spend on your city: offices, parks, towers, a stadium, a university, planes, a rocket. Your users live there, and housing them costs money, so if your conversion rate is too low people end up homeless and the city runs down. Your house moves up as MRR grows, from a hacker house to the Hills at $250 MRR, your own island at $5k and the moon at $10k.
 
 **The only way to grow your city is to grow your startup.** Nothing in the game makes money, and you can't buy currency.
 
@@ -26,7 +26,7 @@ npm install
 npm run dev          # http://localhost:5173 — the demo world replays 18 months of a fictional startup
 ```
 
-The demo replays 540 days of a made-up startup called *Nightjar*, including what its founder built along the way: first customer, a launch-day rush of free users that outruns revenue (tents, a dark sign, a rusting bridge), recovery, then a skyline. Jump in at any point and build your own way; your choices are saved in this browser. `/?demo&fresh` resets to the scripted founder, and `/?demo&boost=40` multiplies the demo by 40 so you can see the island, launch site and $1B-a-month projects.
+The demo replays 540 days of a made-up startup called *Nightjar*, including what its founder built along the way: first customer, a launch-day rush of free users that outruns revenue (tents, a dark sign, a rusting bridge), recovery, then a skyline. Jump in at any point and build your own way; your choices are saved in this browser. `/?demo&fresh` resets to the scripted founder, and the demo founder reaches the island on day 307 and the moon on day 404; `/?demo&boost=40` gets there in under two months.
 
 Drag to pan, right-drag or <kbd>Q</kbd>/<kbd>E</kbd> to rotate, scroll or <kbd>+</kbd>/<kbd>−</kbd> to zoom, <kbd>B</kbd> to build, <kbd>Space</kbd> to play or pause. Hover over anything to see what it is; click an empty plot to build on it.
 
@@ -36,12 +36,12 @@ The full design, with every number, is in [docs/GAME_DESIGN.md](docs/GAME_DESIGN
 
 | | |
 | --- | --- |
-| **Money** | Every real $1 of revenue is $10,000 in your treasury, paid daily. At $100k MRR your city earns $1B a month. |
+| **Money** | Every real $1 of revenue is $10,000 in your treasury, paid daily. At $10k MRR your city earns $100M a month. |
 | **Build** | Offices, parks, shops, a library, theatres, towers, a stadium, a university, a venture studio, a supertall, pier rides, yachts, planes and a rocket, each unlocked at an MRR tier. HQ upgrades from a garage to a landmark tower. |
 | **Housing** | Your active users live in the city. Each needs $0.20 of MRR to be housed (1,000 users need $200 MRR). Below that, people end up in tents and the city runs down. |
 | **Upkeep and decay** | Buildings cost upkeep. When it isn't covered, the TINYTOWN sign goes dark first, then street lamps fail, the bridge rusts, the train stops and shops board up. Nothing is destroyed, and it all recovers when money comes back. |
 | **Land** | Clouds cover what you haven't unlocked. New downtown blocks open once you've built on every plot *and* MRR reaches the next gate. The Hills, pier, marina, your island and its launch site open at MRR milestones. |
-| **Your home** | Hacker House → studio ($10) → bungalow or loft ($100) → a TinyTown Hills house ($1k) → pick one of three estates ($10k) → island estate and superyacht ($100k) → a house on the moon ($1M; buy a rocket to visit). |
+| **Your home** | Hacker House → studio ($10) → bungalow or loft ($50) → a TinyTown Hills house ($250) → one of three estates ($1k) → island estate and superyacht ($5k) → a house on the moon ($10k; buy a rocket to visit). |
 | **Satisfaction** | 0–100 from housing, upkeep, amenities and MRR growth. No in-game action can raise it except growing the business. |
 | **Free infrastructure** | Roads, the train, the bridge and the airport. Planes are what you buy. |
 

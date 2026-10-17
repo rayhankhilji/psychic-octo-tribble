@@ -1,0 +1,3457 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Hosted TinyTown: the call to action on the demo, the account button,
+   banners, and the sign-in, plan, setup and account dialogs. Loaded with
+   the hosted shell (src/ui/hosted.ts), so local and demo-only visitors never
+   download it. Uses the design tokens from styles.css.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Shared primitives */
+
+.btn.block {
+  width: 100%;
+}
+
+.btn.lg {
+  height: 46px;
+  padding: 0 18px;
+  font-size: var(--t-lg);
+  border-radius: var(--r-md);
+}
+
+.btn.danger {
+  background: var(--bad);
+  color: var(--surface-solid);
+}
+
+.btn.danger:hover {
+  background: color-mix(in srgb, var(--bad) 86%, var(--ink-900));
+}
+
+.btn.is-busy,
+.btn.is-busy[disabled] {
+  opacity: 1;
+  cursor: progress;
+}
+
+.btn.primary.is-busy {
+  background: var(--accent-fill-hover);
+}
+
+.spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  opacity: 0.85;
+  animation: spin 0.7s linear infinite;
+}
+
+.spinner.lg {
+  width: 20px;
+  height: 20px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.inline-msg {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 9px;
+  align-items: start;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  animation: pop-in var(--dur-3) var(--ease-out);
+}
+
+.inline-msg .ico {
+  width: 16px;
+  height: 16px;
+  margin-top: 0.5px;
+}
+
+.inline-msg.tone-bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.inline-msg.tone-warn {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.inline-msg.tone-good {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.inline-msg.tone-info {
+  background: var(--bay-soft);
+  color: var(--bay-text);
+}
+
+.inline-msg span {
+  color: var(--ink);
+}
+
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bay-text);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 2px;
+}
+
+.linkish:hover {
+  text-decoration-color: currentColor;
+}
+
+.field input::placeholder {
+  color: var(--ink-4);
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--bad);
+}
+
+.field-help {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  margin: 0;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.field-help .ico {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 10px;
+}
+
+/* Custom radios: a ring that fills with the accent. */
+.plan-radio {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  background: var(--surface-solid);
+  transition:
+    border-color var(--dur-1),
+    box-shadow var(--dur-2) var(--ease-spring),
+    background-color var(--dur-1);
+}
+
+:checked ~ .plan-radio,
+:checked ~ * .plan-radio {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3.5px var(--surface-solid);
+}
+
+/* The avatar: the first letter of your email on Bay blue. */
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--bay-500);
+  color: #fff;
+  font: 750 13px/1 var(--font-display);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.avatar.lg {
+  width: 42px;
+  height: 42px;
+  font-size: 19px;
+}
+
+:root[data-theme='night'] .avatar {
+  background: #3b7fc9;
+}
+
+/* Top bar: the call to action on the demo */
+
+.cta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  animation: fade-in var(--dur-4) var(--ease-out) 0.4s both;
+}
+
+.cta-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 3px;
+  background: var(--line-strong);
+}
+
+.btn.cta-main {
+  height: 38px;
+  padding: 0 8px 0 13px;
+  gap: 8px;
+  background: var(--ink-900);
+  color: var(--sand-50);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 1px 2px rgba(27, 34, 54, 0.25),
+    0 6px 14px -6px rgba(27, 34, 54, 0.5);
+}
+
+.btn.cta-main:hover {
+  background: var(--ink-700);
+}
+
+.btn.cta-main .ico {
+  width: 16px;
+  height: 16px;
+  color: var(--sun-400);
+}
+
+.cta[data-cta='world'] .btn.cta-main .ico {
+  color: inherit;
+}
+
+.cta-aside {
+  display: inline-grid;
+  place-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f1e6d2;
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+.cta[data-cta='world'] .btn.cta-main,
+.cta[data-cta='onboard'] .btn.cta-main:not(:has(.cta-aside)) {
+  padding-right: 13px;
+}
+
+:root[data-theme='night'] .btn.cta-main {
+  background: var(--sand-100);
+  color: var(--ink-900);
+  box-shadow:
+    inset 0 -1px 0 rgba(27, 34, 54, 0.12),
+    0 6px 16px -6px rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme='night'] .btn.cta-main:hover {
+  background: #fff;
+}
+
+:root[data-theme='night'] .btn.cta-main .ico {
+  color: var(--gate-500);
+}
+
+:root[data-theme='night'] .cta-aside {
+  background: rgba(27, 34, 54, 0.08);
+  color: var(--ink-700);
+}
+
+.account-btn .avatar {
+  transition: transform var(--dur-2) var(--ease-spring);
+}
+
+.account-btn:hover .avatar {
+  transform: scale(1.06);
+}
+
+/* Banners under the top bar: past due, and confirming a payment */
+
+.billing-banner {
+  position: absolute;
+  z-index: 6;
+  top: var(--below-bar);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: min(640px, calc(100vw - 2 * var(--rail-w) - 64px));
+  padding: 8px 8px 8px 10px;
+  border-radius: var(--r-lg);
+  animation: banner-in var(--dur-4) var(--ease-spring);
+}
+
+.billing-banner .tile {
+  width: 30px;
+  height: 30px;
+}
+
+.billing-banner.is-pending {
+  padding: 12px 18px 12px 14px;
+  color: var(--accent);
+}
+
+.billing-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.billing-text b {
+  font-size: var(--t-md);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+/* Sign in */
+
+.auth-dialog {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.dialog-body.auth {
+  position: relative;
+  gap: 16px;
+  padding: 30px 28px 24px;
+}
+
+.auth-head {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  text-align: center;
+}
+
+.auth-mark {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 8px;
+  border-radius: 17px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line), var(--highlight);
+}
+
+.auth-logo {
+  width: 40px;
+  height: 40px;
+  margin-top: -3px;
+}
+
+.auth-head h2 {
+  margin: 0;
+  font: 750 24px/1.15 var(--font-display);
+  letter-spacing: -0.025em;
+}
+
+.auth-head p {
+  margin: 0;
+  max-width: 32ch;
+  color: var(--ink-2);
+  text-wrap: balance;
+}
+
+.auth-context {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+.auth-context .ico {
+  width: 15px;
+  height: 15px;
+}
+
+.auth-providers {
+  display: grid;
+  gap: 8px;
+}
+
+.btn.auth-btn {
+  height: 46px;
+  gap: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-1);
+  font-size: var(--t-lg);
+  font-weight: 600;
+}
+
+.btn.auth-btn:hover {
+  background: var(--surface-2);
+}
+
+.btn.auth-btn .ico {
+  width: 19px;
+  height: 19px;
+}
+
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+}
+
+.auth-or::before,
+.auth-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.auth-email {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-email .field input {
+  height: 44px;
+}
+
+.auth-email #signin-error:empty {
+  display: none;
+}
+
+.auth-email .btn.primary {
+  height: 44px;
+}
+
+.auth-fine {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 2px 0 0;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.auth-fine .ico {
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+}
+
+.auth-sent {
+  position: relative;
+  justify-items: center;
+  text-align: center;
+  padding-top: 32px;
+}
+
+.auth-sent-close {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  right: 14px;
+}
+
+.waitlist .auth-sent-close {
+  background: color-mix(in srgb, var(--surface-solid) 70%, transparent);
+}
+
+.sent-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 26px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  animation: dialog-in var(--dur-4) var(--ease-spring);
+}
+
+.sent-envelope .ico {
+  width: 40px;
+  height: 40px;
+  stroke-width: 1.3;
+}
+
+.sent-spark {
+  position: absolute;
+  top: -8px;
+  right: -10px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface-solid);
+  color: var(--sun);
+  box-shadow: var(--shadow-1);
+  animation: spark-in var(--dur-4) var(--ease-spring) 0.25s both;
+}
+
+.sent-spark .ico {
+  width: 18px;
+  height: 18px;
+}
+
+@keyframes spark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.3) rotate(-30deg);
+  }
+}
+
+.auth-sent h2 {
+  margin: 6px 0 0;
+  font: 750 24px/1.15 var(--font-display);
+  letter-spacing: -0.025em;
+}
+
+.sent-lede {
+  margin: -6px 0 0;
+  max-width: 38ch;
+  color: var(--ink-2);
+}
+
+.sent-lede b {
+  color: var(--ink);
+  font-weight: 650;
+  word-break: break-all;
+}
+
+.sent-tips {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  list-style: none;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  text-align: left;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.sent-tips li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 9px;
+}
+
+.sent-tips .ico {
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  color: var(--ink-3);
+}
+
+.auth-sent .inline-msg {
+  width: 100%;
+  text-align: left;
+}
+
+.auth-sent .dialog-actions {
+  justify-content: center;
+  width: 100%;
+}
+
+/* Plans: the pitch on the left (a sky over the brand skyline), the choice on the right */
+
+.plan-dialog {
+  width: min(880px, calc(100vw - 32px));
+}
+
+.dialog-body.plans {
+  position: relative;
+  grid-template-columns: minmax(0, 0.94fr) minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+}
+
+.plans-close {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  right: 14px;
+}
+
+.plans-pitch {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 22px;
+  padding: 30px 30px 136px;
+  border-right: 1px solid var(--line);
+  /* Sand paper at the top, hazing to a pale sky at the horizon where the skyline stands. */
+  background: linear-gradient(180deg, var(--surface-2) 0%, color-mix(in srgb, var(--bay-300) 30%, var(--surface-solid)) 100%);
+  overflow: hidden;
+}
+
+:root[data-theme='night'] .plans-pitch {
+  background: linear-gradient(180deg, var(--surface-solid) 0%, color-mix(in srgb, var(--bay-700) 34%, var(--surface-solid)) 100%);
+}
+
+.plans-art {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 104px;
+  pointer-events: none;
+}
+
+.plans-art .skyline {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: calc(100% - 24px);
+  height: auto;
+  transform: translateX(-50%);
+}
+
+.plans-head h2 {
+  margin: 16px 0 10px;
+  font: 750 34px/1.02 var(--font-display);
+  letter-spacing: -0.035em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.plans-head p {
+  margin: 0;
+  max-width: 34ch;
+  color: var(--ink-2);
+  font-size: var(--t-lg);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.plans-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 700 14px/1 var(--font-display);
+  letter-spacing: -0.02em;
+  color: var(--ink-2);
+}
+
+.plans-mark {
+  width: 26px;
+  height: 26px;
+  margin: -3px 0 -1px -2px;
+}
+
+.plan-includes > ul {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-includes > ul > li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.plan-includes .tile {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-solid) 72%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--accent);
+}
+
+.plan-includes .tile .ico {
+  width: 16px;
+  height: 16px;
+}
+
+.plan-includes > ul > li > span:last-child {
+  padding-top: 5px;
+}
+
+.plan-includes b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+/* The house ladder, four rungs of it: a track with a stop at each. */
+.climb {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 12px 0 2px;
+  padding: 0;
+  list-style: none;
+}
+
+.climb li {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding-top: 17px;
+  padding-right: 6px;
+  line-height: 1.2;
+}
+
+.climb li::before {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: 4px;
+  right: -4px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--accent) 35%, var(--line-strong));
+}
+
+.climb li:last-child::before {
+  display: none;
+}
+
+.climb li::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--surface-solid);
+}
+
+.climb li:first-child::after {
+  background: var(--accent);
+}
+
+/* The moon, in sunlight. */
+.climb li:last-child::after {
+  border-color: var(--sun);
+  background: var(--sun);
+  box-shadow: 0 0 0 3px var(--sun-soft);
+}
+
+.climb b {
+  font: 700 12.5px/1.2 var(--font-ui);
+  color: var(--ink);
+}
+
+.climb span {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.plans-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 30px 30px 26px;
+}
+
+/* A note at the top of the column keeps clear of the close button. */
+.plans-choice > .inline-msg:first-child {
+  margin-right: 30px;
+}
+
+/* The button sits at the foot, level with the skyline's waterline. */
+.plans-choice > .plan-foot {
+  margin-top: auto;
+}
+
+.plans-label {
+  margin: 0 0 10px;
+  padding: 0;
+  font: 600 10.5px/1 var(--font-ui);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.choice-card input,
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.choice-card:has(input:focus-visible),
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+/* What happens after the button, in order. */
+.plan-steps {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+
+.plan-steps li {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  font-size: var(--t-sm);
+  line-height: 1.3;
+  color: var(--ink-2);
+}
+
+.plan-steps b {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--ink-2);
+  font: 700 11px/1 var(--font-ui);
+}
+
+/* A hairline from each step to the next. */
+.plan-steps li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 28px;
+  right: 0;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+/* Exactly what happens to their card, in a sentence. */
+.plan-today {
+  margin: -6px 0 0;
+  padding-left: 2px;
+  color: var(--ink-2);
+}
+
+.plan-today b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.plan-terms ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px 16px;
+  list-style: none;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.plan-terms li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+}
+
+.plan-terms .ico {
+  width: 16px;
+  height: 16px;
+  margin-top: 1.5px;
+  color: var(--ink-3);
+}
+
+.plan-terms b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.plan-foot {
+  display: grid;
+  gap: 10px;
+}
+
+.plan-error:empty {
+  display: none;
+}
+
+.btn.primary .cta-sep {
+  height: 18px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.btn.primary .ico {
+  width: 17px;
+  height: 17px;
+}
+
+.plan-foot .btn.primary .ico {
+  transition: transform var(--dur-2) var(--ease-out);
+}
+
+.plan-foot .btn.primary:hover .ico {
+  transform: translateX(2px);
+}
+
+.plan-fine {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 2px 0 0;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.plan-fine .ico {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  color: var(--good);
+}
+
+/* The skyline draws itself in when the plans open: water, bridge, city, then the sun. */
+.skyline {
+  display: block;
+  overflow: visible;
+}
+
+.skyline path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.skyline .sky-city {
+  stroke: var(--ink);
+  stroke-width: 1.3;
+  opacity: 0.85;
+}
+
+.skyline .sky-bridge {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.skyline .sky-sun {
+  stroke: var(--sun);
+  stroke-width: 1.5;
+}
+
+.skyline .sky-water {
+  stroke: var(--bay);
+  stroke-width: 1.2;
+  opacity: 0.55;
+}
+
+.skyline .sky-windows,
+.skyline .sky-stars {
+  opacity: 0;
+  transition: opacity var(--dur-4) var(--ease-out);
+}
+
+.skyline .sky-windows {
+  fill: var(--sun);
+}
+
+.skyline .sky-stars {
+  fill: var(--ink-2);
+}
+
+/* At night the sun pales to a moon, the stars come out and the offices light up. */
+:root[data-theme='night'] .skyline .sky-sun {
+  stroke: var(--ink-2);
+}
+
+:root[data-theme='night'] .skyline .sky-windows {
+  opacity: 0.9;
+}
+
+:root[data-theme='night'] .skyline .sky-stars {
+  opacity: 0.55;
+}
+
+.dialog[open] .skyline path {
+  stroke-dasharray: 1;
+  animation: sky-draw 600ms var(--ease-in-out) 80ms backwards;
+}
+
+.dialog[open] .skyline .sky-bridge {
+  animation-delay: 140ms;
+}
+
+.dialog[open] .skyline .sky-city {
+  animation-delay: 200ms;
+}
+
+.dialog[open] .skyline .sky-sun {
+  animation-duration: 400ms;
+  animation-delay: 440ms;
+}
+
+@keyframes sky-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+.dialog[open] .plans-choice > * {
+  animation: rise-in var(--dur-3) var(--ease-out) backwards;
+}
+
+.dialog[open] .plans-choice > :nth-child(2) {
+  animation-delay: 50ms;
+}
+
+.dialog[open] .plans-choice > :nth-child(3) {
+  animation-delay: 100ms;
+}
+
+.dialog[open] .plans-choice > :nth-child(n + 4) {
+  animation-delay: 150ms;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog[open] .skyline path,
+  .dialog[open] .plans-choice > * {
+    animation: none;
+  }
+}
+
+/* Setup: three steps */
+
+.onboard-dialog {
+  width: min(664px, calc(100vw - 32px));
+}
+
+.onboard .dialog-head p {
+  text-wrap: pretty;
+}
+
+.steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 14px;
+}
+
+/* The thread between the step nodes */
+.step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 15.5px;
+  top: 38px;
+  bottom: 4px;
+  width: 1.5px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+
+.step[data-state='done']:not(:last-child)::before {
+  background: color-mix(in srgb, var(--good) 55%, transparent);
+}
+
+.step-node {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-top: 4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  background: var(--surface-solid);
+  color: var(--ink-3);
+  font: 700 13px/1 var(--font-display);
+  transition:
+    background-color var(--dur-2),
+    border-color var(--dur-2),
+    color var(--dur-2);
+}
+
+.step-node .ico {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.2;
+}
+
+.step[data-state='current'] .step-node {
+  border-color: var(--accent);
+  background: var(--accent-fill);
+  color: #fff;
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.step[data-state='done'] .step-node {
+  border-color: var(--good);
+  background: var(--good);
+  color: #fff;
+}
+
+:root[data-theme='night'] .step[data-state='done'] .step-node {
+  color: var(--ink-900);
+}
+
+.step-main {
+  min-width: 0;
+  padding-bottom: 16px;
+}
+
+.step:last-child .step-main {
+  padding-bottom: 0;
+}
+
+.step-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 4px 8px;
+  margin: 0 -8px;
+  width: calc(100% + 16px);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  text-align: left;
+  transition: background-color var(--dur-1);
+}
+
+.step-toggle:hover {
+  background: var(--surface-hover);
+}
+
+.step-title {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.step-title b {
+  font-size: var(--t-lg);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.step-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.step[data-state='current'] .step-title small {
+  display: none;
+}
+
+.status.req {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.step-body {
+  display: grid;
+  gap: 12px;
+  padding-top: 8px;
+  animation: pop-in var(--dur-3) var(--ease-out);
+}
+
+.step-lede {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.sees {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  list-style: none;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.sees li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+}
+
+.sees .ico {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.sees .can .ico {
+  color: var(--good);
+}
+
+.sees .cannot .ico {
+  color: var(--ink-3);
+}
+
+.sees b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+/* ── Connector cards ───────────────────────────────────────────────────
+   One card per service: logo, what it powers, the badges that matter
+   before installing, what it reads and what it never can, then who's
+   connected and what the connection found. */
+
+.cx {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface-solid);
+  box-shadow: var(--highlight, none);
+  overflow: hidden;
+}
+
+.cx.is-broken {
+  border-color: color-mix(in srgb, var(--bad) 38%, var(--line));
+}
+
+/* Connecting…: a quiet indeterminate line across the top while we hand over to the provider. */
+.cx[data-pending]::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--bay), transparent) 0 0 / 40% 100% no-repeat;
+  animation: cx-pending 1.1s var(--ease-in-out) infinite;
+}
+
+@keyframes cx-pending {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+
+.cx-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.cx-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cx-title b {
+  font: 700 var(--t-lg) / 1.2 var(--font-display);
+  letter-spacing: -0.015em;
+}
+
+.cx-title small {
+  font-size: var(--t-sm);
+  line-height: 1.4;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.cx-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: start;
+  padding: 4px 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: var(--t-xs);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.cx-status .ico {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.2;
+}
+
+.cx-status.req {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.cx-status.on {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.cx-status.bad,
+.status.bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.cx-status.pending {
+  background: var(--bay-soft);
+  color: var(--bay-text);
+}
+
+.cx-status.pending i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.2s var(--ease-in-out) infinite;
+  box-shadow: 0 0 0 3px var(--bay-soft);
+}
+
+.cx-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pill .ico {
+  width: 12px;
+  height: 12px;
+}
+
+.pill.good {
+  border-color: color-mix(in srgb, var(--good) 30%, transparent);
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.pill.warn {
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+/* Reads and never, side by side. */
+.cx-scope {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.cx-col {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 11px 13px 12px;
+}
+
+.cx-col + .cx-col {
+  border-left: 1px solid var(--line);
+}
+
+.cx-label {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.cx-col ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cx-col li {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 8px;
+  font-size: var(--t-sm);
+  line-height: 1.42;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.cx-col li .ico {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  stroke-width: 2.1;
+}
+
+.cx-col.can li .ico {
+  color: var(--good);
+}
+
+.cx-col.cannot li .ico {
+  color: var(--ink-3);
+}
+
+/* The exact grant, for people who check: the provider's own words, in mono. */
+.cx-grant {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: -4px 0 0;
+  font: 500 11px/1.5 var(--font-mono);
+  letter-spacing: 0.01em;
+  color: var(--ink-3);
+}
+
+.cx-grant .ico {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 1px;
+}
+
+.cx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.cx-actions .btn .ico {
+  width: 16px;
+  height: 16px;
+}
+
+.cx-foot {
+  margin: -4px 0 0;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+/* Who's connected */
+.cx-who {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.cx-who-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.cx-who-text b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.cx-who-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.cx-who-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* What the connection found */
+.cx-found {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.cx-found-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.cx-found-label .ico {
+  width: 15px;
+  height: 15px;
+  color: var(--good);
+}
+
+.cx-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, auto)) minmax(60px, 1fr);
+  gap: 4px 22px;
+  align-items: end;
+}
+
+.cx-stat {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cx-stat b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 750 21px/1.1 var(--font-display);
+  letter-spacing: -0.03em;
+  font-stretch: 92%;
+  color: var(--ink);
+}
+
+.cx-stat small {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.cx-found.is-loading .cx-stat b {
+  width: 3.4em;
+  border-radius: 6px;
+  color: transparent;
+  background:
+    linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%) 0 0 / 200% 100%,
+    var(--surface-3);
+  animation: shimmer 1.4s linear infinite;
+}
+
+.spark {
+  justify-self: end;
+  width: 100%;
+  max-width: 150px;
+  height: 34px;
+  overflow: visible;
+}
+
+.spark-line {
+  fill: none;
+  stroke: var(--good);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* It wipes in from the left, like time passing (a clip, since a stretched line can't use dash tricks). */
+.spark {
+  animation: cx-wipe 900ms var(--ease-out) both;
+}
+
+@keyframes cx-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.spark-area {
+  fill: color-mix(in srgb, var(--good) 13%, transparent);
+  stroke: none;
+}
+
+.cx-found-note {
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.cx-house {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.cx-house:empty {
+  display: none;
+}
+
+.cx-house .ico {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  color: var(--ink-3);
+}
+
+.cx-found-note b,
+.cx-house b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+/* A failure, with its way out. */
+.cx-problem {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 9px;
+  padding: 11px 12px;
+  border-radius: var(--r-md);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  animation: pop-in var(--dur-3) var(--ease-out);
+}
+
+.cx-problem > .ico {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.cx-problem p {
+  margin: 0;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+.cx-problem.tone-bad {
+  background: var(--bad-soft);
+}
+
+.cx-problem.tone-bad > .ico {
+  color: var(--bad);
+}
+
+.cx-problem.tone-warn {
+  background: var(--warn-soft);
+}
+
+.cx-problem.tone-warn > .ico {
+  color: var(--warn-text);
+}
+
+.cx-problem-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 9px;
+}
+
+.cx-problem-actions .btn:not(.primary) {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+}
+
+.cx-problem-actions .btn .ico {
+  width: 15px;
+  height: 15px;
+}
+
+/* PostHog and Google Analytics: the form inside the choice. */
+.cx-form {
+  gap: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--surface-2) 45%, var(--surface-solid));
+}
+
+.cx-form .cx-scope {
+  background: var(--surface-solid);
+}
+
+.cx-how {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 12px 10px 30px;
+  border-radius: var(--r-md);
+  background: var(--surface-solid);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.cx-how li::marker {
+  color: var(--ink-3);
+  font: 600 11px var(--font-mono);
+}
+
+.cx-how b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.cx-how code {
+  font: 500 11.5px var(--font-mono);
+  color: var(--ink-2);
+}
+
+.cx-how code b {
+  color: var(--accent-text);
+}
+
+.cx-test {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  animation: pop-in var(--dur-3) var(--ease-out);
+}
+
+.cx-test.ok {
+  background: var(--good-soft);
+  color: var(--ink);
+}
+
+.cx-test.ok .ico {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: var(--good);
+}
+
+.field-error {
+  display: block;
+  margin-top: 5px;
+  font-size: var(--t-xs);
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--bad);
+}
+
+p.field-error {
+  margin: -4px 0 0;
+}
+
+/* The default choice, explained for founders with no analytics. */
+.cx-explain {
+  display: grid;
+  gap: 8px;
+  padding: 11px 13px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.cx-explain p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.cx-explain b {
+  color: var(--ink);
+}
+
+.cx-tradeoff {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  color: var(--ink-3);
+}
+
+.cx-tradeoff .ico {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+}
+
+/* ── Brand tiles (src/ui/brand-icons.ts) ────────────────────────────────
+   Each mark sits in a square with clear space a quarter of the tile, and
+   is never stretched. Stripe's badge is its own tile. */
+
+.brand-tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink-2);
+}
+
+.brand-tile.bt-sm {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.brand-tile.bt-lg {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+
+.brand-tile .bm {
+  display: block;
+  width: 50%;
+  height: 50%;
+}
+
+.brand-tile.bt-posthog .bm {
+  width: 64%;
+  height: auto;
+  aspect-ratio: 52 / 28;
+}
+
+.brand-tile.bt-stripe {
+  border: 0;
+  background: none;
+  overflow: hidden;
+}
+
+.brand-tile.bt-stripe .bm {
+  width: 100%;
+  height: 100%;
+}
+
+.brand-tile.bt-manual,
+.brand-tile.bt-customers {
+  background: var(--surface-2);
+  border-color: transparent;
+}
+
+.brand-tile.bt-manual .bm,
+.brand-tile.bt-customers .bm {
+  width: 56%;
+  height: 56%;
+}
+
+.bm-github {
+  color: #1f2328;
+}
+
+/* Small marks inline with text (step summaries). */
+.step-title small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.step-title small span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.step-title small .bm {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.step-title small .bm-posthog {
+  width: 22px;
+  height: 12px;
+}
+
+/* At night the tiles become ink, GitHub's mark turns white and the hedgehog's head too, as in both companies' dark logos. */
+:root[data-theme='night'] .brand-tile:not(.bt-stripe):not(.bt-manual):not(.bt-customers) {
+  background: #0d1117;
+  border-color: rgba(240, 246, 252, 0.12);
+}
+
+:root[data-theme='night'] .bm-github {
+  color: #f0f6fc;
+}
+
+:root[data-theme='night'] .bm-ph-head {
+  fill: #fff;
+}
+
+/* ── A step that just finished: the check draws in; the next step slides up. */
+
+.step[data-fresh] .step-node {
+  animation: cx-node 520ms var(--ease-spring) both;
+}
+
+.step[data-fresh] .step-node .ico path {
+  stroke-dasharray: 16;
+  animation: cx-check 420ms 160ms var(--ease-out) both;
+}
+
+.step[data-enter] .step-body {
+  animation: cx-rise var(--dur-4) var(--ease-out) both;
+}
+
+@keyframes cx-node {
+  from {
+    transform: scale(0.6);
+    box-shadow: 0 0 0 0 var(--good-soft);
+  }
+  60% {
+    box-shadow: 0 0 0 8px var(--good-soft);
+  }
+}
+
+@keyframes cx-check {
+  from {
+    stroke-dashoffset: 16;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes cx-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cx[data-pending]::before,
+  .spark,
+  .spark-area,
+  .step[data-fresh] .step-node,
+  .step[data-fresh] .step-node .ico path,
+  .step[data-enter] .step-body {
+    animation: none;
+  }
+}
+
+.step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.step-actions .btn:not(.primary):not(.ghost) {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+}
+
+.step-actions .btn .ico {
+  width: 16px;
+  height: 16px;
+}
+
+.step-aside {
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.connected-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-solid);
+}
+
+.connected-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.connected-text b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.connected-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+/* Repository picker */
+
+.repo-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.repo-search {
+  position: relative;
+  display: block;
+}
+
+.repo-search .ico {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  color: var(--ink-3);
+  pointer-events: none;
+}
+
+.repo-search input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px 0 36px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--t-md);
+}
+
+.repo-search input:focus {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--bay-soft);
+}
+
+.repo-list {
+  display: grid;
+  align-content: start;
+  gap: 1px;
+  height: 236px;
+  margin: 0;
+  padding: 4px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-solid);
+}
+
+.repo {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.repo:hover {
+  background: var(--surface-hover);
+}
+
+.repo:focus-visible {
+  outline-offset: -2px;
+}
+
+.repo > .ico {
+  width: 17px;
+  height: 17px;
+  color: var(--ink-3);
+}
+
+.repo[aria-selected='true'] {
+  background: var(--accent-soft);
+}
+
+.repo-name {
+  display: grid;
+  min-width: 0;
+}
+
+.repo-name b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.repo-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.repo.is-busy .chip {
+  display: none;
+}
+
+.repo.is-busy .spinner {
+  color: var(--accent);
+}
+
+.repo.skeleton {
+  grid-template-columns: 17px 1fr;
+  cursor: default;
+  height: 44px;
+}
+
+.repo.skeleton i {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background:
+    linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%) 0 0 / 200% 100%,
+    var(--surface-3);
+  animation: shimmer 1.4s linear infinite;
+}
+
+.repo.skeleton i:first-child {
+  height: 17px;
+  border-radius: 5px;
+}
+
+.repo.skeleton:nth-child(2n) i:last-child {
+  width: 62%;
+}
+
+.repo-empty {
+  padding: 28px 18px;
+  text-align: center;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.repo-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+/* Where active users come from */
+
+.users-form {
+  display: grid;
+  gap: 12px;
+}
+
+.choices {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.choice-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 11px 14px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-solid);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-1),
+    background-color var(--dur-2);
+}
+
+.choice-card .plan-radio {
+  margin-top: 0;
+}
+
+.choice-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+}
+
+.choice-card:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-solid));
+}
+
+.choice-text {
+  display: grid;
+  gap: 1px;
+}
+
+.choice-text b {
+  font-weight: 650;
+}
+
+.choice-text small {
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.choice-extra {
+  display: grid;
+  gap: 10px;
+  margin: 2px 0 6px;
+  padding: 0 0 0 30px;
+  animation: pop-in var(--dur-3) var(--ease-out);
+}
+
+.choice-extra .field input {
+  width: 100%;
+}
+
+.users-error:empty {
+  display: none;
+}
+
+.segmented {
+  display: inline-flex;
+  justify-self: start;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.segmented label {
+  position: relative;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.segmented span {
+  display: block;
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+  transition:
+    background-color var(--dur-1),
+    color var(--dur-1);
+}
+
+.segmented input:checked + span {
+  background: var(--surface-solid);
+  color: var(--ink);
+  box-shadow: var(--shadow-1);
+}
+
+.onboard-foot {
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.onboard-hint {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex: 1 1 220px;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.onboard-hint .ico {
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  color: var(--bay);
+}
+
+.onboard-hint:has(.ico path[d^='m4.5']) .ico {
+  color: var(--good);
+}
+
+/* "Build my city" before Stripe is connected: plainly locked, not a faded orange that reads as broken. */
+.btn.primary.finish[disabled] {
+  background: var(--surface-2);
+  color: var(--ink-3);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.btn.primary.finish[disabled] .ico {
+  width: 16px;
+  height: 16px;
+}
+
+/* Account: settings. Quiet section labels, one bordered list per section. */
+
+.account-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.dialog-body.account {
+  gap: 22px;
+  padding: 22px 24px 18px;
+}
+
+.acct-section {
+  display: grid;
+  gap: 9px;
+}
+
+.acct-section h3 {
+  margin: 0;
+  font: 600 10.5px/1 var(--font-ui);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.acct-plan {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 14px 14px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--accent) 5%, var(--surface-solid)), var(--surface-solid) 60%);
+}
+
+.acct-plan[data-status='none'],
+.acct-plan[data-status='canceled'] {
+  background: var(--surface-solid);
+}
+
+.acct-plan:has(.btn + .btn) {
+  grid-template-columns: auto 1fr auto auto;
+}
+
+.acct-plan-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.acct-mark {
+  width: 30px;
+  height: 30px;
+  margin-top: -2px;
+}
+
+.acct-plan[data-status='none'] .acct-mark,
+.acct-plan[data-status='canceled'] .acct-mark {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+.acct-plan-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.acct-plan-text b {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font: 700 16px/1.2 var(--font-display);
+  letter-spacing: -0.015em;
+}
+
+.acct-plan-text b .chip {
+  font-family: var(--font-ui);
+  letter-spacing: 0;
+}
+
+.acct-plan-text small {
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.acct-plan .btn:not(.primary) {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-1);
+}
+
+.acct-plan .btn .ico {
+  width: 15px;
+  height: 15px;
+}
+
+.acct-prefs {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 12px);
+}
+.acct-prefs .switch small {
+  margin-top: 1px;
+}
+.acct-section[aria-busy='true'] .switch {
+  opacity: 0.6;
+  cursor: progress;
+}
+.acct-fine {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  margin: -1px 0 0;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.acct-fine .ico {
+  width: 13px;
+  height: 13px;
+  margin-top: 2.5px;
+}
+
+.acct-error:empty {
+  display: none;
+}
+
+.conns {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.conn {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 10px 10px 12px;
+}
+
+.conn + .conn,
+.conn-confirm + .conn {
+  border-top: 1px solid var(--line);
+}
+
+.conn-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.conn-text b {
+  font-weight: 650;
+}
+
+.conn-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.conn-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.conn-actions .btn.sm:not(.ghost):not(.primary) {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+}
+
+.conn-confirm {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 10px 10px 12px;
+  background: var(--bad-soft);
+  font-size: var(--t-sm);
+  animation: pop-in var(--dur-3) var(--ease-out);
+}
+
+.conn-confirm > .ico {
+  width: 16px;
+  height: 16px;
+  color: var(--bad);
+}
+
+/* Account → Connections: the same connectors as setup, one card each. */
+.conn.acct-cx {
+  align-items: center;
+  padding: 12px 10px 12px 12px;
+}
+
+.acct-cx .brand-tile {
+  margin-top: 1px;
+}
+
+.acct-cx .conn-text {
+  gap: 3px;
+}
+
+.acct-cx-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.acct-cx-title .cx-status {
+  padding: 2px 7px;
+}
+
+.acct-found {
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.acct-found b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.acct-found.is-loading {
+  color: var(--ink-3);
+}
+
+.acct-cx-wide {
+  display: grid;
+  gap: 4px;
+  grid-column: 2 / -1;
+  min-width: 0;
+  margin-top: -6px;
+}
+
+.acct-broken {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  background: var(--bad-soft);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.acct-broken .ico {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  color: var(--bad);
+}
+
+.acct-scope {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.acct-scope summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  padding: 2px 0;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+}
+
+.acct-scope summary::-webkit-details-marker {
+  display: none;
+}
+
+.acct-scope summary:hover {
+  color: var(--ink-2);
+}
+
+.acct-scope summary .ico {
+  width: 12px;
+  height: 12px;
+}
+
+.acct-scope summary::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  margin-left: 2px;
+  border-right: 1.4px solid currentColor;
+  border-bottom: 1.4px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform var(--dur-2) var(--ease-out);
+}
+
+.acct-scope[open] summary::after {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+.acct-scope ul {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 4px;
+  padding: 9px 11px;
+  list-style: none;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: var(--t-sm);
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+.acct-scope li {
+  display: grid;
+  grid-template-columns: 13px 1fr;
+  gap: 7px;
+}
+
+.acct-scope li .ico {
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  color: var(--good);
+  stroke-width: 2.1;
+}
+
+.acct-scope li.no .ico {
+  color: var(--ink-3);
+}
+
+.acct-scope p {
+  margin: 0;
+  font: 500 10.5px/1.5 var(--font-mono);
+  color: var(--ink-3);
+}
+
+/* A number you set, updated where it's shown. */
+.manual-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.manual-form .field {
+  margin: 0;
+}
+
+.manual-form input {
+  width: 128px;
+  height: 30px;
+  padding: 0 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.manual-form .btn:not(.done) {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+}
+
+.name-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.name-form .field {
+  flex: 1;
+}
+
+.name-form .btn {
+  height: 40px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+}
+
+.name-form .btn.done {
+  border-color: transparent;
+  background: var(--good-soft);
+}
+
+.acct-foot {
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.acct-foot .btn:not(.ghost) {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+}
+
+@media (max-width: 1100px) {
+  .cta-aside {
+    display: none;
+  }
+
+  .btn.cta-main {
+    padding-right: 13px;
+  }
+}
+
+@media (max-width: 900px) {
+  .cta-signin,
+  .cta .cta-sep {
+    display: none;
+  }
+}
+
+/* Phones: the call to action sits above the dock; dialogs are sheets. */
+@media (max-width: 760px) {
+  .cta {
+    position: fixed;
+    z-index: 4;
+    left: var(--left);
+    right: var(--right);
+    bottom: var(--above-dock);
+    height: 48px;
+    padding: 0 5px;
+    gap: 2px;
+  }
+
+  .cta-signin,
+  .cta .cta-sep {
+    display: inline-flex;
+  }
+
+  .cta .cta-sep {
+    display: block;
+  }
+
+  .btn.cta-main {
+    flex: 1;
+    height: 38px;
+  }
+
+  .cta-aside {
+    display: inline-grid;
+    margin-left: auto;
+  }
+
+  .btn.cta-main {
+    padding-right: 6px;
+  }
+
+  #ui:has(.cta) .lower,
+  #ui:has(.cta) .mapctl {
+    bottom: calc(var(--above-dock) + 48px + var(--gap));
+  }
+
+  .toolbar .account-sep {
+    display: none;
+  }
+
+  .billing-banner {
+    left: var(--left);
+    right: var(--right);
+    top: calc(var(--below-bar) + 50px + var(--gap));
+    width: auto;
+    max-width: none;
+    transform: none;
+    flex-wrap: wrap;
+    animation: fade-in var(--dur-3);
+  }
+
+  /* Icon, words and the close in a row; the button under the words. */
+  .billing-banner:has([data-act]) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 8px 12px;
+    padding: 12px 8px 12px 12px;
+  }
+
+  .billing-banner [data-act='portal'] {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  .billing-banner [data-act='dismiss'] {
+    grid-column: 3;
+    grid-row: 1;
+    margin-top: -4px;
+  }
+
+  /* Every hosted dialog is a full-width sheet on a phone (their desktop widths would otherwise win). */
+  .dialog.plan-dialog,
+  .dialog.auth-dialog,
+  .dialog.onboard-dialog,
+  .dialog.account-dialog,
+  .dialog.waitlist-dialog {
+    width: 100%;
+  }
+
+  /* Plans as one column: the picture and the promise, the price, then what you get and the small print. */
+  .dialog-body.plans {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    padding: 0 16px 16px;
+  }
+
+  .plans-pitch,
+  .plans-choice {
+    display: contents;
+  }
+
+  .plans-art {
+    position: relative;
+    order: 0;
+    height: 96px;
+    margin: 0 -16px -8px;
+    background: linear-gradient(180deg, var(--surface-2), color-mix(in srgb, var(--bay-300) 30%, var(--surface-solid)));
+  }
+
+  :root[data-theme='night'] .plans-art {
+    background: linear-gradient(180deg, var(--surface-solid), color-mix(in srgb, var(--bay-700) 34%, var(--surface-solid)));
+  }
+
+  /* Left of the close button, so the sun isn't under it. */
+  .plans-art .skyline {
+    left: 10px;
+    width: calc(100% - 62px);
+    transform: none;
+  }
+
+  .plan-steps {
+    order: 6;
+  }
+
+  .plans-head {
+    order: 1;
+  }
+
+  .plans-head h2 {
+    margin-top: 12px;
+    font-size: 29px;
+  }
+
+  .plans-choice > .inline-msg {
+    order: 2;
+    margin-right: 0;
+  }
+
+  .plan-today {
+    order: 4;
+  }
+
+  .plan-includes {
+    order: 5;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+
+  .plan-terms {
+    order: 6;
+  }
+
+  /* The button stays in reach while the rest scrolls. */
+  .plan-foot {
+    order: 7;
+    position: sticky;
+    bottom: 0;
+    margin: 0 -16px -16px;
+    padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+    background: var(--surface-solid);
+    box-shadow: 0 -1px 0 var(--line), 0 -12px 20px -12px color-mix(in srgb, var(--ink) 18%, transparent);
+  }
+
+  .plans-close {
+    top: 10px;
+    right: 10px;
+    background: color-mix(in srgb, var(--surface-solid) 70%, transparent);
+  }
+
+  .step {
+    grid-template-columns: 28px 1fr;
+    gap: 10px;
+  }
+
+  .step-node {
+    width: 28px;
+    height: 28px;
+    margin-top: 6px;
+  }
+
+  .step:not(:last-child)::before {
+    left: 13.5px;
+    top: 38px;
+  }
+
+  .choice-extra {
+    padding-left: 0;
+  }
+
+  .cx {
+    padding: 12px;
+  }
+
+  .cx-scope {
+    grid-template-columns: 1fr;
+  }
+
+  .cx-col + .cx-col {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .cx-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px 12px;
+  }
+
+  .cx-stat b {
+    font-size: 18px;
+  }
+
+  .spark {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    max-width: none;
+    height: 28px;
+  }
+
+  .cx-head {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .cx-head .cx-status {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .cx-who {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .cx-who-actions {
+    grid-column: 2;
+    margin-left: -8px;
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .acct-plan {
+    grid-template-columns: auto 1fr;
+  }
+
+  .acct-plan .btn {
+    grid-column: 1 / -1;
+  }
+
+  .conn {
+    grid-template-columns: auto 1fr;
+  }
+
+  .conn.acct-cx .conn-actions {
+    order: 3;
+    margin-left: -8px;
+  }
+
+  .acct-cx-wide {
+    order: 2;
+    margin-top: 0;
+  }
+
+  .conn-actions {
+    grid-column: 2;
+    margin-left: -8px;
+  }
+
+  .conn-confirm {
+    grid-template-columns: auto 1fr 1fr;
+  }
+
+  .conn-confirm > span {
+    grid-column: 2 / -1;
+  }
+
+  .conn-confirm .btn {
+    grid-row: 2;
+  }
+
+  .conn-confirm .btn:first-of-type {
+    grid-column: 2;
+  }
+
+  .conn-confirm .btn:last-of-type {
+    grid-column: 3;
+  }
+
+  .onboard-foot .btn.primary,
+  .acct-foot .btn {
+    flex: 1;
+  }
+}
+
+
+/* Small print: legal links under the plans, sign-in and account */
+
+.legal-row {
+  margin: 0;
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.legal-row a,
+.auth-fine a,
+.plan-fine a,
+.acct-help a,
+.waitlist a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+}
+
+.legal-row a:hover,
+.auth-fine a:hover,
+.acct-help a:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
+}
+
+.captcha-slot:empty {
+  display: none;
+}
+
+.captcha-slot {
+  min-height: 0;
+}
+
+/* The waitlist */
+
+.waitlist-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.dialog-body.waitlist {
+  padding: 0 28px 24px;
+}
+
+/* A sky over the brand skyline, full-bleed across the top. */
+.waitlist-art {
+  position: relative;
+  width: calc(100% + 56px);
+  height: 112px;
+  margin: 0 -28px 6px;
+  background: linear-gradient(180deg, var(--surface-2), color-mix(in srgb, var(--bay-300) 30%, var(--surface-solid)));
+}
+
+:root[data-theme='night'] .waitlist-art {
+  background: linear-gradient(180deg, var(--surface-solid), color-mix(in srgb, var(--bay-700) 34%, var(--surface-solid)));
+}
+
+.waitlist-art .skyline {
+  position: absolute;
+  left: 20px;
+  bottom: 0;
+  width: calc(100% - 76px);
+  height: auto;
+}
+
+.waitlist-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: var(--t-sm);
+  font-weight: 650;
+  animation: spark-in var(--dur-4) var(--ease-spring) 0.35s both;
+}
+
+.waitlist-pill .ico {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.4;
+}
+
+.waitlist h2 {
+  margin-top: 0;
+}
+
+.waitlist .sent-tips a {
+  color: var(--bay-text);
+  font-weight: 600;
+}
+
+.cta[data-cta='waitlist'] .btn.cta-main .ico {
+  color: var(--good);
+}
+
+:root[data-theme='night'] .cta[data-cta='waitlist'] .btn.cta-main .ico {
+  color: var(--palm-500);
+}
+
+/* Account: your data, and a quiet danger zone */
+
+.acct-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 11px 12px 11px 14px;
+}
+
+.acct-row + .acct-row {
+  border-top: 1px solid var(--line);
+}
+
+.acct-row .conn-text small {
+  white-space: normal;
+}
+
+.acct-row .btn.sm:not(.danger-quiet) {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+}
+
+.acct-row .btn .ico {
+  width: 15px;
+  height: 15px;
+}
+
+.acct-row.is-danger b {
+  color: var(--bad);
+}
+
+/* Red only in its words until you reach for it. */
+.btn.danger-quiet {
+  border: 1px solid color-mix(in srgb, var(--bad) 28%, transparent);
+  color: var(--bad);
+}
+
+.btn.danger-quiet:hover {
+  border-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.btn.danger-text {
+  color: var(--bad);
+}
+
+.btn.danger-text:hover {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.acct-help {
+  margin: -4px 0 0;
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  text-align: center;
+}
+
+.delete-list .ico {
+  color: var(--bad) !important;
+}
+
+.delete-copy {
+  margin: 0;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.delete-form {
+  display: grid;
+  gap: 12px;
+}
+
+.delete-form .field b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+/* Until the email is typed, the button is plainly unavailable rather than a faded red. */
+.delete-form .btn.danger[disabled] {
+  background: var(--surface-2);
+  color: var(--ink-3);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.goodbye-art {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.goodbye-left {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+.goodbye-left > p {
+  margin: 0;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.goodbye .sent-tips a {
+  color: var(--bay-text);
+  font-weight: 600;
+}
+
+.goodbye .sent-tips span .ico {
+  width: 13px;
+  height: 13px;
+  margin: 0 0 -2px 4px;
+  color: var(--bay-text);
+}
+
+.goodbye .sent-tips small {
+  color: var(--ink-3);
+}
+
+/* The 6-digit code, for when a mail scanner used up the link: six boxes behind one real input. */
+
+.otp-form {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+  text-align: left;
+}
+
+.otp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.otp-box {
+  position: relative;
+  min-width: 0;
+}
+
+.otp-cells {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  height: 50px;
+  pointer-events: none;
+}
+
+.otp-cells i {
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: 600 22px/1 var(--font-mono);
+  font-style: normal;
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out);
+}
+
+.otp-cells i:not(:empty) {
+  background: var(--surface-solid);
+  animation: digit-in var(--dur-2) var(--ease-out);
+}
+
+.otp-cells i.is-next {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--bay-soft);
+}
+
+/* The caret, in the box the next digit goes into. */
+.otp-cells i.is-next:empty::after {
+  content: '';
+  width: 1.5px;
+  height: 22px;
+  border-radius: 1px;
+  background: var(--ink);
+  animation: caret 1.06s steps(1) infinite;
+}
+
+/* The real field sits on top of the boxes, invisible, so typing, pasting and autofill all just work. */
+.otp-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+  letter-spacing: 0;
+  outline: none;
+}
+
+.otp-input::selection {
+  background: transparent;
+}
+
+.otp-input:-webkit-autofill {
+  transition: background-color 99999s;
+}
+
+.otp-box:has(.otp-input[aria-invalid='true']) .otp-cells i {
+  border-color: var(--bad);
+  box-shadow: none;
+}
+
+.otp-box:has(.otp-input[aria-invalid='true']) .otp-cells {
+  animation: shake 320ms var(--ease-out);
+}
+
+.otp-box:has(.otp-input:read-only) .otp-cells i {
+  opacity: 0.6;
+}
+
+@keyframes digit-in {
+  from {
+    transform: translateY(3px) scale(0.92);
+  }
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* "Not that one": a small no, side to side. */
+@keyframes shake {
+  20%,
+  60% {
+    transform: translateX(-4px);
+  }
+  40%,
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+.otp-row .btn {
+  height: 50px;
+}
+
+.otp-form #otp-error:empty {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .otp-cells,
+  .otp-cells i,
+  .otp-cells i::after {
+    animation: none !important;
+  }
+}
+
+/* Just back from Stripe: what it found, leading the next step. */
+.cx.cx-arrived {
+  border-color: color-mix(in srgb, var(--good) 34%, var(--line));
+  background: color-mix(in srgb, var(--good) 4%, var(--surface-solid));
+  animation: cx-rise var(--dur-4) var(--ease-out) both;
+}
+
+.cx-arrived + .cx {
+  margin-top: 2px;
+}
+
+/* Google Analytics properties: a short list, each with the GA mark. */
+.ga4-list {
+  height: auto;
+  max-height: 236px;
+}
+
+.ga4-list .bm {
+  width: 17px;
+  height: 17px;
+}

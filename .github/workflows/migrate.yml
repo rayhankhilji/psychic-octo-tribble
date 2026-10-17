@@ -1,0 +1,115 @@
+# Applies supabase/migrations to the staging database, then to production.
+#
+# Runs from CI (ci.yml, job "Migrate database") after a push to main has passed
+# Typecheck, Unit tests and Build, and only when that push changed
+# supabase/migrations. It can also be started by hand (Actions → Migrate
+# database → Run workflow), e.g. to retry after a failure.
+#
+# Each target is a GitHub Environment holding its own three secrets. The
+# production environment requires the owner's approval and only accepts main;
+# docs/RELEASE.md has the settings. An environment without secrets is skipped
+# with a warning, so this is safe to merge before any of it is set up.
+#
+# Vercel deploys main at the same time as this runs, so a migration must work
+# with the code before it and after it (expand, then contract: RELEASE.md).
+name: Migrate database
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Production always goes through staging first.
+        type: choice
+        options: [staging, production]
+        default: staging
+
+permissions:
+  contents: read
+
+env:
+  # Pinned so a CLI release can't change how migrations run; Dependabot doesn't
+  # see this, so bump it by hand now and then.
+  SUPABASE_CLI_VERSION: 2.118.0
+
+jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      migrations: ${{ steps.diff.outputs.migrations }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Production asks for approval, so don't ask when there's nothing to run.
+      # When in doubt (a manual run, a new branch, a rewritten history) go
+      # ahead: `db push` with nothing pending changes nothing.
+      - name: Did this push change supabase/migrations?
+        id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          changed=true
+          if [ "$EVENT" = push ] && [ -n "$BEFORE" ] && git cat-file -e "${BEFORE}^{commit}" 2> /dev/null; then
+            if git diff --quiet "$BEFORE" "$GITHUB_SHA" -- supabase/migrations; then
+              changed=false
+            fi
+          fi
+          echo "migrations=$changed" >> "$GITHUB_OUTPUT"
+          if [ "$changed" = false ]; then
+            echo "No changes in supabase/migrations since \`${BEFORE:0:7}\`: nothing to migrate." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  staging:
+    name: Staging
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    # One migration at a time per database, and never cancel one halfway.
+    concurrency:
+      group: migrate-staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/migrate
+        with:
+          name: staging
+          access-token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          db-password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          project-ref: ${{ secrets.SUPABASE_PROJECT_REF }}
+          cli-version: ${{ env.SUPABASE_CLI_VERSION }}
+
+  production:
+    name: Production
+    needs: [changes, staging]
+    # Runs only once staging has succeeded (or had no credentials to use). By
+    # hand, only from main (the environment enforces this too) and only when asked.
+    if: >-
+      needs.changes.outputs.migrations == 'true'
+      && github.ref == 'refs/heads/main'
+      && (github.event_name != 'workflow_dispatch' || inputs.target == 'production')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    concurrency:
+      group: migrate-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/migrate
+        with:
+          name: production
+          access-token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          db-password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          project-ref: ${{ secrets.SUPABASE_PROJECT_REF }}
+          cli-version: ${{ env.SUPABASE_CLI_VERSION }}

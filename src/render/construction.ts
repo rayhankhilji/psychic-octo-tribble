@@ -25,12 +25,17 @@ export class Construction {
   readonly duration: number;
   private spawn = 0;
 
-  /** `target` must already be in the scene at its final transform. */
-  constructor(target: THREE.Object3D, duration = 2.6) {
+  /**
+   * `target` must already be in the scene at its final transform. Pass `box`
+   * (world space) when the target has no geometry of its own, like a batch proxy.
+   */
+  constructor(target: THREE.Object3D, duration = 2.6, box?: THREE.Box3) {
     this.target = target;
     this.duration = duration;
-    target.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(target);
+    if (!box) {
+      target.updateMatrixWorld(true);
+      box = new THREE.Box3().setFromObject(target);
+    }
     this.size = box.getSize(new THREE.Vector3());
     this.base = box.getCenter(new THREE.Vector3()).setY(box.min.y);
     const w = Math.max(0.6, this.size.x + 0.12);

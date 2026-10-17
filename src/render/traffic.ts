@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLOW, glassMaterial } from './geo.ts';
+import { bridgeLanes } from './landmarks.ts';
 import { PITCH, blockCentre, type BlockCoord } from '../world/layout.ts';
-import { AIRPORT_ROAD, BAY_APPROACH, EMBARCADERO, GREAT_HIGHWAY, LANDMARKS, MARKET_START, PRESIDIO_PKWY, coastDistance, terrainHeight, type Pt } from '../world/map.ts';
+import { AIRPORT_ROAD, BAY_APPROACH, EMBARCADERO, GREAT_HIGHWAY, MARKET_START, PKWY_JOIN, PRESIDIO_PKWY, coastDistance, terrainHeight, type Pt } from '../world/map.ts';
 import { rng } from '../world/rng.ts';
 
 /**
@@ -526,6 +527,8 @@ function vehicleMaterials() {
     detail: fading(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.15, shadowSide: THREE.DoubleSide }), 'detail'),
     glass: fading(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.06, metalness: 0.7, flatShading: true, envMapIntensity: 1.3, shadowSide: THREE.DoubleSide }), 'glass'),
     lights: fading(new THREE.MeshBasicMaterial({ vertexColors: true }), 'lights', LIGHT_VERT, LIGHT_FRAG),
+    // The shadow pass dithers too, so a car fading in or out casts a fading shadow.
+    depth: fading(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), 'depth'),
   };
 }
 type VehicleMaterials = ReturnType<typeof vehicleMaterials>;
@@ -560,6 +563,7 @@ class Fleet {
       m.frustumCulled = false;
       m.castShadow = k !== 'lights';
       m.receiveShadow = k !== 'lights';
+      m.customDepthMaterial = mats.depth;
       m.name = `${kind}-${k}`;
       this.meshes.push(m);
     }
@@ -857,7 +861,7 @@ function buildGraph(cells: readonly RoadCell[]): Graph {
   const crosses = cells.filter((c) => c.kind === 'cross');
   for (const c of crosses) node(c.x, c.z);
   // Where the Presidio Parkway joins the grid, mid-block.
-  const pkwyJoin: Pt = [-32.5, 0];
+  const pkwyJoin: Pt = PKWY_JOIN;
   for (const c of crosses) {
     for (const [dx, dz] of [[PITCH, 0], [0, PITCH]] as const) {
       const ex = c.x + dx, ez = c.z + dz;
@@ -902,7 +906,7 @@ function buildGraph(cells: readonly RoadCell[]): Graph {
   road(airport, junction, [...[...AIRPORT_ROAD].reverse(), ...EMBARCADERO.slice(1, ji + 1), J], art);
   if (has(...pkwyJoin)) {
     const pk = PRESIDIO_PKWY.slice(1, -1);
-    road(junction, nodes.get(key(...pkwyJoin))!, [J, ...EMBARCADERO.slice(ji + 1), ...pk, [-33.1, 0.4], pkwyJoin], { ...art, lane: 0.16 });
+    road(junction, nodes.get(key(...pkwyJoin))!, [J, ...EMBARCADERO.slice(ji + 1), ...pk, [pkwyJoin[0] - 0.6, 0.4], pkwyJoin], { ...art, lane: 0.16 });
   }
 
   // Market Street: crossing the grid diagonally through the crossings on x − z = 10.
@@ -1052,31 +1056,17 @@ function buildGraph(cells: readonly RoadCell[]): Graph {
     }
   }
 
-  // Bridges: the Golden Gate (two lanes each way) and the Bay Bridge (westbound on top, eastbound below).
+  // Bridges: the Golden Gate (two lanes each way) and the Bay Bridge (westbound on top, eastbound below),
+  // from the ground at one end to the ground at the other, up the ramps and through the Yerba Buena tunnel.
   const bridges: Path[] = [];
-  const gg = LANDMARKS.goldenGate;
-  for (const [o, dir] of [[0.17, 1], [0.45, 1], [0.17, -1], [0.45, -1]] as const) {
-    // Heading +z, right is −x.
-    const x = gg.x - dir * o;
-    const [z0, z1] = dir > 0 ? [6.0, 23.4] : [23.4, 6.0];
-    const p = mkPath(LANE, [x, 2.25, z0, x, 2.25, z1], 1.45 + o * 0.3, null, null);
-    p.bridge = true;
-    bridges.push(p);
-  }
-  const bb = LANDMARKS.bayBridge;
-  const UP = 2.35;
-  // The east span runs on to Oakland off-screen: streams start and end just past the tunnel.
-  const BB_EAST = Math.min(bb.x1, 39);
-  const LOW = 1.9;
-  const westbound = (zSusp: number, zEast: number) => [BB_EAST, UP, bb.z + zEast, 36.4, UP, bb.z + zEast, 33, UP, bb.z + (zEast + zSusp) / 2, 29.8, UP, bb.z + zSusp, bb.x0 + 0.5, UP, bb.z + zSusp];
-  const eastbound = (zSusp: number, zEast: number) => [bb.x0 + 0.5, LOW, bb.z + zSusp, 29.8, LOW, bb.z + zSusp, 33, (LOW + UP) / 2, bb.z + (zEast + zSusp) / 2, 36.4, UP, bb.z + zEast, BB_EAST, UP, bb.z + zEast];
-  for (const xyz of [westbound(-0.2, -0.2), westbound(0.2, -0.48), eastbound(-0.2, 0.2), eastbound(0.2, 0.48)]) {
-    const p = mkPath(LANE, xyz, 1.55, null, null);
-    p.bridge = true;
-    // Through Yerba Buena: hidden between the tunnel portals.
-    const s0 = xyz[0]! > xyz[xyz.length - 3]! ? BB_EAST - 36.2 : 30.1 - bb.x0 - 0.5;
-    p.hide = [s0, s0 + 6.1];
-    bridges.push(p);
+  const streams = bridgeLanes();
+  for (const [lanes, speed] of [[streams.goldenGate, 1.5], [streams.bayBridge, 1.55]] as const) {
+    for (const l of lanes) {
+      const p = mkPath(LANE, l.xyz, speed, null, null);
+      p.bridge = true;
+      p.hide = l.hide;
+      bridges.push(p);
+    }
   }
 
   const spots = lanes.filter((l) => !l.from?.spawn && !l.to?.spawn && l.len > 1.6);
@@ -1341,6 +1331,8 @@ export class Traffic {
     if (!this.graph) return 0;
     let len = 0;
     for (const p of this.graph.bridges) len += p.len;
+    // The bridges' approach ramps doubled the lane length; keep the bridge traffic about where it was.
+    len = Math.min(len, 240);
     return Math.round((len / BRIDGE_SPACING) * (0.35 + 0.65 * Math.min(1, this.target / 100)));
   }
 
@@ -1865,11 +1857,10 @@ class Pedestrians {
     this.matrix = new THREE.InstancedBufferAttribute(new Float32Array(cap * 16), 16).setUsage(THREE.DynamicDrawUsage);
     this.fade = new THREE.InstancedBufferAttribute(new Float32Array(cap).fill(1), 1).setUsage(THREE.DynamicDrawUsage);
     this.walk = new THREE.InstancedBufferAttribute(new Float32Array(cap * 2), 2).setUsage(THREE.DynamicDrawUsage);
-    const mat = fading(
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, shadowSide: THREE.DoubleSide }),
-      'people',
-      'attribute vec2 aWalk;\nattribute vec2 aLimb;@@{ float sw = sin(aWalk.x) * aWalk.y * aLimb.x; float cs = cos(sw), sn = sin(sw); vec2 q = vec2(transformed.x, transformed.y - aLimb.y); transformed.x = q.x * cs - q.y * sn; transformed.y = q.x * sn + q.y * cs + aLimb.y; }',
-    );
+    const swing = 'attribute vec2 aWalk;\nattribute vec2 aLimb;@@{ float sw = sin(aWalk.x) * aWalk.y * aLimb.x; float cs = cos(sw), sn = sin(sw); vec2 q = vec2(transformed.x, transformed.y - aLimb.y); transformed.x = q.x * cs - q.y * sn; transformed.y = q.x * sn + q.y * cs + aLimb.y; }';
+    const mat = fading(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, shadowSide: THREE.DoubleSide }), 'people', swing);
+    // Shadows fade with the walker and swing their legs too.
+    const depth = fading(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), 'people-depth', swing);
     for (const g of personGeometry()) {
       g.setAttribute('aFade', this.fade);
       g.setAttribute('aWalk', this.walk);
@@ -1882,6 +1873,7 @@ class Pedestrians {
       m.frustumCulled = false;
       m.castShadow = true;
       m.receiveShadow = true;
+      m.customDepthMaterial = depth;
       this.meshes.push(m);
       this.object.add(m);
     }

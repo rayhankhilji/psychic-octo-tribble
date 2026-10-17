@@ -35,20 +35,27 @@
   --line-strong: rgba(27, 34, 54, 0.16);
   --ink: #1b2236;
   --ink-2: #4b5168;
-  --ink-3: #7c7f8e;
-  --ink-4: #a9a7a9;
+  /* ink-3 is the quietest text colour: 4.5:1 or better on every light surface (WCAG AA). */
+  --ink-3: #62667a;
+  --ink-4: #8e8c93;
   --accent: var(--gate-500);
   --accent-hover: var(--gate-600);
   --accent-ink: #fff;
   --accent-soft: rgba(229, 81, 43, 0.12);
+  /* Accent for small text, and a deeper fill that keeps white labels at 4.5:1. */
+  --accent-text: #a83818;
+  --accent-fill: #cc4420;
+  --accent-fill-hover: #b93d1c;
   --bay: var(--bay-500);
   --bay-soft: rgba(44, 111, 183, 0.12);
+  --bay-text: #235e9c;
   --sun: #d48d0c;
   --sun-soft: rgba(246, 181, 61, 0.2);
-  --good: var(--palm-500);
+  --good: #24774c;
   --good-soft: rgba(47, 143, 91, 0.12);
   --warn: #b97a08;
   --warn-soft: rgba(246, 181, 61, 0.2);
+  --warn-text: #8a5a00;
   --bad: var(--rose-500);
   --bad-soft: rgba(200, 56, 43, 0.1);
   --focus: var(--bay-500);
@@ -91,8 +98,12 @@
   --dur-3: 320ms;
   --dur-4: 560ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Exits accelerate away: things leave a little faster than they arrive. */
+  --ease-in: cubic-bezier(0.45, 0, 0.8, 0.3);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-spring: cubic-bezier(0.34, 1.5, 0.64, 1);
+  /* Gap between panels in a choreographed group (the HUD entrance). */
+  --stagger: 50ms;
 
   /* Layout */
   --edge: 16px;
@@ -111,27 +122,33 @@
   --surface-2: #1d2439;
   --surface-3: #283049;
   --surface-hover: rgba(245, 236, 219, 0.06);
-  --line: rgba(245, 236, 219, 0.08);
+  --line: rgba(245, 236, 219, 0.1);
   --line-strong: rgba(245, 236, 219, 0.16);
   --ink: #f6eedf;
   --ink-2: #c8c2b6;
-  --ink-3: #8f8d9b;
-  --ink-4: #62647a;
+  --ink-3: #9a98a7;
+  --ink-4: #75778d;
   --accent: #ff6a3d;
   --accent-hover: #ff8259;
   --accent-soft: rgba(255, 106, 61, 0.16);
+  --accent-text: #ff7a50;
+  --accent-fill: #cc4420;
+  --accent-fill-hover: #c4401d;
   --bay: #78b2ef;
   --bay-soft: rgba(120, 178, 239, 0.15);
+  --bay-text: #8fc0ec;
   --sun: #f6b53d;
   --sun-soft: rgba(246, 181, 61, 0.16);
   --good: #63d396;
   --good-soft: rgba(99, 211, 150, 0.14);
   --warn: #f6b53d;
   --warn-soft: rgba(246, 181, 61, 0.15);
+  --warn-text: #f6b53d;
   --bad: #ff7462;
   --bad-soft: rgba(255, 116, 98, 0.14);
   --focus: #8fc0ec;
-  --highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  /* A faint lit top edge, so cards read as objects over the dark city rather than holes in it. */
+  --highlight: inset 0 1px 0 rgba(255, 255, 255, 0.07);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 36px -14px rgba(0, 0, 0, 0.6);
   --shadow-3: 0 30px 80px -20px rgba(0, 0, 0, 0.7);
@@ -169,6 +186,19 @@ body {
   display: none !important;
 }
 
+/* Read by screen readers, invisible on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 #world {
   position: fixed;
   inset: 0;
@@ -197,6 +227,159 @@ body {
 
 .num {
   font-variant-numeric: tabular-nums;
+}
+
+/* ── HUD entrance ──────────────────────────────────────────────────────── */
+
+/*
+ * The HUD waits off stage while the boot screen is up (no html.booted yet)
+ * or the front door is (html.intro), then arrives when loader.ts adds
+ * html.hud-in: each panel from its own edge, a beat apart. Safety net: once
+ * booted without an intro, the HUD shows whether or not hud-in ever comes.
+ * The animations are scoped to html.hud-entering (removed after ~1.6 s), so
+ * they never replay later or fight a panel's own animations.
+ */
+:root:is(:not(.booted), .intro):not(.hud-in) #ui {
+  opacity: 0;
+}
+
+:root {
+  --hud-delay: 0ms;
+}
+
+/*
+ * Arriving with the boot screen's lift, the HUD follows the veil as it rises
+ * off the city: the dock first, then the rail and map controls, then the top
+ * bar, each a touch quicker so the whole thing lands inside ~900 ms.
+ */
+:root.hud-after-boot {
+  --hud-delay: 200ms;
+}
+
+:root.hud-after-boot.hud-entering :is(.topbar > *, .rail, .rail > *, .help, .mapctl, .dock, .lower) {
+  animation-duration: var(--dur-3);
+}
+
+:root.hud-entering :is(.topbar > *, .rail, .help, .mapctl, .dock, .lower) {
+  animation: var(--hud-in, hud-from-top) var(--dur-4) var(--ease-out) both;
+  animation-delay: calc(var(--hud-delay) + var(--i, 0) * var(--stagger));
+}
+
+:root.hud-entering .topbar > :nth-child(2) {
+  --i: 1;
+}
+
+:root.hud-entering .topbar > :nth-child(3) {
+  --i: 2;
+}
+
+:root.hud-entering .topbar > :nth-child(n + 4) {
+  --i: 3;
+}
+
+:root.hud-entering .rail {
+  --hud-in: hud-from-left;
+  --i: 1;
+}
+
+/*
+ * The rail's cards follow it in, one after another. They settle by scale, not
+ * by moving down: a downward offset would briefly make the scrolling rail
+ * think it overflows.
+ */
+:root.hud-entering .rail > * {
+  --i: 0;
+  transform-origin: 0 0;
+  animation: hud-settle var(--dur-4) var(--ease-out) both;
+  animation-delay: calc(var(--hud-delay) + (var(--i, 0) + 2) * var(--stagger));
+}
+
+:root.hud-entering .rail > :nth-child(3) {
+  --i: 1;
+}
+
+:root.hud-entering .rail > :nth-child(n + 4) {
+  --i: 2;
+}
+
+:root.hud-entering .dock {
+  --hud-in: hud-from-bottom;
+  --i: 2;
+}
+
+:root.hud-entering .help {
+  --hud-in: hud-from-right;
+  --i: 4;
+}
+
+:root.hud-entering .mapctl {
+  --hud-in: hud-from-right;
+  --i: 5;
+}
+
+:root.hud-entering .lower {
+  --hud-in: fade-in;
+  --i: 6;
+}
+
+/* Bottom-up order for the lift (see above). */
+:root.hud-after-boot.hud-entering .dock {
+  --i: 0;
+}
+
+:root.hud-after-boot.hud-entering :is(.mapctl, .lower) {
+  --i: 1;
+}
+
+:root.hud-after-boot.hud-entering .rail {
+  --i: 2;
+}
+
+:root.hud-after-boot.hud-entering .rail > * {
+  animation-delay: calc(var(--hud-delay) + (var(--i, 0) + 2) * var(--stagger) * 0.8);
+}
+
+:root.hud-after-boot.hud-entering .help {
+  --i: 4;
+}
+
+:root.hud-after-boot.hud-entering .topbar > * {
+  animation-delay: calc(var(--hud-delay) + (var(--i, 0) + 4) * var(--stagger) * 0.8);
+}
+
+@keyframes hud-from-top {
+  from {
+    opacity: 0;
+    translate: 0 -14px;
+  }
+}
+
+@keyframes hud-from-left {
+  from {
+    opacity: 0;
+    translate: -18px 0;
+  }
+}
+
+@keyframes hud-from-right {
+  from {
+    opacity: 0;
+    translate: 18px 0;
+  }
+}
+
+@keyframes hud-from-bottom {
+  from {
+    opacity: 0;
+    translate: 0 18px;
+  }
+}
+
+@keyframes hud-settle {
+  from {
+    opacity: 0;
+    scale: 0.97;
+  }
 }
 
 button,
@@ -253,7 +436,16 @@ code {
     background-color var(--dur-4) var(--ease-out),
     border-color var(--dur-4) var(--ease-out),
     color var(--dur-4) var(--ease-out),
-    box-shadow var(--dur-4) var(--ease-out);
+    box-shadow var(--dur-4) var(--ease-out),
+    scale var(--dur-1) var(--ease-out);
+}
+
+/*
+ * Press: everything you can click gives a little under your finger (120 ms).
+ * The `scale` property composes with any transform a control already has.
+ */
+:is(.btn, .clock, .brand-city, .mini, .tab, .toast-action, .toast-close, .place, .rail-more, .help summary):active:not([disabled], [aria-disabled='true']) {
+  scale: 0.98;
 }
 
 .ico {
@@ -283,7 +475,7 @@ code {
     background-color var(--dur-1) var(--ease-out),
     border-color var(--dur-1) var(--ease-out),
     color var(--dur-1) var(--ease-out),
-    transform var(--dur-1) var(--ease-out),
+    scale var(--dur-1) var(--ease-out),
     box-shadow var(--dur-2) var(--ease-out);
 }
 
@@ -291,14 +483,9 @@ code {
   background: var(--surface-hover);
 }
 
-.btn:active {
-  transform: translateY(1px) scale(0.98);
-}
-
 .btn[disabled] {
   cursor: default;
   opacity: 0.5;
-  transform: none;
 }
 
 .btn.ghost {
@@ -310,7 +497,7 @@ code {
 }
 
 .btn.primary {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--accent-ink);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
@@ -320,7 +507,7 @@ code {
 }
 
 .btn.primary:hover {
-  background: var(--accent-hover);
+  background: var(--accent-fill-hover);
 }
 
 .btn.sm {
@@ -382,7 +569,7 @@ code {
 
 .chip[data-tone='warn'] {
   background: var(--warn-soft);
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 .dot {
@@ -667,7 +854,7 @@ code {
 }
 
 .clock.previewing .clock-label {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .toolbar {
@@ -698,7 +885,7 @@ code {
 }
 
 .btn.build.on {
-  background: var(--accent-hover);
+  background: var(--accent-fill-hover);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.18);
 }
 
@@ -726,6 +913,53 @@ code {
 
 .rail::-webkit-scrollbar {
   display: none;
+}
+
+/* Scroll affordance: the edge with more content fades out. */
+.rail.more-below {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent 100%);
+}
+
+.rail.more-above {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+}
+
+.rail.more-above.more-below {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 56px), transparent 100%);
+}
+
+.rail-more {
+  position: absolute;
+  left: calc(var(--left) + var(--rail-w) / 2);
+  bottom: calc(var(--above-dock) + 4px);
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px 0 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface-solid);
+  color: var(--ink-2);
+  box-shadow: var(--shadow-1);
+  font-size: var(--t-xs);
+  font-weight: 600;
+}
+
+.rail-more:hover {
+  color: var(--ink);
+}
+
+.rail-more .ico {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 760px) {
+  .rail-more {
+    display: none;
+  }
 }
 
 .mini {
@@ -791,8 +1025,10 @@ code {
 
 .metric {
   display: grid;
-  grid-template-columns: 1fr auto;
+  /* The delta sits right after its figure, so it can't be read as the next column's. */
+  grid-template-columns: auto 1fr;
   grid-template-areas: 'label label' 'value delta';
+  column-gap: 6px;
   align-items: baseline;
   row-gap: 2px;
   padding: 8px 0;
@@ -818,6 +1054,7 @@ code {
 
 .metric .metric-delta {
   grid-area: delta;
+  justify-self: start;
   font-size: 10.5px;
   font-weight: 600;
   color: var(--ink-3);
@@ -834,6 +1071,57 @@ code {
 
 .metric.missing .metric-value {
   color: var(--ink-4);
+}
+
+/*
+ * Numbers that just moved (dom.ts Tint sets data-tick while they count):
+ * the figure leans toward good or bad and its delta chip brightens, then
+ * both settle back. The tint arrives fast and leaves slowly.
+ */
+.metric-value,
+.treasury-value,
+.ring-value,
+.mini-stat b {
+  transition: color var(--dur-4) var(--ease-out);
+}
+
+.chip {
+  transition:
+    background-color var(--dur-4) var(--ease-out),
+    box-shadow var(--dur-4) var(--ease-out),
+    color var(--dur-4) var(--ease-out),
+    scale var(--dur-1) var(--ease-out);
+}
+
+[data-tick] :is(.metric-value, .treasury-value, .ring-value),
+.mini-stat b[data-tick],
+[data-tick] .chip {
+  transition-duration: var(--dur-1);
+}
+
+[data-tick='up'] :is(.metric-value, .treasury-value, .ring-value),
+.mini-stat b[data-tick='up'] {
+  color: color-mix(in srgb, var(--good) 50%, var(--ink));
+}
+
+[data-tick='down'] :is(.metric-value, .treasury-value, .ring-value),
+.mini-stat b[data-tick='down'] {
+  color: color-mix(in srgb, var(--bad) 50%, var(--ink));
+}
+
+/* Spending isn't bad news: a purchase tints the treasury in the brand colour. */
+.treasury[data-tick='spend'] .treasury-value {
+  color: var(--accent-text);
+}
+
+[data-tick='up'] .chip[data-dir='up'] {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--good) 40%, transparent);
+  background: color-mix(in srgb, var(--good) 20%, transparent);
+}
+
+[data-tick='down'] .chip[data-dir='down'] {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--bad) 40%, transparent);
+  background: color-mix(in srgb, var(--bad) 18%, transparent);
 }
 
 .as-of {
@@ -877,7 +1165,7 @@ code {
   top: -4px;
   white-space: nowrap;
   font: 700 13px/1 var(--font-display);
-  color: var(--accent);
+  color: var(--accent-text);
   animation: float-up 1.8s var(--ease-out) forwards;
 }
 
@@ -980,13 +1268,15 @@ code {
   overflow: hidden;
 }
 
+/* The fill is full width and slides in from the left (a transform, so no layout as it moves). */
 .part b {
   display: block;
   height: 100%;
   border-radius: 4px;
   background: var(--good);
+  transform: translateX(calc(var(--v, 0%) - 100%));
   transition:
-    width var(--dur-4) var(--ease-out),
+    transform var(--dur-4) var(--ease-out),
     background-color var(--dur-3);
 }
 
@@ -1043,32 +1333,27 @@ code {
   color: var(--bad);
 }
 
+/* Housed fill over the track; when people are short of a home, the uncovered track is the striped unhoused share. */
 .meter {
-  display: flex;
+  position: relative;
   height: 8px;
-  gap: 2px;
   border-radius: 8px;
   overflow: hidden;
   background: var(--surface-3);
 }
 
-.meter i {
-  display: block;
-  height: 100%;
-  transition: width var(--dur-4) var(--ease-out);
-}
-
-.meter-housed {
-  background: linear-gradient(90deg, var(--bay), color-mix(in srgb, var(--bay) 70%, #fff));
-  border-radius: 8px 0 0 8px;
-}
-
-.meter-unhoused {
+.meter[data-short] {
   background: repeating-linear-gradient(-45deg, var(--bad) 0 3px, color-mix(in srgb, var(--bad) 55%, transparent) 3px 6px);
 }
 
-.meter-unhoused[style*='width:0.00%'] {
-  display: none;
+.meter-housed {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--bay), color-mix(in srgb, var(--bay) 70%, #fff));
+  /* A hairline of card between housed and unhoused; clipped away when everyone is housed. */
+  box-shadow: 2px 0 0 var(--surface-solid);
+  transform: translateX(calc(var(--v, 100%) - 100%));
+  transition: transform var(--dur-4) var(--ease-out);
 }
 
 .housing-foot {
@@ -1119,6 +1404,10 @@ code {
   font-size: var(--t-sm);
   font-weight: 650;
   line-height: 1.3;
+}
+
+.alert .aside {
+  font-style: normal;
 }
 
 .alert span {
@@ -1173,6 +1462,7 @@ code {
 }
 
 .fine {
+  text-wrap: pretty;
   margin: 10px 0 0;
   padding-top: 10px;
   border-top: 1px solid var(--line);
@@ -1345,8 +1635,9 @@ code {
   border: 1px solid var(--line);
   box-shadow: var(--highlight), var(--shadow-2);
   overflow: hidden;
+  /* Toasts land from the bottom-left corner with a little spring, and leave the way they came. */
   transform-origin: 0 100%;
-  animation: toast-in var(--dur-4) var(--ease-spring);
+  animation: toast-in var(--dur-4) var(--ease-spring) both;
   transition:
     opacity var(--dur-3) var(--ease-out),
     transform var(--dur-3) var(--ease-out),
@@ -1396,6 +1687,40 @@ code {
   overflow-wrap: anywhere;
 }
 
+.toast-action {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 10px 4px 8px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--accent-ink, #fff);
+  background: var(--accent);
+  cursor: pointer;
+  transition:
+    filter var(--dur-1) var(--ease-out),
+    scale var(--dur-1) var(--ease-out);
+}
+
+.toast-action .ico {
+  width: 14px;
+  height: 14px;
+}
+
+.toast-action:hover {
+  filter: brightness(1.06);
+}
+
+.toast-action:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .toast-close {
   display: grid;
   place-items: center;
@@ -1407,7 +1732,10 @@ code {
   background: transparent;
   color: var(--ink-3);
   opacity: 0;
-  transition: opacity var(--dur-1);
+  transition:
+    opacity var(--dur-1),
+    background-color var(--dur-1),
+    scale var(--dur-1) var(--ease-out);
 }
 
 .toast-close .ico {
@@ -1464,7 +1792,11 @@ code {
 
 .toast.out {
   opacity: 0;
-  transform: translateX(-14px) scale(0.97);
+  transform: translate(-12px, 6px) scale(0.96);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-2) var(--ease-in),
+    transform var(--dur-2) var(--ease-in);
 }
 
 .toast.bump {
@@ -1484,7 +1816,10 @@ code {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(12px) scale(0.96);
+    transform: translate(-8px, 14px) scale(0.94);
+  }
+  40% {
+    opacity: 1;
   }
 }
 
@@ -1520,6 +1855,73 @@ code {
   width: 20px;
   height: 1px;
   margin: 3px 0;
+}
+
+/* Places: a small menu beside the map controls. */
+.places-menu {
+  position: absolute;
+  right: calc(var(--right) + 56px);
+  bottom: var(--above-dock);
+  width: 236px;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  border-radius: var(--r-md);
+  z-index: 5;
+  transform-origin: 100% 100%;
+  animation: menu-in var(--dur-2) var(--ease-out);
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateX(6px) scale(0.97);
+  }
+}
+
+.places-menu .place {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: calc(var(--r-md) - 4px);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-2) var(--ease-out);
+}
+
+.places-menu .place:hover,
+.places-menu .place:focus-visible {
+  background: var(--surface-hover);
+}
+
+.places-menu .place:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.places-menu .place svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--accent-text);
+}
+
+.places-menu .place b {
+  display: block;
+  font-weight: 600;
+  font-size: var(--t-sm);
+}
+
+.places-menu .place small {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--t-xs);
 }
 
 /* ── Dock: playback and timeline ───────────────────────────────────────── */
@@ -1566,7 +1968,7 @@ code {
 }
 
 .btn.play.playing {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
 }
 
@@ -1777,7 +2179,16 @@ code {
   box-shadow: var(--shadow-2);
   font-size: var(--t-sm);
   line-height: 1.4;
-  animation: tip-in var(--dur-2) var(--ease-out);
+  animation: tip-in 140ms var(--ease-out);
+}
+
+/* Browsing from one tooltip to the next: no delay and no fade, it just follows you. */
+.uitip.warm {
+  animation: none;
+}
+
+.uitip[data-side='below'] {
+  --tip-from: -3px;
 }
 
 :root[data-theme='night'] .tip,
@@ -1803,13 +2214,19 @@ code {
 @keyframes tip-in {
   from {
     opacity: 0;
-    transform: translateY(3px);
+    transform: translateY(var(--tip-from, 3px));
   }
 }
 
 /* ── Dialogs ───────────────────────────────────────────────────────────── */
 
+/*
+ * Dialogs rise 8px and fade in with their scrim, and sink back out when they
+ * close (exit transitions where the browser supports them; elsewhere they
+ * simply go).
+ */
 .dialog {
+  --dialog-from: 0 8px;
   border: 1px solid var(--line);
   border-radius: var(--r-xl);
   background: var(--surface-solid);
@@ -1820,10 +2237,27 @@ code {
   box-shadow: var(--highlight), var(--shadow-3);
   overflow: auto;
   overscroll-behavior: contain;
+  opacity: 0;
+  translate: var(--dialog-from);
+  transition:
+    opacity var(--dur-2) var(--ease-in),
+    translate var(--dur-2) var(--ease-in),
+    overlay var(--dur-2) allow-discrete,
+    display var(--dur-2) allow-discrete;
 }
 
 .dialog[open] {
-  animation: dialog-in var(--dur-4) var(--ease-spring);
+  opacity: 1;
+  translate: 0 0;
+  transition-duration: var(--dur-3);
+  transition-timing-function: var(--ease-out);
+}
+
+@starting-style {
+  .dialog[open] {
+    opacity: 0;
+    translate: var(--dialog-from);
+  }
 }
 
 .dialog:focus {
@@ -1833,7 +2267,23 @@ code {
 .dialog::backdrop {
   background: var(--scrim);
   backdrop-filter: blur(3px);
-  animation: fade-in var(--dur-3) var(--ease-out);
+  opacity: 0;
+  transition:
+    opacity var(--dur-2) var(--ease-in),
+    overlay var(--dur-2) allow-discrete,
+    display var(--dur-2) allow-discrete;
+}
+
+.dialog[open]::backdrop {
+  opacity: 1;
+  transition-duration: var(--dur-3);
+  transition-timing-function: var(--ease-out);
+}
+
+@starting-style {
+  .dialog[open]::backdrop {
+    opacity: 0;
+  }
 }
 
 @keyframes dialog-in {
@@ -2160,14 +2610,26 @@ code {
   flex-direction: column;
   border-radius: var(--r-xl);
   background: var(--surface-solid);
-  animation: drawer-in var(--dur-4) var(--ease-spring);
+  animation: drawer-in var(--dur-3) var(--ease-out);
   overflow: hidden;
+}
+
+/* The build menu slides in from the right edge and back out to it. */
+.drawer.closing {
+  animation: drawer-out var(--dur-2) var(--ease-in) both;
 }
 
 @keyframes drawer-in {
   from {
     opacity: 0;
-    transform: translateX(24px);
+    transform: translateX(28px);
+  }
+}
+
+@keyframes drawer-out {
+  to {
+    opacity: 0;
+    transform: translateX(28px);
   }
 }
 
@@ -2235,6 +2697,11 @@ code {
   color: var(--ink);
 }
 
+/* The tab strip scrolls, which would clip an outside ring. */
+.tab:focus-visible {
+  outline-offset: -2px;
+}
+
 .tab[aria-selected='true'] {
   background: var(--surface-solid);
   color: var(--ink);
@@ -2247,7 +2714,7 @@ code {
   padding: 0 4px;
   border-radius: 8px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 10px;
   font-weight: 700;
   line-height: 16px;
@@ -2430,7 +2897,7 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 650;
 }
 
@@ -2453,13 +2920,13 @@ code {
 /* Quiet until you mean it: a soft accent button that fills on hover. */
 .item-action .btn.buy {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   box-shadow: none;
 }
 
 .item:hover .btn.buy,
 .btn.buy:focus-visible {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--accent-ink);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
@@ -2580,7 +3047,7 @@ code {
 
 .placing-text small {
   font-size: var(--t-xs);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 650;
   letter-spacing: 0.02em;
 }
@@ -2636,7 +3103,7 @@ code {
   font-weight: 650;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .home-next b {
@@ -2811,7 +3278,7 @@ code {
 }
 
 .here {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
 }
 
@@ -2824,7 +3291,7 @@ code {
 .choice {
   margin-left: auto;
   background: var(--bay-soft);
-  color: var(--bay);
+  color: var(--bay-text);
 }
 
 .opts {
@@ -2889,7 +3356,7 @@ code {
   letter-spacing: -0.01em;
 }
 
-.opt-body span {
+.opt-body > span {
   font-size: var(--t-sm);
   color: var(--ink-3);
   line-height: 1.4;
@@ -2905,13 +3372,97 @@ code {
   align-items: center;
   gap: 4px;
   margin-top: 4px;
-  color: var(--accent) !important;
+  color: var(--accent-text) !important;
   font-weight: 650;
 }
 
 .chosen-tag .ico {
   width: 14px;
   height: 14px;
+}
+
+/* What changing your mind costs: the first pick is free, then 25% of the house's value. */
+.rung-fee {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+}
+
+.rung-fee .ico {
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  color: var(--ink-3);
+}
+
+.rung-fee b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.rung-fee[data-tone='short'] {
+  background: var(--warn-soft);
+}
+
+.rung-fee[data-tone='short'] .ico {
+  color: var(--warn-text);
+}
+
+.btn.renovate .ico {
+  width: 14px;
+  height: 14px;
+}
+
+.btn[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.btn[aria-disabled='true']:hover {
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.btn[aria-disabled='true']:active {
+  transform: none;
+}
+
+.confirm {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.confirm .btn {
+  margin-top: 0 !important;
+}
+
+.opt:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.home-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--good);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+.home-status .ico {
+  width: 15px;
+  height: 15px;
 }
 
 .rung-extra {
@@ -2941,6 +3492,307 @@ code {
   color: var(--ink-3);
 }
 
+/* ── While you were away ───────────────────────────────────────────────── */
+
+.away-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.away-dialog .dialog-body {
+  gap: 18px;
+}
+
+.away-rent {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: end;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(110deg, var(--sun-soft), var(--accent-soft));
+}
+
+.away-earned small,
+.away-section h3 {
+  display: block;
+  margin: 0;
+  font: 650 10.5px/1 var(--font-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.away-earned small {
+  color: var(--accent-text);
+}
+
+.away-earned > b {
+  display: block;
+  margin: 8px 0 6px;
+  font: 750 36px/1 var(--font-display);
+  letter-spacing: -0.035em;
+  font-stretch: 95%;
+  font-variant-numeric: tabular-nums;
+}
+
+.away-earned p {
+  margin: 0;
+  max-width: 38ch;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+}
+
+.away-earned p b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.away-ledger {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-width: 128px;
+}
+
+.away-ledger div {
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-solid) 72%, transparent);
+}
+
+.away-ledger dt {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.away-ledger dd {
+  margin: 2px 0 0;
+  font: 700 15px/1.2 var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.away-ledger dd small {
+  display: block;
+  margin-top: 1px;
+  font: 500 var(--t-xs) / 1.3 var(--font-ui);
+  color: var(--ink-3);
+}
+
+.away-section {
+  display: grid;
+  gap: 10px;
+}
+
+.away-section h3 {
+  color: var(--ink-3);
+}
+
+.away-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.away-stat {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  cursor: help;
+}
+
+.away-stat small {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.away-stat > b {
+  font: 750 19px/1.1 var(--font-display);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.away-stat > b small {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.away-stat > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1px 3px;
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.away-stat s {
+  text-decoration: none;
+}
+
+.away-stat .ico {
+  width: 11px;
+  height: 11px;
+}
+
+.away-stat em {
+  font-style: normal;
+  font-weight: 650;
+}
+
+.away-stat[data-dir='up'] em {
+  color: var(--good);
+}
+
+.away-stat[data-dir='down'] em {
+  color: var(--bad);
+}
+
+.away-events {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.away-events li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--t-md);
+  line-height: 1.35;
+}
+
+.away-events .tile {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.away-events .tile .ico {
+  width: 16px;
+  height: 16px;
+}
+
+/* Recoveries get a little moment of their own. */
+.away-events li.tone-good {
+  padding: 6px 10px 6px 6px;
+  margin: 0 -4px;
+  border-radius: var(--r-md);
+  background: var(--good-soft);
+  font-weight: 600;
+}
+
+.away-more summary {
+  width: fit-content;
+  padding: 4px 0;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.away-more[open] summary {
+  margin-bottom: 6px;
+}
+
+.away-quiet {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.away-quiet .ico {
+  color: var(--good);
+}
+
+.away-unlocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.away-unlocks li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 12px 5px 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.away-unlocks li.away-unlocks-more {
+  padding-left: 12px;
+  background: transparent;
+  border-style: dashed;
+}
+
+.away-unlocks .thumb {
+  width: 54px;
+  height: 36px;
+  border-radius: 7px;
+}
+
+.away-unlocks .thumb-fallback .ico {
+  width: 15px;
+  height: 15px;
+}
+
+.away-unlocks li > span:last-child {
+  display: grid;
+  line-height: 1.25;
+}
+
+.away-unlocks b {
+  font-size: var(--t-sm);
+  font-weight: 650;
+}
+
+.away-unlocks small {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.away-dialog .dialog-actions .btn.primary {
+  min-width: 168px;
+}
+
+@media (max-width: 760px) {
+  .away-rent {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .away-ledger {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .away-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .away-earned > b {
+    font-size: 32px;
+  }
+
+  .away-dialog .dialog-actions .btn.primary {
+    flex: 1;
+  }
+}
+
 /* ── Night tweaks ──────────────────────────────────────────────────────── */
 
 :root[data-theme='night'] .btn.play {
@@ -2949,7 +3801,7 @@ code {
 }
 
 :root[data-theme='night'] .btn.play.playing {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
 }
 
@@ -3117,6 +3969,12 @@ code {
     stroke-width: 6;
   }
 
+  .mini-sat .ring-fill {
+    transition:
+      stroke-dashoffset var(--dur-4) var(--ease-out),
+      stroke var(--dur-3);
+  }
+
   .mini-sat b {
     position: absolute;
     inset: 0;
@@ -3255,6 +4113,10 @@ code {
     box-shadow: var(--shadow-3);
   }
 
+  .drawer.closing {
+    animation: sheet-out var(--dur-3) var(--ease-in) both;
+  }
+
   .sheet-handle {
     display: block;
     width: 38px;
@@ -3312,8 +4174,14 @@ code {
     padding-bottom: env(safe-area-inset-bottom);
   }
 
+  /* Phones: dialogs are bottom sheets that come up from, and go back to, the bottom edge. */
+  .dialog {
+    --dialog-from: 0 100%;
+    opacity: 1;
+  }
+
   .dialog[open] {
-    animation: sheet-in var(--dur-4) var(--ease-out);
+    transition-duration: var(--dur-4);
   }
 
   .dialog-body {
@@ -3386,6 +4254,116 @@ code {
   }
 }
 
+@keyframes sheet-out {
+  to {
+    transform: translateY(100%);
+  }
+}
+
+/* ── Short screens ──────────────────────────────────────────────────── */
+
+/* The same cards, tighter, so both alerts usually fit without scrolling. */
+@media (max-height: 820px) and (min-width: 761px) {
+  .metrics,
+  .city {
+    padding: 11px 14px;
+  }
+
+  .card-head {
+    margin-bottom: 6px;
+  }
+
+  .hero-metric {
+    gap: 2px;
+    padding-bottom: 8px;
+  }
+
+  .hero-value,
+  .treasury-value {
+    font-size: 24px;
+  }
+
+  .metric {
+    padding: 5px 0;
+  }
+
+  .metric .metric-value {
+    font-size: 15px;
+  }
+
+  .treasury {
+    margin-bottom: 6px;
+  }
+
+  .vitals {
+    grid-template-columns: 48px 1fr;
+    gap: 12px;
+    padding: 7px 0;
+  }
+
+  .ring {
+    width: 48px;
+    height: 48px;
+  }
+
+  .housing {
+    gap: 5px;
+    padding-top: 9px;
+  }
+
+  /* Income and upkeep stay one hover away, on the net-per-day chip. */
+  .fine {
+    display: none;
+  }
+
+  .alerts {
+    gap: 6px;
+  }
+
+  .alerts:not(:empty) {
+    margin-top: 9px;
+  }
+
+  .alert {
+    gap: 8px;
+    padding: 7px 9px;
+  }
+
+  .alert .tile {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+@media (max-height: 760px) and (min-width: 761px) {
+  .alert .pips,
+  .alert .aside {
+    display: none;
+  }
+
+  .hero-metric {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 12px;
+  }
+
+  .parts {
+    gap: 1px;
+  }
+
+  .part {
+    line-height: 1.3;
+  }
+
+  .housing {
+    padding-top: 8px;
+  }
+
+  .alert {
+    padding: 6px 9px;
+  }
+}
+
 /* ── Reduced motion ────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
@@ -3393,11 +4371,81 @@ code {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
   }
 
   .toast-timer {
+    display: none;
+  }
+}
+
+/* ── Sound toggle (hud.ts; the soundscape lives in src/audio/) ─────────── */
+
+/* Off reads quieter than on; on draws its two waves in, nearest first. */
+.sound-toggle:not(.on) {
+  color: var(--ink-3);
+}
+
+.sound-toggle.on {
+  color: var(--ink);
+}
+
+.sound-toggle.sound-in .wave {
+  stroke-dasharray: 1;
+  animation: sound-wave var(--dur-3) var(--ease-out) both;
+}
+
+.sound-toggle.sound-in .wave + .wave {
+  animation-delay: 70ms;
+}
+
+@keyframes sound-wave {
+  from {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+/* ── Settings: reduced motion by choice, and the cog (hud.ts, settings.ts) ─ */
+
+/*
+ * "Reduce" in Settings puts html.reduce-motion on the page: the same cut to
+ * the end state as the prefers-reduced-motion block above, for people whose
+ * system doesn't ask for it. (Panels' own media blocks still follow the system.)
+ */
+:root.reduce-motion *,
+:root.reduce-motion *::before,
+:root.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0s !important;
+}
+
+:root.reduce-motion .toast-timer {
+  display: none;
+}
+
+/* The cog turns a few degrees under the pointer, a hint that it opens something. */
+.settings-btn .ico {
+  transition: rotate var(--dur-3) var(--ease-out);
+}
+
+.settings-btn:hover .ico {
+  rotate: 30deg;
+}
+
+/* Phones have no M key and little room in the bar: sound lives in Settings there. */
+@media (max-width: 760px) {
+  .toolbar .sound-toggle {
     display: none;
   }
 }

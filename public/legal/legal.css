@@ -1,0 +1,827 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   TinyTown legal pages
+   Static, no scripts. The same sand-and-ink palette as the game
+   (src/ui/styles.css): warm paper by day, deep ink in dark mode, Golden Gate
+   orange for links. Set for long reading: one calm column, generous leading.
+   ────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --bg: #f8f1e4;
+  --surface: #fdf9f2;
+  --surface-2: #f1e6d2;
+  --line: rgba(27, 34, 54, 0.09);
+  --line-strong: rgba(27, 34, 54, 0.16);
+  --ink: #1b2236;
+  --ink-2: #4b5168;
+  --ink-3: #62667a;
+  --accent: #e5512b;
+  --accent-text: #a83818;
+  --accent-soft: rgba(229, 81, 43, 0.12);
+  --accent-fill: #cc4420;
+  --accent-fill-hover: #b93d1c;
+  --warn-soft: #f8e3b4;
+  --warn-text: #6e4800;
+  --focus: #2c6fb7;
+  --shadow: 0 1px 1px rgba(27, 34, 54, 0.04), 0 2px 6px -2px rgba(27, 34, 54, 0.1);
+
+  --font-display: 'Bricolage Grotesque', 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-ui: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --edge: 16px;
+  /* About 70 characters a line at the body size: long enough to flow, short enough to track back. */
+  --measure: 640px;
+  /* The side column, the gap and the text column, plus the gutters: header, body and footer share one width. */
+  --page: 968px;
+  --ink-4: #8e8c93;
+  --warn-line: rgba(110, 72, 0, 0.16);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1424;
+    --surface: #161c2f;
+    --surface-2: #1d2439;
+    --line: rgba(245, 236, 219, 0.08);
+    --line-strong: rgba(245, 236, 219, 0.16);
+    --ink: #f6eedf;
+    --ink-2: #c8c2b6;
+    --ink-3: #9a98a7;
+    --accent: #ff6a3d;
+    --accent-text: #ff8a62;
+    --accent-soft: rgba(255, 106, 61, 0.16);
+    --warn-soft: #2b2617;
+    --warn-text: #f6cf7d;
+    --warn-line: rgba(246, 207, 125, 0.2);
+    --ink-4: #75778d;
+    --focus: #78b2ef;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-padding-top: 28px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 16.5px/1.7 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'ss01', 'cv11';
+}
+
+a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: text-decoration-color 120ms;
+}
+
+a:hover {
+  text-decoration-color: currentColor;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+
+.skip:focus {
+  left: var(--edge);
+  top: 12px;
+  z-index: 10;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-radius: 8px;
+}
+
+/* Draft banner: delete the <p class="draft"> line in each page when the lawyer signs off. */
+.draft {
+  margin: 0;
+  padding: 9px var(--edge);
+  /* Faint hazard stripes, as on a building site: this page is still going up. */
+  background: repeating-linear-gradient(-45deg, transparent 0 10px, var(--warn-line) 10px 11px), var(--warn-soft);
+  border-bottom: 1px solid var(--warn-line);
+  color: var(--warn-text);
+  font-size: 13.5px;
+  line-height: 1.45;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.draft strong {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warn-line);
+  font: 600 11px/1.4 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+/* Header */
+.top {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 18px var(--edge);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  text-decoration: none;
+  font: 800 22px/1 var(--font-display);
+  font-stretch: 88%;
+  letter-spacing: -0.03em;
+}
+
+.brand img {
+  width: 30px;
+  height: 30px;
+  filter: drop-shadow(0 4px 5px rgba(27, 34, 54, 0.14));
+}
+
+.to-city {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--accent-fill);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 560;
+  text-decoration: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), var(--shadow);
+  transition: background 120ms;
+}
+
+.to-city:hover {
+  background: var(--accent-fill-hover);
+}
+
+.to-city svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Layout: a quiet list of the four documents beside the text on wide
+   screens, a row of tabs above it on narrow ones. */
+.layout {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 8px var(--edge) 72px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+.side {
+  min-width: 0;
+}
+
+.docs {
+  display: flex;
+  gap: 4px;
+  margin: 0 calc(-1 * var(--edge));
+  padding: 0 var(--edge) 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.docs::-webkit-scrollbar {
+  display: none;
+}
+
+.docs a {
+  flex: none;
+  padding: 8px 10px 10px;
+  color: var(--ink-3);
+  font-size: 14px;
+  font-weight: 520;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.docs a:hover {
+  color: var(--ink);
+}
+
+.docs a[aria-current='page'] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.docs .label,
+.toc {
+  display: none;
+}
+
+@media (min-width: 960px) {
+  .layout {
+    grid-template-columns: 216px minmax(0, var(--measure));
+    gap: 72px;
+    padding-top: 40px;
+  }
+
+  /* The documents, then this page's sections, held in view while the text scrolls. */
+  .side {
+    position: sticky;
+    top: 28px;
+    align-self: start;
+    max-height: calc(100vh - 56px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    padding-bottom: 8px;
+  }
+
+  .docs {
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    overflow: visible;
+  }
+
+  .side .label {
+    display: block;
+    margin: 0 0 8px 10px;
+    color: var(--ink-3);
+    font: 500 11.5px/1 var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .toc {
+    display: block;
+    margin-top: 28px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+  }
+
+  .toc ol {
+    margin: 0;
+    padding: 0 0 0 10px;
+    list-style: none;
+  }
+
+  .toc li {
+    margin: 0;
+    padding: 0;
+  }
+
+  .toc a {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 0 4px 12px;
+    margin-left: -1px;
+    border-left: 1px solid var(--line);
+    color: var(--ink-3);
+    font-size: 13px;
+    line-height: 1.4;
+    text-decoration: none;
+    transition: color 120ms, border-color 120ms;
+  }
+
+  .toc a:hover {
+    color: var(--ink);
+    border-left-color: var(--accent);
+  }
+
+  .toc .n {
+    flex: none;
+    min-width: 1.4em;
+    color: var(--ink-4);
+    font: 500 11px/1 var(--font-mono);
+  }
+
+  .docs a {
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 0;
+    margin: 0;
+  }
+
+  .docs a:hover {
+    background: rgba(127, 120, 110, 0.08);
+  }
+
+  .docs a[aria-current='page'] {
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+}
+
+/* The document */
+article {
+  min-width: 0;
+  max-width: var(--measure);
+}
+
+h1 {
+  margin: 12px 0 0;
+  font: 800 clamp(34px, 7vw, 48px) / 1.04 var(--font-display);
+  font-stretch: 90%;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.meta {
+  margin: 14px 0 0;
+  color: var(--ink-3);
+  font-size: 14px;
+}
+
+.lede {
+  margin: 22px 0 0;
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* "The short version": the whole document in a few lines, above the detail. */
+.summary {
+  margin: 32px 0 8px;
+  padding: 20px 22px 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.summary h2 {
+  margin: 0 0 4px;
+  padding: 0;
+  border: 0;
+  font: 500 12px/1.4 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.summary ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.summary li {
+  position: relative;
+  margin: 0;
+  padding: 10px 0 12px 22px;
+  border-top: 1px solid var(--line);
+  line-height: 1.55;
+}
+
+.summary li:first-child {
+  border-top: 0;
+}
+
+.summary li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 19px;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+
+h2 {
+  margin: 56px 0 0;
+  padding-top: 28px;
+  border-top: 1px solid var(--line);
+  font: 750 24px/1.25 var(--font-display);
+  font-stretch: 92%;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+
+h2 + p,
+h2 + ul,
+h2 + ol {
+  margin-top: 14px;
+}
+
+h2 .n {
+  display: inline-block;
+  min-width: 1.9em;
+  color: var(--ink-3);
+  font: 500 15px/1 var(--font-mono);
+  letter-spacing: 0;
+  vertical-align: 2px;
+}
+
+h3 {
+  margin: 32px 0 0;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+}
+
+h3 + p,
+h3 + ul {
+  margin-top: 6px;
+}
+
+p,
+li {
+  text-wrap: pretty;
+  hanging-punctuation: first;
+}
+
+p,
+ul,
+ol {
+  margin: 12px 0 0;
+}
+
+ul,
+ol {
+  padding-left: 22px;
+}
+
+li {
+  margin: 6px 0 0;
+  padding-left: 2px;
+}
+
+li::marker {
+  color: var(--ink-3);
+}
+
+strong {
+  font-weight: 640;
+}
+
+code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  font: 450 0.86em/1 var(--font-mono);
+}
+
+/* Tables (privacy: purposes, providers). They scroll sideways on a phone
+   rather than squeezing to one word a line. */
+.table {
+  margin: 16px 0 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+th,
+td {
+  padding: 11px 14px;
+  text-align: left;
+  vertical-align: top;
+  border-top: 1px solid var(--line);
+}
+
+thead th {
+  border-top: 0;
+  color: var(--ink-3);
+  font: 500 11.5px/1.4 var(--font-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: var(--surface-2);
+}
+
+td:first-child {
+  width: 30%;
+  font-weight: 600;
+}
+
+/* A highlighted aside, e.g. the EU/UK withdrawal note. */
+.note {
+  margin: 16px 0 0;
+  padding: 14px 18px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 12px 12px 0;
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.note p:first-child {
+  margin-top: 0;
+}
+
+/* Contact cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 28px 0 0;
+}
+
+.card {
+  padding: 18px 20px 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.card h2 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 18px;
+}
+
+.card p {
+  margin-top: 6px;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.card .big {
+  display: inline-block;
+  margin-top: 10px;
+  font: 500 15px/1.4 var(--font-mono);
+  word-break: break-all;
+}
+
+/* Footer: the mark and the five pages, then the small print over a faint skyline. */
+.foot {
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+
+.foot-inner {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 32px var(--edge) 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px 32px;
+  color: var(--ink-3);
+  font-size: 13.5px;
+}
+
+.foot-brand .brand {
+  font-size: 19px;
+}
+
+.foot-brand .brand img {
+  width: 26px;
+  height: 26px;
+}
+
+.foot-brand p {
+  margin: 8px 0 0;
+}
+
+.foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 4px 20px;
+  padding-top: 4px;
+}
+
+.foot-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--ink-2);
+  font-weight: 520;
+  text-decoration: none;
+}
+
+.foot-links a:hover {
+  color: var(--ink);
+}
+
+.foot-base {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.foot-sky {
+  flex: none;
+  width: 168px;
+  height: auto;
+  overflow: visible;
+  opacity: 0.7;
+}
+
+.foot-sky path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+
+.foot-sky .c {
+  stroke: var(--ink-3);
+}
+
+.foot-sky .b {
+  stroke: var(--accent);
+}
+
+.foot-sky .s {
+  stroke: #f6b53d;
+}
+
+.foot-sky .w {
+  stroke: var(--focus);
+  opacity: 0.6;
+}
+
+@media (max-width: 640px) {
+  .foot-inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  body {
+    font-size: 16px;
+  }
+
+  .lede {
+    font-size: 17px;
+  }
+
+  h2 {
+    margin-top: 40px;
+    font-size: 21px;
+  }
+}
+
+@media print {
+  @page {
+    margin: 18mm 16mm;
+  }
+
+  .top .to-city,
+  .side,
+  .skip,
+  .foot-links,
+  .foot-sky,
+  .foot-brand p {
+    display: none;
+  }
+
+  :root {
+    --ink: #000;
+    --ink-2: #222;
+    --ink-3: #555;
+    --line: #ccc;
+    --surface: #fff;
+    --surface-2: #f2f2f2;
+    --accent-text: #000;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+    font-size: 10.5pt;
+    line-height: 1.5;
+  }
+
+  /* Keep the draft warning on paper too, as a plain line. */
+  .draft {
+    padding: 0 0 8px;
+    background: none;
+    border-bottom: 1px solid #000;
+    color: #000;
+    text-align: left;
+  }
+
+  .draft strong {
+    padding: 0;
+    background: none;
+  }
+
+  .top {
+    padding: 12px 0;
+  }
+
+  .layout {
+    display: block;
+    padding: 0;
+  }
+
+  article {
+    max-width: none;
+  }
+
+  h1 {
+    font-size: 26pt;
+  }
+
+  h2 {
+    margin-top: 22pt;
+    padding-top: 10pt;
+    font-size: 14pt;
+    break-after: avoid;
+  }
+
+  h3 {
+    break-after: avoid;
+  }
+
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  .summary,
+  .table,
+  .card,
+  .note,
+  tr {
+    box-shadow: none;
+    break-inside: avoid;
+  }
+
+  .summary li::before {
+    background: #000;
+  }
+
+  /* On paper a link can't be followed, so print where it goes. */
+  article a[href^='http']::after,
+  article a[href^='/']::after {
+    content: ' (' attr(href) ')';
+    font-size: 0.85em;
+    color: #555;
+    word-break: break-all;
+  }
+
+  .foot {
+    border: 0;
+    background: none;
+  }
+
+  .foot-inner {
+    display: block;
+    padding: 12pt 0 0;
+  }
+
+  .foot-base {
+    border-top: 1px solid #ccc;
+  }
+}
