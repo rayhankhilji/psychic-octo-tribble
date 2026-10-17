@@ -294,6 +294,8 @@ export class OnboardingDialog {
   private preview: PreviewState = { state: 'idle' };
   /** A step that just finished: its check draws in, and the next step slides up. */
   private fresh: Step | null = null;
+  private pressing = false;
+  private deferred = false;
   private test: { state: 'idle' } | { state: 'busy' } | { state: 'ok'; result: UsersTest } | { state: 'bad'; text: string; field: string | null } = { state: 'idle' };
   private fieldErrors: Record<string, string> = {};
   private ga4Props: Ga4Property[] | 'loading' | 'none' | { error: string } | null = null;
@@ -310,6 +312,11 @@ export class OnboardingDialog {
     this.live.setAttribute('role', 'status');
     this.d.append(this.body, this.live);
     this.d.addEventListener('click', (e) => void this.onClick(e));
+    // A press in progress: numbers that arrive now wait for the release, so the button under the
+    // pointer isn't replaced between pointerdown and click (which would swallow the click).
+    this.d.addEventListener('pointerdown', () => (this.pressing = true));
+    window.addEventListener('pointerup', () => this.released(), true);
+    window.addEventListener('pointercancel', () => this.released(), true);
     this.d.addEventListener('input', (e) => this.onInput(e));
     this.d.addEventListener('change', (e) => this.onChange(e));
     this.d.addEventListener('focusout', (e) => this.onBlur(e));
@@ -375,8 +382,19 @@ export class OnboardingDialog {
         if (err instanceof ApiRequestError && err.code === 'not_connected' && c.stripe?.livemode) this.stripeBroken = true;
       })
       .finally(() => {
-        if (this.d.open) this.rerender();
+        if (!this.d.open) return;
+        if (this.pressing) this.deferred = true;
+        else this.rerender();
       });
+  }
+
+  /** The press is over: let the click land first, then draw whatever arrived meanwhile. */
+  private released() {
+    if (!this.pressing) return;
+    this.pressing = false;
+    if (!this.deferred) return;
+    this.deferred = false;
+    setTimeout(() => this.d.open && this.rerender(), 0);
   }
 
   /** Re-render without losing the reader's place: focus goes back to the same control if it still exists. */

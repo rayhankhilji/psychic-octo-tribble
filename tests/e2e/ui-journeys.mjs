@@ -75,7 +75,13 @@ async function shows(locator, ms = 5_000) {
 async function tap(locator, what) {
   const el = locator.first();
   if (!(await shows(el, 15_000))) throw new Error(`${what ?? 'control'} isn't on screen`);
-  await el.evaluate((node) => node.click());
+  // Dialogs redraw as their numbers arrive; a click on a node that was just replaced never reaches
+  // the dialog's handler. The check and the click run in one task, so nothing redraws between them.
+  for (let i = 0; i < 5; i++) {
+    if (await locator.first().evaluate((node) => (node.isConnected ? (node.click(), true) : false)).catch(() => false)) return;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  throw new Error(`${what ?? 'control'} kept being redrawn before it could be clicked`);
 }
 
 /** Waits for the hosted shell: the demo's call to action, the account button, or a dialog. */
