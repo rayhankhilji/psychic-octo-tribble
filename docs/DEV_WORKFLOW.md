@@ -34,10 +34,15 @@ To keep a dev server running in the background in a cloud session:
 |---|---|
 | `?demo` | Force the demo world (the fictional *Nightjar*, 540 days). It's the default when no integrations are configured. |
 | `&fresh` | Reset saved actions to the scripted demo founder. |
-| `&boost=40` | Multiply demo metrics (see the island, launch site and the $1B projects). |
+| `&boost=40` | Multiply demo metrics (the plain demo reaches the moon on day 404; boosted, by day 57). |
 | `&replay` | Start the replay from day one. |
 | `&time=13:00` (or `7pm`, `22:00`) | Pin the time of day. Otherwise it follows the local clock. |
 | `&quality=low\|medium\|high` | Force render quality (high enables GTAO). |
+| `&seed=N` | Show world seed N (0, the classic map, by default). |
+| `&mockapi=<state>` | Dev builds only (`vite dev`, or `vite build --mode mockapi`): fake the hosted API. States: `signedout`, `waitlist`, `unpaid` (signed in, setup still to do), `setup-stripe`, `setup-github`, `ready` (setup done: the paywall with their numbers), `offer`, `offer-expired`, `canceled`, `paid-unconnected`, `paid-stripe`, `paid-github`, `connected`, `pastdue`, `local`. Extras: `&mockerr=checkout\|portal\|signin\|repos\|users\|connect\|timeline\|link\|delete`, `&mocknodata`, `&mocknooffer`, `&mockreject` (next build refused), `&mockcaptcha`, `&mockmonthly` (a server still selling the old monthly price); the email code `123456` works. Admin console: `/admin.html?mock&debug`. To screenshot dialogs in SwiftShader, freeze the scene first (`__stage.renderer.setAnimationLoop(null)`) and click through the DOM. A frozen page stops advancing CSS animations, so a newly opened dialog sits invisible on its first keyframe: run `document.getAnimations().forEach((a) => a.finish())` before the screenshot (or pause them and set `currentTime` to capture motion frame by frame). The shared dev server reloads the page whenever any agent saves a file; for long dialog shoots run your own server with HMR off. |
+| `&recap` (or `&recap=3`) | Open the share sheet on the growth clip (`=3`: a 3-second test clip). `&recapvia=mediarecorder` forces the fallback recorder; `&recapcodec=vp09` forces a codec. |
+| `&moon` / `&moon=<seconds>` | Dev or `&debug`: play the moon trip on the last day, or hold it at that moment (`/?demo&fresh&boost=40&moon=3.6`). `window.__moonTrip.seek(t)` scrubs it. |
+| `&inaugurate` / `&inaugurate=<seconds>` | Dev or `&debug`: play the grand opening (the first-open ceremony) on the city showing, or hold it at that moment (`/?demo&fresh&inaugurate=8.95`: just after the ribbon is cut). `window.__ceremony.seek(t)` scrubs it. |
 | `&view=x,z,zoom` | Pin the camera target and zoom (disables auto-framing). Full-city overview: `view=-11.5,-9.2,0.46`. |
 
 ### Keys
@@ -65,6 +70,9 @@ Sets live in `src/dev/sets.ts`:
 |---|---|
 | Homes and grounds | `homes`, `house`, `townhouse`, `apartment`, `street` (four full blocks at real lot rotations), `trees`, `grounds` |
 | Downtown, items and vehicles | `towers`, `items`, `founder`, `vehicles`, plus the `tt-*` sets: `tt-skyline`, `tt-landmarks`, `tt-hq`, `tt-business`, `tt-civic`, `tt-blocks`, `tt-homes`, `tt-museum`, `tt-vehicles`, `tt-state`, `tt-one` |
+| Neighbourhood families | `nb-streets` (every family as a whole block), `nb-one&family=queen&n=1&at=1.2,1.2&zoom=9`, `nb-homes` (mid-row, corner and park-side homes), `nb-trees` |
+| The bay and the hills | `bay-boats`, `bay-ship`, `bay-wakes` (boats circling with their wakes), `bay-landmarks`, `ls-flora` (the hills' trees and rocks) |
+| Downtown pass | `dt-towers` (`&tier=5`), `dt-tower&style=4&tier=5`, `dt-items&list=shops,cafe`, `dt-focus&what=hq:3&focus=0.9`, `dt-mansions`, `dt-heli` |
 | Street life | `cars`, `people` |
 
 **Add a set whenever you work on a family of models.** Each entry is `{ label, object, size?, update? }`.

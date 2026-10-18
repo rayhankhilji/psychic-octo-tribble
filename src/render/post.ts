@@ -26,6 +26,30 @@ class SolidAO extends GTAOPass {
     for (const o of this.hidden) o.visible = true;
     this.hidden.length = 0;
   }
+
+  /** AO is soft by nature: half resolution looks the same and costs a quarter of the fill. */
+  override setSize(width: number, height: number) {
+    super.setSize(Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2)));
+  }
+}
+
+/** Half the width of the bloom threshold's soft knee. */
+const BLOOM_KNEE = 0.25;
+
+/**
+ * Bloom that holds still while the camera moves. The stock pass picks out the
+ * bright parts at half resolution: each of its pixels averages four of the
+ * frame's, and only then meets the threshold. A light two pixels wide is one
+ * bright average in one camera position and two dim ones (under the threshold)
+ * a pixel later, so as the view pans or drifts every halo in the city pumps on
+ * and off. Picking out the bright parts at full resolution first, and only
+ * then averaging, keeps each light's glow the same wherever it falls.
+ */
+class SteadyBloom extends UnrealBloomPass {
+  override setSize(width: number, height: number) {
+    super.setSize(width, height);
+    this.renderTargetBright.setSize(width, height);
+  }
 }
 
 /**
@@ -36,16 +60,20 @@ class SolidAO extends GTAOPass {
 export class Post {
   readonly composer: EffectComposer;
   private ao: SolidAO;
-  private bloom: UnrealBloomPass;
+  private scenePass: RenderPass;
+  private bloom: SteadyBloom;
   private grade: ShaderPass;
   quality: Quality;
+  /** The visitor can turn the miniature blur off in Settings; Battery saver skips it anyway. */
+  private tiltShift = true;
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, quality: Quality) {
     this.quality = quality;
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(renderer, target);
-    this.composer.addPass(new RenderPass(scene, camera));
+    this.scenePass = new RenderPass(scene, camera);
+    this.composer.addPass(this.scenePass);
 
     this.ao = new SolidAO(scene, camera, size.x, size.y);
     this.ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.6, thickness: 1.4, scale: 1.15, samples: 12, distanceFallOff: 1, screenSpaceRadius: false });
@@ -53,7 +81,10 @@ export class Post {
     this.ao.blendIntensity = 0.85;
     this.composer.addPass(this.ao);
 
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.85, 0.55, 0.92);
+    this.bloom = new SteadyBloom(new THREE.Vector2(256, 256), 0.85, 0.55, 0.92);
+    // A soft knee either side of the threshold (see `update`) rather than a hard cut, so a light
+    // that sits at the threshold, or straddles a pixel edge, fades in and out of the glow instead of blinking.
+    (this.bloom.highPassUniforms as Record<string, THREE.IUniform>).smoothWidth!.value = BLOOM_KNEE * 2;
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
@@ -65,7 +96,37 @@ export class Post {
   setQuality(q: Quality) {
     this.quality = q;
     this.ao.enabled = q === 'high';
-    this.grade.uniforms.uTiltSamples!.value = q === 'low' ? 0 : 1;
+    this.grade.uniforms.uTiltSamples!.value = q === 'low' || !this.tiltShift ? 0 : 1;
+    // Multisampling is the costliest part of the scene pass on big screens.
+    const samples = q === 'high' ? 4 : q === 'medium' ? 2 : 0;
+    for (const t of [this.composer.renderTarget1, this.composer.renderTarget2]) {
+      if (t.samples === samples) continue;
+      t.samples = samples;
+      t.dispose();
+    }
+  }
+
+  setTiltShift(on: boolean) {
+    this.tiltShift = on;
+    this.setQuality(this.quality);
+  }
+
+  /**
+   * What the composer draws: the city through its iso camera, or another set
+   * (the moon) through its own camera, with every effect still on.
+   */
+  setView(scene: THREE.Scene, camera: THREE.Camera) {
+    if (this.scenePass.scene === scene && this.scenePass.camera === camera) return;
+    this.scenePass.scene = scene;
+    this.scenePass.camera = camera;
+    this.ao.scene = scene;
+    this.ao.camera = camera;
+    // GTAO reconstructs positions from depth differently for the two kinds of camera.
+    const perspective = (camera as THREE.PerspectiveCamera).isPerspectiveCamera ? 1 : 0;
+    if (this.ao.gtaoMaterial.defines.PERSPECTIVE_CAMERA !== perspective) {
+      this.ao.gtaoMaterial.defines.PERSPECTIVE_CAMERA = perspective;
+      this.ao.gtaoMaterial.needsUpdate = true;
+    }
   }
 
   setSize(w: number, h: number, pixelRatio: number) {
@@ -82,7 +143,9 @@ export class Post {
   update(time: number, look: { bloom: number; night: number; tilt: number; focusY: number; warmth: number }) {
     // Daylight barely blooms (just glints); night lights glow properly.
     this.bloom.strength = look.bloom * (0.2 + 0.8 * look.night);
-    this.bloom.threshold = 0.9 + (1 - look.night) * 0.6;
+    // At night the knee is centred just above 1: picking out the bright parts at full resolution
+    // catches small lit windows the half-resolution pick used to average away, and they shouldn't haze.
+    this.bloom.threshold = 0.9 + look.night * 0.1 - BLOOM_KNEE + (1 - look.night) * 0.6;
     this.bloom.radius = 0.5 + look.night * 0.2;
     const u = this.grade.uniforms;
     u.uTime!.value = time;

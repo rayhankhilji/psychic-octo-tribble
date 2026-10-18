@@ -1,0 +1,221 @@
+/**
+ * Test doubles for the hosted server: an in-memory Supabase (Auth plus the
+ * slice of PostgREST we use) and a fetch router, so every route can run end
+ * to end with no network.
+ */
+import { generateKeyPairSync } from 'node:crypto';
+import { vi } from 'vitest';
+import { handle, resetCaches } from '../server/app.ts';
+
+type Row = Record<string, unknown>;
+
+const DEFAULTS: Record<string, () => Row> = {
+  profiles: () => ({ seed: 12345, name: 'Your Startup', joined_at: null, last_seen: null, users_source: 'customers', users_manual: [], created_at: new Date().toISOString(), offer_shown_at: null, offer_used_at: null }),
+  subscriptions: () => ({ stripe_customer_id: null, stripe_subscription_id: null, status: 'none', price_id: null, plan_interval: null, current_period_end: null, cancel_at_period_end: false, livemode: null }),
+  connections: () => ({ display_name: null, livemode: null, secret: null, access_token: null, access_expires_at: null, token_version: 0, metadata: {}, connected_at: new Date().toISOString() }),
+  worlds: () => ({ actions: [], version: 0 }),
+  timelines: () => ({ fetched_at: new Date().toISOString() }),
+  email_prefs: () => ({ product_updates: true, weekly_digest: true }),
+};
+
+export class FakeSupabase {
+  tables: Record<string, Row[]> = { profiles: [], subscriptions: [], connections: [], worlds: [], timelines: [] };
+  /** access token → user */
+  users = new Map<string, { id: string; email: string | null }>();
+  authCalls = 0;
+  /** public.rate_hit(): hits per (hashed) key. Windows never roll over within a test. */
+  rateHits = new Map<string, number>();
+  /** Called before each PATCH; lets a test change the row underneath (a race). */
+  beforePatch: ((table: string) => void) | null = null;
+  /** Act like a database without migration 0007: public.user_state() answers 404. */
+  noUserState = false;
+
+  url: string;
+  constructor(url: string) {
+    this.url = url;
+  }
+
+  row(table: string, where: Row): Row | undefined {
+    return this.tables[table]!.find((r) => Object.entries(where).every(([k, v]) => r[k] === v));
+  }
+
+  /**
+   * public.user_state() (migration 0007). The profile insert goes back through
+   * `handle`, so a subclass's insert rules (0006's guard for deleted users) apply.
+   */
+  async userState(b: UserStateArgs): Promise<Row> {
+    const where = { user_id: b.p_user };
+    let profile = this.row('profiles', where);
+    let created = false;
+    if (!profile) {
+      const res = await this.handle(new URL(`${this.url}/rest/v1/profiles?on_conflict=user_id`), {
+        method: 'POST',
+        headers: { apikey: 'service', Prefer: 'resolution=ignore-duplicates,return=representation' },
+        body: JSON.stringify({ user_id: b.p_user, seed: b.p_seed }),
+      });
+      created = ((await res!.json()) as Row[]).length > 0;
+      profile = this.row('profiles', where);
+    }
+    const out: Row = { profile: profile ?? null, created, subscription: this.row('subscriptions', where) ?? null };
+    if (b.p_rate_key) {
+      const n = (this.rateHits.get(b.p_rate_key) ?? 0) + 1;
+      this.rateHits.set(b.p_rate_key, n);
+      out.rate = { allowed: n <= b.p_rate_max, retry_after_s: b.p_rate_window_s };
+    }
+    if (b.p_parts.includes('connections')) out.connections = this.tables.connections!.filter((r) => r.user_id === b.p_user);
+    if (b.p_parts.includes('world')) out.world = this.row('worlds', where) ?? null;
+    if (b.p_parts.includes('timeline')) out.timeline = this.row('timelines', where) ?? null;
+    return out;
+  }
+
+  async handle(url: URL, init: RequestInit): Promise<Response | undefined> {
+    if (url.origin !== this.url) return undefined;
+    if (url.pathname === '/auth/v1/user') {
+      this.authCalls++;
+      const token = /^Bearer (.+)$/.exec(new Headers(init.headers).get('Authorization') ?? '')?.[1];
+      const user = token ? this.users.get(token) : undefined;
+      return user ? Response.json(user) : Response.json({ msg: 'invalid JWT' }, { status: 401 });
+    }
+    if (url.pathname === '/rest/v1/rpc/rate_hit') {
+      const b = JSON.parse(String(init.body)) as { p_key: string; p_window_s: number; p_max: number };
+      const n = (this.rateHits.get(b.p_key) ?? 0) + 1;
+      this.rateHits.set(b.p_key, n);
+      return Response.json([{ allowed: n <= b.p_max, retry_after_s: b.p_window_s }]);
+    }
+    if (url.pathname === '/rest/v1/rpc/user_state') {
+      if (new Headers(init.headers).get('apikey') !== 'service') return Response.json({ message: 'no' }, { status: 401 });
+      if (this.noUserState) return Response.json({ code: 'PGRST202', message: 'Could not find the function public.user_state' }, { status: 404 });
+      return Response.json(await this.userState(JSON.parse(String(init.body)) as UserStateArgs));
+    }
+    const m = /^\/rest\/v1\/(\w+)$/.exec(url.pathname);
+    if (!m) return Response.json({}, { status: 404 });
+    if (new Headers(init.headers).get('apikey') !== 'service') return Response.json({ message: 'no' }, { status: 401 });
+    const table = this.tables[m[1]!]!;
+    const where: Row = {};
+    for (const [k, v] of url.searchParams) {
+      if (v.startsWith('eq.')) where[k] = v.slice(3);
+    }
+    const matches = (r: Row) => Object.entries(where).every(([k, v]) => String(r[k]) === v);
+    const method = init.method ?? 'GET';
+    const body = init.body ? (JSON.parse(String(init.body)) as Row) : {};
+
+    if (method === 'GET') return Response.json(table.filter(matches).slice(0, Number(url.searchParams.get('limit') ?? 1e9)));
+    if (method === 'POST') {
+      const keys = url.searchParams.get('on_conflict')!.split(',');
+      const existing = table.find((r) => keys.every((k) => r[k] === body[k]));
+      const prefer = new Headers(init.headers).get('Prefer') ?? '';
+      if (existing) {
+        if (prefer.includes('ignore-duplicates')) return Response.json([]);
+        Object.assign(existing, body);
+        return Response.json([existing]);
+      }
+      const row = { ...DEFAULTS[m[1]!]!(), ...body };
+      table.push(row);
+      return Response.json([row]);
+    }
+    if (method === 'PATCH') {
+      this.beforePatch?.(m[1]!);
+      const rows = table.filter(matches);
+      for (const r of rows) Object.assign(r, body);
+      return Response.json(rows);
+    }
+    if (method === 'DELETE') {
+      this.tables[m[1]!] = table.filter((r) => !matches(r));
+      return new Response(null, { status: 204 });
+    }
+    return Response.json({}, { status: 405 });
+  }
+}
+
+interface UserStateArgs {
+  p_user: string;
+  p_seed: number;
+  p_parts: string[];
+  p_rate_key: string | null;
+  p_rate_window_s: number;
+  p_rate_max: number;
+}
+
+export type Route = (url: URL, init: RequestInit) => Response | undefined | Promise<Response | undefined>;
+export interface Call {
+  url: URL;
+  init: RequestInit;
+  body: string;
+}
+
+/** Stubs global fetch with the fake Supabase plus per-test routes. Unrouted calls fail the test loudly. */
+export function stubFetch(db: FakeSupabase, ...routes: Route[]): Call[] {
+  const calls: Call[] = [];
+  vi.stubGlobal('fetch', async (input: string | URL, init: RequestInit = {}) => {
+    const url = new URL(String(input));
+    calls.push({ url, init, body: init.body ? String(init.body) : '' });
+    const fromDb = await db.handle(url, init);
+    if (fromDb) return fromDb;
+    for (const r of routes) {
+      const res = await r(url, init);
+      if (res) return res;
+    }
+    throw new Error(`Unexpected fetch: ${init.method ?? 'GET'} ${url}`);
+  });
+  return calls;
+}
+
+export const { privateKey: GITHUB_PEM, publicKey: GITHUB_PUBLIC } = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+});
+
+export const ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
+
+export const ENV = {
+  APP_URL: 'https://tinytown.test',
+  SUPABASE_URL: 'https://db.test',
+  SUPABASE_ANON_KEY: 'anon',
+  SUPABASE_SERVICE_ROLE_KEY: 'service',
+  TOKEN_ENCRYPTION_KEY: ENCRYPTION_KEY,
+  STATE_SECRET: 'state-secret',
+  STRIPE_BILLING_SECRET_KEY: 'sk_test_billing',
+  STRIPE_WEBHOOK_SECRET: 'whsec_test',
+  STRIPE_PRICE_MONTHLY: 'price_month',
+  STRIPE_PRICE_YEARLY: 'price_year',
+  STRIPE_APP_CLIENT_ID: 'ca_app',
+  STRIPE_APP_SECRET_KEY: 'sk_live_app',
+  GITHUB_APP_SLUG: 'tinytown-test',
+  GITHUB_APP_ID: '4242',
+  GITHUB_APP_CLIENT_ID: 'Iv1.client',
+  GITHUB_APP_CLIENT_SECRET: 'gh-client-secret',
+  GITHUB_APP_PRIVATE_KEY: GITHUB_PEM,
+};
+
+export const USER = { id: '6f1c2b7e-0000-4000-8000-000000000001', email: 'founder@example.com' };
+export const TOKEN = 'user-access-token';
+
+/** A fresh fake database with one signed-in user, and every cache cleared. */
+export function setup(): FakeSupabase {
+  resetCaches();
+  const db = new FakeSupabase(ENV.SUPABASE_URL);
+  db.users.set(TOKEN, USER);
+  return db;
+}
+
+export function givePlan(db: FakeSupabase, status = 'active') {
+  db.tables.subscriptions!.push({ ...DEFAULTS.subscriptions!(), user_id: USER.id, stripe_customer_id: 'cus_1', stripe_subscription_id: 'sub_1', status, plan_interval: 'month' });
+}
+
+export async function call(
+  method: string,
+  path: string,
+  opts: { token?: string | null; body?: unknown; headers?: Record<string, string>; env?: Record<string, string | undefined> } = {},
+): Promise<Response> {
+  const headers = new Headers(opts.headers);
+  const token = opts.token === undefined ? TOKEN : opts.token;
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (opts.body !== undefined) headers.set('Content-Type', 'application/json');
+  return handle(
+    new Request(`https://tinytown.test${path}`, { method, headers, ...(opts.body !== undefined ? { body: typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body) } : {}) }),
+    opts.env ?? ENV,
+  );
+}
+
+export const form = (body: string) => Object.fromEntries(new URLSearchParams(body));

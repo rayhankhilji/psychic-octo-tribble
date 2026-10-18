@@ -1,0 +1,597 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   The front door: a title card over the grown city on a first visit.
+   Editorial, not a modal: the words sit on a soft wash of paper (ink at
+   night) that fades out across the screen, so the city stays the picture.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.frontdoor {
+  /* The card's column on wide screens; frontDoorInset() in frontdoor.ts mirrors it for the camera. */
+  --fd-col: clamp(460px, 40vw, 620px);
+  --fd-pad-x: clamp(28px, 3.6vw, 56px);
+  --fd-stagger: 50ms;
+  --fd-wash: color-mix(in srgb, var(--bg) 94%, transparent);
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: var(--fd-col) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: max(24px, env(safe-area-inset-top)) var(--fd-pad-x) max(28px, env(safe-area-inset-bottom));
+  color: var(--ink);
+  font-family: var(--font-ui);
+  transition: opacity var(--dur-4) var(--ease-in-out);
+}
+
+/* Until the visitor steps in, the HUD waits (the motion styles bring it in on html.hud-in). */
+html.intro:not(.hud-in) #ui {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fd-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 55%, transparent) 0, transparent 120px),
+    linear-gradient(
+      90deg,
+      var(--fd-wash) 0,
+      color-mix(in srgb, var(--bg) 88%, transparent) calc(var(--fd-col) * 0.62),
+      color-mix(in srgb, var(--bg) 62%, transparent) calc(var(--fd-col) * 0.98),
+      color-mix(in srgb, var(--bg) 18%, transparent) calc(var(--fd-col) * 1.32),
+      transparent calc(var(--fd-col) * 1.62)
+    );
+}
+
+.fd-top,
+.fd-card,
+.fd-caption {
+  position: relative;
+  /* Out quickly, so the words are gone before the HUD panels land on them. */
+  transition:
+    opacity var(--dur-2) var(--ease-in-out),
+    transform var(--dur-4) var(--ease-out);
+}
+
+/* ── Top: the wordmark, and a quiet way back in ──────────────────────── */
+
+.fd-top {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.fd-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fd-mark {
+  width: 34px;
+  height: 34px;
+  overflow: visible;
+  filter: drop-shadow(0 6px 8px color-mix(in srgb, var(--ink-900) 16%, transparent));
+}
+
+.fd-word {
+  font: 800 24px/1 var(--font-display);
+  font-stretch: 88%;
+  letter-spacing: -0.035em;
+}
+
+.fd-signin {
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 var(--t-md) / 1 var(--font-ui);
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition:
+    background var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+
+.fd-signin:hover {
+  background: var(--surface-solid);
+  border-color: var(--ink-4);
+}
+
+/* ── The card ─────────────────────────────────────────────────────────── */
+
+.fd-card {
+  grid-column: 1;
+  align-self: center;
+  max-width: 560px;
+  padding: 24px 0 8px;
+}
+
+.fd-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 18px;
+  color: var(--accent-text);
+  font: 600 var(--t-lg) / 1.2 var(--font-ui);
+  letter-spacing: -0.005em;
+}
+
+/* A little sun, the one from the mark. */
+.fd-sun {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--sun-400);
+  box-shadow: 0 0 0 4px var(--sun-soft);
+}
+
+.fd-title {
+  margin: 0;
+  font: 760 clamp(52px, 5.4vw, 88px) / 0.94 var(--font-display);
+  font-stretch: 92%;
+  letter-spacing: -0.032em;
+  text-wrap: balance;
+}
+
+/* Each line is a window the words rise into. */
+.fd-line {
+  display: block;
+  overflow: hidden;
+  padding: 0.02em 0 0.07em;
+  margin-bottom: -0.05em;
+}
+
+.fd-line > span {
+  display: inline-block;
+}
+
+.fd-accent {
+  /* Display size: the brighter Golden Gate orange clears the 3:1 large-text bar on the wash. */
+  color: var(--accent);
+}
+
+.fd-lede {
+  max-width: 30em;
+  margin: 22px 0 0;
+  color: var(--ink-2);
+  font-size: 17px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* Three rules, each led by its real number. */
+.fd-beats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  margin: 30px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fd-beats li {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-strong);
+  color: var(--ink-2);
+  font-size: var(--t-md);
+  line-height: 1.45;
+}
+
+.fd-fig {
+  color: var(--ink);
+  font: 760 30px/1 var(--font-display);
+  font-stretch: 88%;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Actions ─────────────────────────────────────────────────────────── */
+
+.fd-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 34px;
+}
+
+.fd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 54px;
+  padding: 0 24px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  font: 600 16px/1 var(--font-ui);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+
+.fd-btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.fd-btn:focus-visible,
+.fd-signin:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.fd-primary {
+  padding-left: 14px;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent-ink) 22%, transparent),
+    0 1px 2px color-mix(in srgb, var(--gate-600) 40%, transparent),
+    0 12px 28px -12px color-mix(in srgb, var(--gate-500) 80%, transparent);
+}
+
+.fd-primary:hover {
+  background: var(--accent-fill-hover);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent-ink) 22%, transparent),
+    0 1px 2px color-mix(in srgb, var(--gate-600) 40%, transparent),
+    0 16px 32px -12px color-mix(in srgb, var(--gate-500) 90%, transparent);
+}
+
+.fd-play {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent-ink) 20%, transparent);
+}
+
+.fd-play .ico {
+  width: 15px;
+  height: 15px;
+  margin-left: 2px;
+}
+
+.fd-secondary {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  color: var(--ink);
+  box-shadow: var(--shadow-1);
+}
+
+.fd-secondary:hover {
+  background: var(--surface-solid);
+  border-color: var(--ink-4);
+}
+
+.fd-price {
+  padding-left: 12px;
+  border-left: 1px solid var(--line-strong);
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.fd-small {
+  margin: 16px 0 0;
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+}
+
+/* ── The caption: what's actually on screen ──────────────────────────── */
+
+.fd-caption {
+  grid-column: 2;
+  grid-row: 3;
+  justify-self: end;
+  align-self: end;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 100%;
+  margin: 0;
+  padding: 8px 14px 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  line-height: 1.35;
+  box-shadow: var(--shadow-1);
+}
+
+.fd-caption b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.fd-live {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sun-400);
+}
+
+/* ── Choreography ────────────────────────────────────────────────────── */
+
+/* In: everything waits under the boot screen, then rises in order as it lifts. */
+.fd-in {
+  opacity: 0;
+}
+
+.frontdoor.is-in .fd-in {
+  opacity: 1;
+  animation: fd-rise var(--dur-4) var(--ease-out) both;
+  animation-delay: calc(40ms + var(--i, 0) * var(--fd-stagger));
+}
+
+/* The headline rises through its line's window, a beat longer. */
+.frontdoor.is-in .fd-line > .fd-in {
+  animation-name: fd-mask;
+  animation-duration: 680ms;
+}
+
+@keyframes fd-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes fd-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fd-mask {
+  from {
+    opacity: 1;
+    transform: translateY(105%);
+  }
+}
+
+/* Out: the card recedes up and away while the HUD arrives. */
+.frontdoor.is-leaving .fd-top,
+.frontdoor.is-leaving .fd-card,
+.frontdoor.is-leaving .fd-caption {
+  opacity: 0;
+}
+
+.frontdoor.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.frontdoor.is-leaving .fd-card {
+  transform: translateY(-18px) scale(0.985);
+  transform-origin: 0 50%;
+}
+
+.frontdoor.is-leaving .fd-top {
+  transform: translateY(-10px);
+}
+
+.frontdoor.is-leaving .fd-caption {
+  transform: translateY(10px);
+}
+
+/* ── Narrower screens: the beats stack ───────────────────────────────── */
+
+@media (max-width: 1199px) and (min-width: 900px) {
+  .fd-beats {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    max-width: 440px;
+  }
+
+  .fd-beats li {
+    grid-template-columns: 92px 1fr;
+    align-items: baseline;
+    gap: 14px;
+    padding-top: 12px;
+  }
+
+  .fd-fig {
+    font-size: 24px;
+  }
+}
+
+/* Short laptop screens. */
+@media (max-height: 800px) and (min-width: 900px) {
+  .fd-title {
+    font-size: clamp(48px, 5vw, 76px);
+  }
+
+  .fd-lede {
+    margin-top: 16px;
+    font-size: 16px;
+  }
+
+  .fd-beats {
+    margin-top: 22px;
+  }
+
+  .fd-actions {
+    margin-top: 26px;
+  }
+}
+
+/* ── Phones and portrait: the city on top, the card at the bottom ─────── */
+
+@media (max-width: 899px), (max-aspect-ratio: 21/20) {
+  .frontdoor {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    align-content: end;
+    padding: max(14px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  }
+
+  .fd-scrim {
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--bg) 62%, transparent) 0, transparent 96px),
+      linear-gradient(
+        0deg,
+        var(--fd-wash) 0,
+        color-mix(in srgb, var(--bg) 90%, transparent) 50%,
+        color-mix(in srgb, var(--bg) 58%, transparent) 60%,
+        transparent 72%
+      );
+  }
+
+  .fd-mark {
+    width: 28px;
+    height: 28px;
+  }
+
+  .fd-word {
+    font-size: 21px;
+  }
+
+  .fd-signin {
+    height: 36px;
+    padding: 0 14px;
+  }
+
+  /* The caption becomes the card's last line: plain text on the wash. */
+  .fd-caption {
+    grid-column: 1;
+    grid-row: 4;
+    justify-self: center;
+    margin-top: 14px;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--ink-3);
+    font-size: var(--t-xs);
+    text-align: center;
+  }
+
+  .fd-caption .fd-live {
+    display: none;
+  }
+
+  .fd-card {
+    grid-row: 3;
+    width: 100%;
+    max-width: 560px;
+    justify-self: center;
+    padding: 0;
+  }
+
+  .fd-eyebrow {
+    margin-bottom: 10px;
+    font-size: var(--t-md);
+  }
+
+  .fd-title {
+    font-size: clamp(38px, 10.6vw, 64px);
+  }
+
+  .fd-lede {
+    margin-top: 12px;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  .fd-beats {
+    grid-template-columns: 1fr;
+    gap: 0;
+    margin-top: 16px;
+  }
+
+  .fd-beats li {
+    grid-template-columns: 74px 1fr;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 0;
+    font-size: var(--t-sm);
+    line-height: 1.4;
+  }
+
+  .fd-beats li:last-child {
+    border-bottom: 1px solid var(--line-strong);
+  }
+
+  .fd-fig {
+    font-size: 21px;
+  }
+
+  .fd-actions {
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .fd-btn {
+    width: 100%;
+    height: 52px;
+  }
+
+  .fd-primary {
+    padding-left: 24px;
+  }
+
+  /* The price is on the button; the small print waits for the plan picker. */
+  .fd-small {
+    display: none;
+  }
+
+  .frontdoor.is-leaving .fd-card {
+    transform: translateY(24px);
+  }
+}
+
+/* Phones: the three numbers say it; the lede would push the city off the top. */
+@media (max-width: 599px) {
+  .fd-lede {
+    display: none;
+  }
+
+  .fd-beats {
+    margin-top: 14px;
+  }
+
+  .fd-beats li {
+    grid-template-columns: 66px 1fr;
+  }
+}
+
+/* ── Reduced motion: a short fade, nothing moves ─────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .frontdoor.is-in .fd-in,
+  .frontdoor.is-in .fd-line > .fd-in {
+    animation: fd-fade var(--dur-2) linear both;
+    animation-delay: 0ms;
+  }
+
+  .frontdoor,
+  .fd-top,
+  .fd-card,
+  .fd-caption {
+    transition-duration: var(--dur-2);
+  }
+
+  .frontdoor.is-leaving .fd-card,
+  .frontdoor.is-leaving .fd-top,
+  .frontdoor.is-leaving .fd-caption {
+    transform: none;
+  }
+}

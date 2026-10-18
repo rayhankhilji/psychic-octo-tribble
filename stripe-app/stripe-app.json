@@ -1,0 +1,25 @@
+{
+  "id": "com.tinytown.city",
+  "version": "1.0.0",
+  "name": "TinyTown",
+  "icon": "./icon.png",
+  "distribution_type": "public",
+  "stripe_api_access_type": "oauth",
+  "allowed_redirect_uris": [
+    "https://YOUR-TINYTOWN-DOMAIN/api/connect/stripe/callback"
+  ],
+  "permissions": [
+    {
+      "permission": "subscription_read",
+      "purpose": "TinyTown reads your subscriptions to rebuild your daily MRR and paying customers, which grow your city. It never changes anything."
+    },
+    {
+      "permission": "plan_read",
+      "purpose": "TinyTown reads the prices on your subscriptions to work out monthly recurring revenue."
+    }
+  ],
+  "post_install_action": {
+    "type": "external",
+    "url": "https://YOUR-TINYTOWN-DOMAIN/"
+  }
+}

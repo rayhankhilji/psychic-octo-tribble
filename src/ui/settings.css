@@ -1,0 +1,461 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Settings (settings.ts): one quiet column of sections, each a bordered
+   card like the account menu's. Choices read as radios and segments in ink;
+   orange is kept for the switches that are on, as everywhere else.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.settings-dialog {
+  width: min(580px, calc(100vw - 32px));
+}
+
+.dialog-body.settings {
+  gap: 22px;
+  padding: 0 24px 18px;
+}
+
+/* The head stays put while the sections scroll under it. */
+.settings > .dialog-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 -24px;
+  padding: 22px 24px 14px;
+  background: var(--surface-solid);
+  box-shadow: 0 1px 0 transparent;
+  transition: box-shadow var(--dur-2) var(--ease-out);
+}
+
+.settings-dialog.is-scrolled .settings > .dialog-head {
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.settings .dialog-head .tile {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.set-section {
+  display: grid;
+  gap: 9px;
+}
+
+.set-section h3 {
+  margin: 0;
+  font: 600 10.5px/1 var(--font-ui);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.set-card {
+  display: grid;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-solid);
+  overflow: hidden;
+}
+
+.set-card + .set-card {
+  margin-top: 3px;
+}
+
+.set-pad {
+  gap: 14px;
+  padding: 13px 14px;
+}
+
+.set-card b,
+.set-row b {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.set-card small {
+  display: block;
+  font-size: var(--t-sm);
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+/* ── Quality: a radio list ─────────────────────────────────────────────── */
+
+.set-option {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 11px 14px;
+  cursor: pointer;
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+
+.set-option + .set-option {
+  border-top: 1px solid var(--line);
+}
+
+.set-option:hover {
+  background: var(--surface-hover);
+}
+
+.set-option:has(input:checked) {
+  background: color-mix(in srgb, var(--ink) 3.5%, transparent);
+}
+
+.set-option input,
+.set-seg-item input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.set-radio {
+  width: 16px;
+  height: 16px;
+  margin-top: 1.5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  background: var(--surface-solid);
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-spring);
+}
+
+.set-option input:checked + .set-radio {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 3.5px var(--surface-solid), inset 0 0 0 8px var(--ink);
+}
+
+.set-option input:focus-visible + .set-radio {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.set-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.set-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font: 600 10.5px/1 var(--font-ui);
+}
+
+/* What Automatic is running at right now. */
+.set-card small.set-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  color: var(--ink-2);
+  font-weight: 550;
+}
+
+.set-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--good);
+  box-shadow: 0 0 0 3px var(--good-soft);
+}
+
+.set-status[hidden] {
+  display: none;
+}
+
+/* ── Switches and the volume slider ────────────────────────────────────── */
+
+.set-switch.is-off {
+  cursor: default;
+}
+
+.set-switch.is-off b {
+  color: var(--ink-3);
+}
+
+.set-switch.is-off .switch-track {
+  opacity: 0.5;
+}
+
+.set-slider {
+  display: grid;
+  grid-template-columns: auto 1fr 40px;
+  gap: 12px;
+  align-items: center;
+  /* Lines up with the switch labels above: the track (38) and its gap (12). */
+  padding-left: 50px;
+  font-size: var(--t-md);
+  color: var(--ink-2);
+}
+
+.set-slider output {
+  text-align: right;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.set-slider input {
+  --fill: 100%;
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.set-slider input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--ink-2) var(--fill), var(--surface-3) var(--fill));
+}
+
+.set-slider input::-moz-range-track {
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--ink-2) var(--fill), var(--surface-3) var(--fill));
+}
+
+.set-slider input::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--line-strong), 0 1px 3px rgba(27, 34, 54, 0.3);
+  appearance: none;
+  -webkit-appearance: none;
+  transition: scale var(--dur-1) var(--ease-out);
+}
+
+.set-slider input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--line-strong), 0 1px 3px rgba(27, 34, 54, 0.3);
+}
+
+.set-slider input:active::-webkit-slider-thumb {
+  scale: 1.12;
+}
+
+.set-slider input:focus-visible {
+  outline: none;
+}
+
+.set-slider input:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.set-slider input:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.set-slider:has(input:disabled) {
+  opacity: 0.45;
+}
+
+.set-slider input:disabled {
+  cursor: default;
+}
+
+/* ── Segments: time of day and motion ──────────────────────────────────── */
+
+.set-seg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* No inline styles (the CSP's style-src is meant to tighten): the count comes as data-n. */
+.set-seg[data-n='5'] {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.set-seg-item {
+  position: relative;
+  cursor: pointer;
+}
+
+.set-seg-item > span {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 1px;
+  min-height: 34px;
+  height: 100%;
+  padding: 6px 4px;
+  border-radius: 9px;
+  text-align: center;
+  color: var(--ink-2);
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+
+.set-seg-item b {
+  font-weight: 600;
+  font-size: var(--t-sm);
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.set-seg-item small {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.set-seg-item:hover > span {
+  color: var(--ink);
+}
+
+.set-seg-item input:checked + span {
+  background: var(--surface-solid);
+  color: var(--ink);
+  box-shadow: var(--shadow-1), 0 0 0 1px var(--line);
+}
+
+:root[data-theme='night'] .set-seg-item input:checked + span {
+  background: var(--surface-3);
+}
+
+.set-seg-item input:focus-visible + span {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.set-note {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
+.set-note .ico {
+  width: 14px;
+  height: 14px;
+  margin-top: 1.5px;
+}
+
+.set-note[hidden] {
+  display: none;
+}
+
+/* ── Help ──────────────────────────────────────────────────────────────── */
+
+.set-row {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.set-quiet {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-1);
+}
+
+.set-quiet .ico {
+  width: 15px;
+  height: 15px;
+}
+
+.set-keys {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 20px;
+  padding: 6px 14px;
+}
+
+.set-key {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+/* Rows after the first pair get a hairline, like the lists above. */
+.set-key:nth-child(n + 3) {
+  border-top: 1px solid var(--line);
+}
+
+.set-kbds {
+  display: flex;
+  gap: 3px;
+}
+
+.set-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: -4px;
+}
+
+/* ── Phones: a full-width sheet ────────────────────────────────────────── */
+
+@media (max-width: 760px) {
+  .dialog.settings-dialog {
+    width: 100%;
+  }
+
+  .dialog-body.settings {
+    gap: 20px;
+    padding: 0 16px 16px;
+  }
+
+  .settings > .dialog-head {
+    margin: 0 -16px;
+    padding: 18px 16px 12px;
+  }
+
+  .set-seg-item small {
+    display: none;
+  }
+
+  .set-keys {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .set-key:nth-child(n + 2) {
+    border-top: 1px solid var(--line);
+  }
+
+  .set-slider {
+    padding-left: 0;
+  }
+}
+
+/* Touch-only screens have no keyboard to list shortcuts for. */
+@media (hover: none) and (pointer: coarse) {
+  .set-keys {
+    display: none;
+  }
+}

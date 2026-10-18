@@ -2,6 +2,8 @@
 
 Status: **step 1 is playable** in the browser demo (`npm run dev`, saved locally). Numbers below are the ones in `src/game/`. Hosting, live cash from Stripe, flights and the moon trip's destination scene are next.
 
+> **2026-10-14: the ladder is much easier to climb.** The owner found the old ladder (the moon at $1M MRR) out of reach. The founder's house now goes studio **$10**, bungalow or loft **$50**, TinyTown Hills **$250**, estate **$1k**, island **$5k**, the moon **$10k** MRR, and every other gate follows the same curve (`easeMrr` in `src/game/catalog.ts`). Prices scale with their gate, so things take about as many days to afford as before. Unchanged: $1 of MRR is $10,000 of game money, housing needs $0.20 of MRR per user, the starting grant, satisfaction, decay and the one rule. The rule and the before and after are [at the end](#2026-10-14-the-easier-ladder).
+
 ## The one rule
 
 **The only way to grow your city is to grow your startup.**
@@ -14,25 +16,25 @@ Every in-game dollar comes from real revenue. No in-game action makes money, and
 2. You spend it on buildings, transport, landmarks, vehicles and repairs.
 3. Your users live in your city, and housing them costs upkeep every month.
 4. If your revenue per user is too low, you can't keep up: people end up on the streets, the bridge rusts and the TINYTOWN sign goes dark at night.
-5. Each new digit of MRR moves you into a better house, opens new land and unlocks new things to buy.
-6. At $1k MRR you can fly a plane to visit other founders' cities.
+5. Each MRR milestone moves you into a better house, opens new land and unlocks new things to buy.
+6. At $250 MRR you can buy a plane to visit other founders' cities.
 
 ## Money
 
 ### Exchange rate: $1 real = $10,000 in game
 
-$10k is the right rate. In-game money then tracks real-world luxury prices at the right moments:
+$10k is the right rate: one real dollar of MRR is a visible amount of money, and the treasury's numbers feel big without being silly.
 
-| MRR | Monthly city income | Feels like |
+| MRR | Monthly city income | What it gets you |
 |---|---|---|
-| $10 | $100k | A small-business owner |
-| $100 | $1M | A millionaire |
-| $1k | $10M | Can afford a plane |
-| $10k | $100M | Can afford a Gulfstream |
-| $100k | $1B a month | A billionaire, which fits the island estate and superyacht |
-| $1M | $10B a month | Has a space programme |
+| $10 | $100k | A studio of your own; a park or a food truck court every few weeks |
+| $50 | $500k | A bungalow or loft, a café, the HQ office |
+| $250 | $2.5M | A TinyTown Hills house, a prop plane, the library |
+| $1k | $10M | One of three estates, the marina, a Gulfstream-style jet ($7M) |
+| $5k | $50M | Your own island and a superyacht, a supertall |
+| $10k | $100M a month | A house on the moon, and a rocket ($50M) to get there |
 
-At $1M per dollar, a founder at $1 MRR would already be a millionaire and nothing would feel earned. At $1k per dollar, the early game is stuck saving up for park benches.
+Until 2026-10-14 game prices tracked real-world luxury prices (a $70M jet at $10k MRR, a $2B rocket at $1M). The gates came down a long way and prices came down with them, so a jet is no longer jet-priced; the trade is that every rung is reachable by a real indie business. At $1M per dollar, a founder at $1 MRR would already be a millionaire and nothing would feel earned. At $1k per dollar, the early game is stuck saving up for park benches.
 
 ### Income
 
@@ -46,7 +48,7 @@ At $1M per dollar, a founder at $1 MRR would already be a millionaire and nothin
 ### Getting started
 
 - **Starting grant:** $500k, enough for a park, a café and a couple of repairs, so day one is fun even at $0 MRR.
-- **Back pay:** a founder who connects an existing business gets the last 3 months of collected revenue as a *grand opening* fund. Full history would let a mature company build everything on day one and skip the game. Their MRR still unlocks everything they've earned, so they start in the right house with the right land open.
+- **Back pay:** a founder whose city opens (connected and paid; setup is free and can come first) gets the last 3 months of collected revenue as a *grand opening* fund. Full history would let a mature company build everything on day one and skip the game. Their MRR still unlocks everything they've earned, so they start in the right house with the right land open.
 
 ### Spending
 
@@ -111,15 +113,17 @@ The score people will obsess over. It has no effect on money, so the only way to
 
 **A free milestone reward, never bought. Every house you've lived in stays as a landmark.** The shared hacker house becomes "where it all started", with a plaque.
 
-| MRR | Your home | Where |
-|---|---|---|
-| Sign-up | **Hacker House**: bunk beds, whiteboards, too many cofounders | Downtown |
-| $10 | Studio apartment, your own front door at last | Downtown |
-| $100 | **Pick one:** a bungalow with a yard, or a loft apartment | City |
-| $1k | Your first **TinyTown Hills** house, a mid-century modern with a pool | The Hills |
-| $10k | **Pick one of three estates:** Spanish villa, glass cliffside house, or modernist compound | Upper Hills |
-| $100k | **Island estate + superyacht** | Your own island in the bay |
-| $1M | **A house on the moon.** The clouded end of your island clears to reveal a launch site; buy a rocket and fly there and back. | The moon |
+| MRR (peak) | Your home | Where | Value |
+|---|---|---|---|
+| Sign-up | **Hacker House**: bunk beds, whiteboards, too many cofounders | Downtown | – |
+| $10 | Studio apartment, your own front door at last | Downtown | – |
+| $50 | **Pick one:** a bungalow with a yard, or a loft apartment | City | $500k |
+| $250 | Your first **TinyTown Hills** house: mid-century modern, Spanish Revival or canyon house | The Hills | $5M |
+| $1k | **Pick one of three estates:** Spanish villa, glass cliffside house, or modernist compound | Upper Hills | $20M |
+| $5k | **Island estate + superyacht** (three to pick from) | Your own island in the bay | $100M |
+| $10k | **A house on the moon.** The clouded end of your island clears to reveal a launch site; buy a rocket ($50M) and fly there and back. | The moon | – |
+
+Each value is about two months of income at its gate, so a renovation costs about half a month.
 
 **Swapping a pick** costs a renovation fee in game money (25% of the house's value), never real money. Your MRR earns the option; your treasury pays to change your mind.
 
@@ -129,12 +133,14 @@ The map starts mostly under cloud. **Regions open at MRR milestones.** Within a 
 
 | Region | Opens at | Highlights |
 |---|---|---|
-| Downtown blocks | Sign-up, then $100, $1k, $5k, $10k, $25k, $100k | Four plots each. The next block clears only once every open plot is built on **and** MRR has reached its gate. |
-| TinyTown Hills | $1k | Switchback road, villas, luxury cars, your Hills house, the sign |
-| The pier | $3k | Ferris wheel and roller coaster to buy |
-| Harbour & marina | $10k | Yacht berths |
-| Your island | $100k | Founder estate and superyacht |
-| Launch site (the island's clouded end) | $1M | Rocket pad |
+| Downtown blocks | Sign-up (Embarcadero, North Beach), then SoMa $50, Union Square $250, Financial District $750, Rincon Hill $1k, Nob Hill $2k, Transbay $5k | Four plots each. The next block clears only once every open plot is built on **and** MRR has reached its gate. |
+| TinyTown Hills | $250 | Switchback road, villas, luxury cars, your Hills house, the sign |
+| The pier | $500 | Ferris wheel and roller coaster to buy |
+| Harbour & marina | $1k | Yacht berths |
+| Your island | $5k | Founder estate and superyacht |
+| Launch site (the island's clouded end) | $10k | Rocket pad |
+
+The Hills, the island and the launch site open with the rung of the house ladder that lives there (`REGIONS` reads those gates from `HOME_TIERS`).
 
 **The airport is free infrastructure**, always there for every city. Planes are what you buy.
 
@@ -145,15 +151,15 @@ Each item unlocks at an MRR tier and costs roughly 1–4 months of that tier's i
 | Unlocks at | Items (game money) |
 |---|---|
 | Sign-up | Community garden $40k · pocket park $50k · corner shops $80k · food truck court $120k |
-| $100 | Basketball courts $200k · café & bookshop $300k · co-working space $1.5M · HQ office building $500k |
-| $1k | Prop plane $1M · public library $8M · neon theatre $15M · office tower $25M · tech campus $40M · HQ campus $20M |
-| $3k | Ferris wheel $20M · pier roller coaster $45M |
-| $10k | Day yacht $30M · Gulfstream-style jet $70M · skyscraper $250M · amusement park $300M (whole block) · stadium $500M (whole block) · HQ tower $200M |
-| $25k | Pyramid tower $800M · concert arena $900M · venture studio $1B (launch your next startups) · university $1.5B (whole block) |
-| $100k | Long-range jet $120M · research institute $2B · supertall $3B (whole block) · HQ landmark tower $2B |
-| $1M | Supersonic jet $500M · rocket $2B |
+| $50 | Basketball courts $100k · café & bookshop $150k · co-working space $750k · HQ office building $250k |
+| $250 | Prop plane $250k · public library $2M · neon theatre $4M · office tower $6M · tech campus $10M · HQ campus $5M |
+| $500 | Ferris wheel $3.5M · pier roller coaster $7.5M |
+| $1k | Day yacht $3M · Gulfstream-style jet $7M · skyscraper $25M · amusement park $30M (whole block) · stadium $50M (whole block) · HQ tower $20M |
+| $2k | Pyramid tower $65M · concert arena $70M · venture studio $80M (launch your next startups) · university $120M (whole block) |
+| $5k | Long-range jet $12M · research institute $100M · supertall $150M (whole block) · HQ landmark tower $100M |
+| $10k (the moon) | Supersonic jet $30M · rocket $50M |
 
-**What a city does with $1B a month** (about $100k MRR): found a top university, open a research institute, launch new ventures from the venture studio, raise a supertall, build stadiums and an amusement park, and keep everything maintained. More big-ticket projects (a second bridge, a new district across the bay, an international airport) are natural additions.
+**What a city does with $50–100M a month** (about $5k–10k MRR): found a top university, open a research institute, launch new ventures from the venture studio, raise a supertall, build stadiums and an amusement park, and keep everything maintained. More big-ticket projects (a second bridge, a new district across the bay, an international airport) are natural additions.
 
 **HQ upgrades** are bought too: garage → office floor → campus → tower → landmark tower. They're gated by MRR and decorated with your brand (below). Releases still add floors, as now.
 
@@ -176,7 +182,7 @@ Each item unlocks at an MRR tier and costs roughly 1–4 months of that tier's i
 ## Flights and visiting other founders
 
 - **Every city has an airport, for free**, so anyone can be visited.
-- **Flying needs your own plane.** The first plane unlocks at $1k MRR, so the social loop opens early enough for lots of people to use it. Better planes (Gulfstream at $10k, long-range at $100k, supersonic at $1M) look better and fly faster. Any plane can reach any city.
+- **Flying needs your own plane.** The first plane unlocks at $250 MRR, so the social loop opens early enough for lots of people to use it. Better planes (Gulfstream at $1k, long-range at $5k, supersonic at $10k) look better and fly faster. Any plane can reach any city.
 - **The flight:**
   1. The camera zooms to your airport, where your plane taxis and takes off.
   2. It flies 5–10 seconds over open ocean.
@@ -189,7 +195,7 @@ Each item unlocks at an MRR tier and costs roughly 1–4 months of that tier's i
 
 **Paid only, as a subscription.** We never sell in-game currency, speed-ups or unlocks, because that would break the one rule.
 
-- **$12/month or $99/year. No free trial.**
+- **$29 a year, annual only. No free trial, no refunds.** Checkout shows local currencies (Stripe Adaptive Pricing).
 - Open question: a 14-day money-back guarantee would keep "paid only" while removing the risk of paying before seeing your city.
 - Later, possibly: cosmetic-only extras such as plane liveries, house paint and seasonal decorations. Never anything that touches money, land, housing or unlocks.
 
@@ -221,3 +227,38 @@ Each item unlocks at an MRR tier and costs roughly 1–4 months of that tier's i
    - Brand import from URL and subscriptions (Vercel + Supabase).
 3. **Flights and visits** (planes can already be bought and parked), and the moon scene at the end of the rocket trip.
 4. **More regions, then more cities.**
+
+## 2026-10-14: the easier ladder
+
+The owner: *"1M MRR to go to the moon and all the other benchmarks are massively hard and out of reach. Make everything 10x easier."* Then, final: the house ladder is studio $10, bungalow or loft $50, TinyTown Hills $250, estate $1k, island $5k, moon $10k, *"and then get everything on that wavelength."*
+
+**The rule.** Every MRR gate is `easeMrr(old gate)`, a curve through the ladder's anchors, one per old digit:
+
+| Old gate | $10 | $100 | $1k | $10k | $100k | $1M |
+|---|---|---|---|---|---|---|
+| New gate | $10 | $50 | $250 | $1k | $5k | $10k |
+
+Between anchors it is log-linear (a gate a third of the way between two digits lands a third of the way between their new values, on a log scale), so the old pier gate of $3k becomes $484, shown as **$500**; the old $5k block becomes $660, shown as **$750**; the old $25k tier becomes $1,897, shown as **$2k**. The tables hold the rounded numbers; `easeMrr` and `EASE_ANCHORS` in `src/game/catalog.ts` hold the curve, and a test pins the ladder to it.
+
+**Prices** scale with their gate: `new price = old price × new gate / old gate`, rounded to a friendly number, so each thing takes about as many days of income to afford once it unlocks. House values follow the same rule. Ungated starter items ($40k–$120k) and the $500k starting grant don't change.
+
+**Three exceptions, the planes and the rocket.** The rule would price the long-range jet at $6M, the supersonic jet at $5M and the rocket at $20M: each plane cheaper than the one below it, and the moon a formality (two days of income). They cost $12M, $30M and $50M instead, so every plane costs more than the last and the rocket is about two weeks of income at the moon gate.
+
+**What didn't change.** $1 of MRR = $10,000 a month of game money, paid daily. Housing at $0.20 of MRR per user and $1,000 upkeep per housed resident. The starting grant, back pay, satisfaction, decay, and the one rule. The milestones the feed celebrates with fireworks ("MRR passed $10k") are real round numbers, so they didn't move.
+
+**Saved cities.** Every gate and every price is lower or equal, so every choice a founder saved under the old tables still applies (checked by replaying 1,114 accepted actions from 60 random cities: none rejected). Founders find themselves further up the ladder, with more in the treasury.
+
+**When things open, before → after** (day of the timeline; "–" = never):
+
+| | Plain demo (540 days, ends at $26k MRR) | Indie: $0 → $15k over 3 years | Venture: $1k growing 12% a month for 4 years |
+|---|---|---|---|
+| Bungalow or loft | 53 → 39 | 20 → 20 | 0 → 0 |
+| TinyTown Hills | 174 → 57 | 210 → 52 | 0 → 0 |
+| The pier | 247 → 89 | 348 → 130 | 291 → 0 |
+| An estate, the marina | 404 → 174 | 577 → 210 | 610 → 0 |
+| Your island | – → 307 | – → 424 | 1,220 → 427 |
+| The moon and launch site | – → 404 | – → 577 | – → 610 |
+
+**Pacing.** A simulated greedy player (once a week, buys the best thing it can afford) buys something from each new tier within days of it opening, as before: in the plain demo the prop plane 6 days after the Hills open (before: 1), the Ferris wheel 9 days after the pier (before: 5), a yacht 1 day after the marina (before: 2), the rocket 2 days after the moon (the boosted demo bought it the same day). Maintenance stays at 100% and satisfaction lands where it did.
+
+**The demo.** The scripted Nightjar founder now climbs the whole ladder without a boost: the island on day 307 ($5k MRR, "Day 308" on the scrubber) and **the moon on day 404** ($10k MRR, "Day 405"), with the rocket on the pad on day 411. The script also builds the pyramid tower, venture studio, university, long-range jet, HQ landmark tower and supersonic jet: 29 builds, all affordable in the plain demo, none rejected. `&boost=40` still works and reaches the moon on day 57.

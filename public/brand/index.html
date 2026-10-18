@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Brand and press kit · TinyTown</title>
+    <meta name="description" content="The TinyTown logo, colours, type and launch images, ready to download." />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f5ecdb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f1424" media="(prefers-color-scheme: dark)" />
+    <meta property="og:title" content="TinyTown brand and press kit" />
+    <meta property="og:description" content="Logos, colours, type and launch images for TinyTown, a Tamagotchi for your startup." />
+    <meta property="og:image" content="/brand/social/ph-1-day.jpg" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,500..800&family=Geist+Mono:wght@400..600&family=Geist:wght@400..700&display=swap" rel="stylesheet" />
+    <style>
+      /* Standalone: the brand tokens are copied from src/ui/styles.css so this page works at any path. */
+      :root {
+        --bg: #f5ecdb;
+        --glow: radial-gradient(120% 100% at 50% 0%, #fbf5ea 0%, #f5ecdb 100%);
+        --surface: #fdf9f2;
+        --surface-2: #f8f1e4;
+        --line: rgba(27, 34, 54, 0.09);
+        --line-strong: rgba(27, 34, 54, 0.16);
+        --ink: #1b2236;
+        --ink-2: #4b5168;
+        --ink-3: #62667a;
+        --accent-text: #a83818;
+        --fill: #cc4420;
+        --fill-hover: #b93d1c;
+        --bay-text: #235e9c;
+        --focus: #2c6fb7;
+        --city: #1b2236;
+        --gate: #e5512b;
+        --sun: #f6b53d;
+        --water: #2c6fb7;
+        --shadow-1: 0 1px 1px rgba(27, 34, 54, 0.04), 0 2px 6px -2px rgba(27, 34, 54, 0.1);
+        --shadow-2: 0 1px 2px rgba(27, 34, 54, 0.05), 0 6px 16px -6px rgba(27, 34, 54, 0.16), 0 18px 40px -20px rgba(27, 34, 54, 0.28);
+        --display: 'Bricolage Grotesque', Geist, ui-sans-serif, system-ui, sans-serif;
+        --ui: Geist, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1424;
+          --glow: radial-gradient(120% 100% at 50% 0%, #1a2136 0%, #0f1424 100%);
+          --surface: #161c2f;
+          --surface-2: #1d2439;
+          --line: rgba(245, 236, 219, 0.08);
+          --line-strong: rgba(245, 236, 219, 0.16);
+          --ink: #f6eedf;
+          --ink-2: #c8c2b6;
+          --ink-3: #9a98a7;
+          --accent-text: #ff7a50;
+          --bay-text: #8fc0ec;
+          --focus: #8fc0ec;
+          --city: #c8c2b6;
+          --gate: #ff6a3d;
+          --water: #78b2ef;
+          --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+          --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 36px -14px rgba(0, 0, 0, 0.6);
+          color-scheme: dark;
+        }
+        .logo-light-only { display: none; }
+      }
+      @media (prefers-color-scheme: light) {
+        .logo-dark-only { display: none; }
+      }
+
+      * { box-sizing: border-box; }
+      html { -webkit-text-size-adjust: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg) var(--glow) no-repeat;
+        background-size: 100% 900px;
+        color: var(--ink);
+        font: 400 16px/1.6 var(--ui);
+        -webkit-font-smoothing: antialiased;
+        font-feature-settings: 'ss01', 'cv11';
+      }
+      a { color: var(--bay-text); text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; }
+      a:hover { text-decoration-color: currentColor; }
+      :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 6px; }
+      img { display: block; max-width: 100%; height: auto; }
+
+      .wrap { width: min(1120px, 100% - 32px); margin-inline: auto; }
+
+      /* Header */
+      .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 0; }
+      .top .home img { height: 30px; width: auto; }
+      .top nav { display: flex; gap: 18px; font-size: 14.5px; }
+      .top nav a { color: var(--ink-2); text-decoration: none; }
+      .top nav a:hover { color: var(--ink); }
+
+      .hero { display: grid; justify-items: start; gap: 18px; padding: 64px 0 56px; }
+      .eyebrow { margin: 0; font: 500 12.5px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-text); }
+      h1, h2, h3 { margin: 0; font-family: var(--display); font-weight: 800; font-stretch: 88%; letter-spacing: -0.035em; text-wrap: balance; }
+      h1 { font-size: clamp(40px, 7vw, 68px); line-height: 0.98; max-width: 14ch; }
+      h2 { font-size: clamp(28px, 4vw, 38px); line-height: 1.05; }
+      h3 { font-size: 20px; line-height: 1.15; letter-spacing: -0.025em; font-stretch: 92%; }
+      .lede { margin: 0; max-width: 60ch; font-size: 19px; color: var(--ink-2); text-wrap: pretty; }
+      .actions { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-top: 6px; }
+      .btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 999px; background: var(--fill); color: #fff; font-weight: 560; font-size: 15px; text-decoration: none; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 1px rgba(27, 34, 54, 0.06), 0 4px 10px -4px rgba(27, 34, 54, 0.3); transition: background-color 120ms; }
+      .btn:hover { background: var(--fill-hover); }
+      .btn svg { width: 15px; height: 15px; }
+      .quiet { color: var(--ink-2); font-size: 15px; }
+
+      section { padding: 56px 0; border-top: 1px solid var(--line); }
+      .section-head { display: grid; gap: 10px; margin-bottom: 28px; max-width: 680px; }
+      .section-head p:not(.eyebrow) { margin: 0; color: var(--ink-2); text-wrap: pretty; }
+
+      /* Facts */
+      .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; margin: 0; }
+      .facts div { padding: 16px 18px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-1); }
+      .facts dt { font: 500 11.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+      .facts dd { margin: 8px 0 0; font-size: 15.5px; color: var(--ink); }
+
+      /* Logo cards */
+      .grid { display: grid; gap: 14px; }
+      .grid.two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+      .grid.three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+      .card { display: grid; grid-template-rows: 1fr auto; border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-1); }
+      .stage { display: grid; place-items: center; min-height: 220px; padding: 36px; }
+      .stage.sand { background: #f5ecdb; }
+      .stage.paper { background: #fdf9f2; }
+      .stage.ink { background: #1b2236; }
+      .stage.night { background: #0f1424; }
+      .stage.gate { background: #e5512b; }
+      .stage img.h { width: min(320px, 100%); }
+      .stage img.s { width: min(200px, 100%); }
+      .stage img.m { width: 120px; }
+      .stage img.avatar { width: 150px; border-radius: 50%; }
+      .meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 12px 14px 12px 18px; border-top: 1px solid var(--line); }
+      .meta b { font-weight: 600; font-size: 14.5px; }
+      .meta small { display: block; color: var(--ink-3); font-size: 13px; }
+      .dl { display: flex; gap: 6px; }
+      .dl a { display: inline-flex; align-items: center; min-height: 32px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--ink); font: 500 12px/1 var(--mono); letter-spacing: 0.04em; text-decoration: none; transition: background-color 120ms, border-color 120ms; }
+      .dl a:hover { background: var(--surface-2); border-color: var(--ink-3); }
+
+      /* Clear space diagram */
+      .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; margin-top: 14px; }
+      .rule { padding: 18px 20px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+      .rule p { margin: 6px 0 0; color: var(--ink-2); font-size: 15px; }
+      .rule ul { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 15px; }
+      .rule li + li { margin-top: 4px; }
+      .space { position: relative; display: grid; place-items: center; margin: 14px 0 4px; padding: 26px; border-radius: 12px; background: #fdf9f2; }
+      .space .box { position: relative; padding: 28px; outline: 1.5px dashed rgba(229, 81, 43, 0.6); outline-offset: 0; }
+      .space .box img { width: 220px; }
+
+      /* Colour */
+      .swatches { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 12px; }
+      .swatch { border-radius: 16px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); }
+      .swatch .chip { height: 108px; display: flex; align-items: flex-end; padding: 12px 14px; font: 500 12px/1 var(--mono); letter-spacing: 0.04em; }
+      .swatch .info { padding: 12px 14px 14px; }
+      .swatch .info b { font-weight: 600; }
+      .swatch .info code { display: block; margin-top: 2px; font: 500 13px/1.4 var(--mono); color: var(--ink-2); }
+      .swatch .info small { display: block; margin-top: 6px; color: var(--ink-3); font-size: 13.5px; line-height: 1.45; }
+      .ratio { display: flex; height: 18px; border-radius: 999px; overflow: hidden; margin-top: 18px; border: 1px solid var(--line); }
+      .ratio span { display: block; }
+      .ratio-legend { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 10px; font-size: 13.5px; color: var(--ink-3); }
+
+      /* Type */
+      .type { display: grid; gap: 12px; }
+      .specimen { display: grid; grid-template-columns: 250px 1fr; gap: 20px; align-items: baseline; padding: 22px 22px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+      .specimen .label b { display: block; font-weight: 600; }
+      .specimen .label small { display: block; color: var(--ink-3); font-size: 13.5px; }
+      .s-display { font: 800 clamp(34px, 6vw, 56px)/1 var(--display); font-stretch: 88%; letter-spacing: -0.035em; }
+      .s-ui { font: 450 19px/1.45 var(--ui); color: var(--ink-2); }
+      .s-ui b { font-weight: 600; color: var(--ink); }
+      .s-mono { font: 500 15px/1.6 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-text); }
+      .s-num { font-variant-numeric: tabular-nums; }
+
+      /* Social images */
+      .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px; }
+      .note { align-self: start; padding: 20px 22px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+      .note ul { margin: 10px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 15px; }
+      .note li + li { margin-top: 6px; }
+      .shot { border-radius: 16px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-1); }
+      .shot img { width: 100%; aspect-ratio: var(--ar); object-fit: cover; background: var(--surface-2); }
+      .shot.wide { grid-column: 1 / -1; }
+
+      .skyline { width: min(280px, 70vw); height: auto; overflow: visible; }
+      .skyline path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .skyline .city { stroke: var(--city); stroke-width: 1.4; }
+      .skyline .bridge { stroke: var(--gate); stroke-width: 1.6; }
+      .skyline .sun { stroke: var(--sun); stroke-width: 1.6; }
+      .skyline .water { stroke: var(--water); stroke-width: 1.2; opacity: 0.6; }
+
+      footer { display: grid; justify-items: center; gap: 16px; padding: 64px 0 56px; border-top: 1px solid var(--line); text-align: center; color: var(--ink-3); font-size: 14.5px; }
+      footer p { margin: 0; }
+
+      @media (max-width: 640px) {
+        .top nav { display: none; }
+        .hero { padding: 36px 0 40px; }
+        .specimen { grid-template-columns: 1fr; gap: 8px; }
+        .stage { min-height: 180px; padding: 28px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <a class="home" href="/" aria-label="TinyTown home">
+          <img class="logo-light-only" src="logo/logo-horizontal-light.svg" alt="TinyTown" width="120" height="30" />
+          <img class="logo-dark-only" src="logo/logo-horizontal-dark.svg" alt="TinyTown" width="120" height="30" />
+        </a>
+        <nav aria-label="On this page">
+          <a href="#logo">Logo</a>
+          <a href="#colour">Colour</a>
+          <a href="#type">Type</a>
+          <a href="#images">Images</a>
+        </nav>
+      </header>
+
+      <main>
+        <div class="hero">
+          <p class="eyebrow">Brand and press kit</p>
+          <h1>A Tamagotchi for your startup.</h1>
+          <p class="lede">TinyTown turns a founder’s real Stripe MRR, customers and GitHub releases into a tiny, sunny San Francisco Bay. Everything you need to write about it or show it is on this page. Use it for coverage, reviews and posts about TinyTown.</p>
+          <div class="actions">
+            <a class="btn" href="#logo">Get the logo <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v9M4 8l4 4 4-4" /></svg></a>
+            <a class="quiet" href="/">See the demo city</a>
+          </div>
+        </div>
+
+        <section aria-labelledby="facts-h">
+          <div class="section-head">
+            <p class="eyebrow">The short version</p>
+            <h2 id="facts-h">What TinyTown is</h2>
+          </div>
+          <dl class="facts">
+            <div><dt>The line</dt><dd>A Tamagotchi for your startup.</dd></div>
+            <div><dt>How it works</dt><dd>Connect Stripe and GitHub. Every real $1 of MRR becomes $10,000 to spend on your city.</dd></div>
+            <div><dt>The one rule</dt><dd>Nothing in the game is for sale. The only way to grow the city is to grow your startup.</dd></div>
+            <div><dt>Price</dt><dd>$29 a year (about $2.42 a month). No monthly plan and no free trial: the demo city is free to explore.</dd></div>
+            <div><dt>Name</dt><dd>TinyTown: one word, capital T twice.</dd></div>
+            <div><dt>The demo</dt><dd><em>Nightjar</em> is a made-up startup. Its numbers are fictional; please say so in captions.</dd></div>
+          </dl>
+        </section>
+
+        <section id="logo" aria-labelledby="logo-h">
+          <div class="section-head">
+            <p class="eyebrow">Logo</p>
+            <h2 id="logo-h">The mark and the wordmark</h2>
+            <p>An isometric city block on a sand tile, with a Golden Gate–orange tower and the sun behind it. The wordmark is Bricolage Grotesque ExtraBold, outlined, so the files need no fonts. Use the files as they are; please don’t redraw, recolour or rearrange them.</p>
+          </div>
+          <div class="grid two">
+            <figure class="card" style="margin: 0">
+              <div class="stage paper"><img class="h" src="logo/logo-horizontal-light.svg" alt="TinyTown horizontal logo, ink text" width="320" height="79" loading="lazy" /></div>
+              <figcaption class="meta"><span><b>Horizontal, light</b><small>The default, on light backgrounds</small></span><span class="dl"><a href="logo/logo-horizontal-light.svg" download>SVG</a><a href="logo/logo-horizontal-light.png" download>PNG</a></span></figcaption>
+            </figure>
+            <figure class="card" style="margin: 0">
+              <div class="stage ink"><img class="h" src="logo/logo-horizontal-dark.svg" alt="TinyTown horizontal logo, cream text" width="320" height="79" loading="lazy" /></div>
+              <figcaption class="meta"><span><b>Horizontal, dark</b><small>On ink, night and dark photos</small></span><span class="dl"><a href="logo/logo-horizontal-dark.svg" download>SVG</a><a href="logo/logo-horizontal-dark.png" download>PNG</a></span></figcaption>
+            </figure>
+            <figure class="card" style="margin: 0">
+              <div class="stage sand"><img class="s" src="logo/logo-stacked-light.svg" alt="TinyTown stacked logo, ink text" width="200" height="157" loading="lazy" /></div>
+              <figcaption class="meta"><span><b>Stacked, light</b><small>Square and centred layouts</small></span><span class="dl"><a href="logo/logo-stacked-light.svg" download>SVG</a><a href="logo/logo-stacked-light.png" download>PNG</a></span></figcaption>
+            </figure>
+            <figure class="card" style="margin: 0">
+              <div class="stage night"><img class="s" src="logo/logo-stacked-dark.svg" alt="TinyTown stacked logo, cream text" width="200" height="157" loading="lazy" /></div>
+              <figcaption class="meta"><span><b>Stacked, dark</b><small>Square and centred, on dark</small></span><span class="dl"><a href="logo/logo-stacked-dark.svg" download>SVG</a><a href="logo/logo-stacked-dark.png" download>PNG</a></span></figcaption>
+            </figure>
+          </div>
+          <div class="grid three" style="margin-top: 14px">
+            <figure class="card" style="margin: 0">
+              <div class="stage paper"><img class="m" src="logo/mark.svg" alt="The TinyTown mark" width="120" height="120" loading="lazy" /></div>
+              <figcaption class="meta"><span><b>Mark</b><small>Small spaces and favicons</small></span><span class="dl"><a href="logo/mark.svg" download>SVG</a><a href="logo/mark-1024.png" download>PNG</a></span></figcaption>
+            </figure>
+            <figure class="card" style="margin: 0">
+              <div class="stage paper"><img class="avatar" src="logo/avatar-day.png" alt="The TinyTown avatar, day" width="150" height="150" loading="lazy" /></div>
+              <figcaption class="meta"><span><b>Avatar, day</b><small>400 × 400 profile picture</small></span><span class="dl"><a href="logo/avatar-day.png" download>PNG</a></span></figcaption>
+            </figure>
+            <figure class="card" style="margin: 0">
+              <div class="stage ink"><img class="avatar" src="logo/avatar-night.png" alt="The TinyTown avatar, night" width="150" height="150" loading="lazy" /></div>
+              <figcaption class="meta"><span><b>Avatar, night</b><small>400 × 400 profile picture</small></span><span class="dl"><a href="logo/avatar-night.png" download>PNG</a></span></figcaption>
+            </figure>
+            <figure class="card" style="margin: 0">
+              <div class="stage paper"><img class="m" src="logo/mark-tile-ink.svg" alt="The TinyTown mark on an ink tile" width="120" height="120" loading="lazy" /></div>
+              <figcaption class="meta"><span><b>App icon, ink</b><small>Square listings and icons</small></span><span class="dl"><a href="logo/mark-tile-ink.svg" download>SVG</a><a href="logo/mark-tile-ink-512.png" download>PNG</a></span></figcaption>
+            </figure>
+            <figure class="card" style="margin: 0">
+              <div class="stage paper"><img class="m" src="logo/mark-mono-ink.svg" alt="The TinyTown mark in one colour, ink" width="120" height="120" loading="lazy" /></div>
+              <figcaption class="meta"><span><b>One colour, ink</b><small>Stamps, print, etching</small></span><span class="dl"><a href="logo/mark-mono-ink.svg" download>SVG</a><a href="logo/mark-mono-ink-512.png" download>PNG</a></span></figcaption>
+            </figure>
+            <figure class="card" style="margin: 0">
+              <div class="stage gate"><img class="m" src="logo/mark-mono-cream.svg" alt="The TinyTown mark in one colour, cream" width="120" height="120" loading="lazy" /></div>
+              <figcaption class="meta"><span><b>One colour, cream</b><small>On orange, blue or photos</small></span><span class="dl"><a href="logo/mark-mono-cream.svg" download>SVG</a><a href="logo/mark-mono-cream-512.png" download>PNG</a></span></figcaption>
+            </figure>
+          </div>
+          <div class="rules">
+            <div class="rule">
+              <h3>Clear space</h3>
+              <p>Leave the height of the “T” free on every side. For the mark alone, a quarter of its width.</p>
+              <div class="space"><div class="box"><img src="logo/logo-horizontal-light.svg" alt="" width="220" height="55" loading="lazy" /></div></div>
+            </div>
+            <div class="rule">
+              <h3>Smallest sizes</h3>
+              <ul>
+                <li>Horizontal logo: 24 px tall (6 mm in print).</li>
+                <li>Stacked logo: 48 px tall.</li>
+                <li>Mark: 16 px; one-colour mark: 32 px.</li>
+                <li>Smaller than that, use the mark alone.</li>
+              </ul>
+            </div>
+            <div class="rule">
+              <h3>Please don’t</h3>
+              <ul>
+                <li>Recolour, stretch, tilt or outline the logo.</li>
+                <li>Retype the wordmark, or write it “Tiny Town”.</li>
+                <li>Add glows, bevels or gradients.</li>
+                <li>Place it on a busy part of a photo. Find calm sky or water, or use a panel.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="colour" aria-labelledby="colour-h">
+          <div class="section-head">
+            <p class="eyebrow">Colour</p>
+            <h2 id="colour-h">Sand by day, ink by night</h2>
+            <p>Warm paper, Bay blue, one Golden Gate orange thing per view, and a touch of sun.</p>
+          </div>
+          <div class="swatches">
+            <div class="swatch"><div class="chip" style="background: #e5512b; color: #fff">GATE</div><div class="info"><b>Golden Gate orange</b><code>#e5512b</code><small>The brand and the primary action. Buttons use <code style="display: inline">#cc4420</code> for white labels.</small></div></div>
+            <div class="swatch"><div class="chip" style="background: #2c6fb7; color: #fff">BAY</div><div class="info"><b>Bay blue</b><code>#2c6fb7</code><small>Information: links, focus, water.</small></div></div>
+            <div class="swatch"><div class="chip" style="background: #f6b53d; color: #1b2236">SUN</div><div class="info"><b>Sun</b><code>#f6b53d</code><small>Highlights and milestones. Never text on light.</small></div></div>
+            <div class="swatch"><div class="chip" style="background: #f5ecdb; color: #1b2236; box-shadow: inset 0 -1px 0 rgba(27, 34, 54, 0.08)">SAND</div><div class="info"><b>Sand</b><code>#f5ecdb</code><small>The day’s paper.</small></div></div>
+            <div class="swatch"><div class="chip" style="background: #1b2236; color: #f6eedf">INK</div><div class="info"><b>Ink</b><code>#1b2236</code><small>Text by day, deep surfaces.</small></div></div>
+            <div class="swatch"><div class="chip" style="background: #0f1424; color: #f6eedf">NIGHT</div><div class="info"><b>Night</b><code>#0f1424</code><small>The night’s paper. Text on it is cream <code style="display: inline">#f6eedf</code>.</small></div></div>
+          </div>
+          <div class="ratio" role="img" aria-label="Rough proportions: 70% sand or night, 20% ink or cream, 7% orange, 3% blue and sun">
+            <span style="flex: 70; background: #efe3cc"></span><span style="flex: 20; background: #1b2236"></span><span style="flex: 7; background: #e5512b"></span><span style="flex: 2; background: #2c6fb7"></span><span style="flex: 1; background: #f6b53d"></span>
+          </div>
+          <p class="ratio-legend"><span>70% paper</span><span>20% ink</span><span>under 10% orange</span><span>a touch of blue and sun</span></p>
+        </section>
+
+        <section id="type" aria-labelledby="type-h">
+          <div class="section-head">
+            <p class="eyebrow">Type</p>
+            <h2 id="type-h">Three faces, all from Google Fonts</h2>
+          </div>
+          <div class="type">
+            <div class="specimen"><div class="label"><b>Bricolage Grotesque</b><small>Display · 800 · 88% wide · −0.035 em</small></div><div class="s-display">Your MRR builds a tiny San&nbsp;Francisco.</div></div>
+            <div class="specimen"><div class="label"><b>Geist</b><small>Interface and body · 400–650</small></div><div class="s-ui"><b>Every $1 you earn is <span class="s-num">$10,000</span> to spend.</b> Paid daily into your treasury. Build offices, parks, towers, rides and planes on your plots.</div></div>
+            <div class="specimen"><div class="label"><b>Geist Mono</b><small>Eyebrows and codes · 500 · caps</small></div><div class="s-mono">404 · Nothing built here</div></div>
+          </div>
+        </section>
+
+        <section id="images" aria-labelledby="images-h">
+          <div class="section-head">
+            <p class="eyebrow">Images</p>
+            <h2 id="images-h">Launch images, rendered from the game</h2>
+            <p>Every picture is a real render of the demo city. Nightjar is a made-up startup, so its numbers are fictional.</p>
+          </div>
+          <div class="shots">
+            <figure class="shot" style="margin: 0; --ar: 1270 / 760"><img src="social/ph-1-day.jpg" alt="The demo city by day, with the headline: A Tamagotchi for your startup." width="1270" height="760" loading="lazy" /><figcaption class="meta"><span><b>Gallery 1: by day</b><small>1270 × 760, Product Hunt</small></span><span class="dl"><a href="social/ph-1-day.jpg" download>JPG</a></span></figcaption></figure>
+            <figure class="shot" style="margin: 0; --ar: 1270 / 760"><img src="social/ph-2-golden.jpg" alt="The demo city at golden hour, with the headline: Every $1 of MRR is $10,000 to spend." width="1270" height="760" loading="lazy" /><figcaption class="meta"><span><b>Gallery 2: golden hour</b><small>1270 × 760, Product Hunt</small></span><span class="dl"><a href="social/ph-2-golden.jpg" download>JPG</a></span></figcaption></figure>
+            <figure class="shot" style="margin: 0; --ar: 1270 / 760"><img src="social/ph-3-night.jpg" alt="The demo city at night, with the headline: It keeps your hours." width="1270" height="760" loading="lazy" /><figcaption class="meta"><span><b>Gallery 3: night</b><small>1270 × 760, Product Hunt</small></span><span class="dl"><a href="social/ph-3-night.jpg" download>JPG</a></span></figcaption></figure>
+            <figure class="shot" style="margin: 0; --ar: 1270 / 760"><img src="social/ph-4-hills.jpg" alt="TinyTown Hills and the sign, with the headline: From a hacker house to a house on the moon." width="1270" height="760" loading="lazy" /><figcaption class="meta"><span><b>Gallery 4: the Hills</b><small>1270 × 760, Product Hunt</small></span><span class="dl"><a href="social/ph-4-hills.jpg" download>JPG</a></span></figcaption></figure>
+            <figure class="shot wide" style="margin: 0; --ar: 1500 / 500"><img src="social/x-header.jpg" alt="X header: the city at golden hour, with the headline: Your MRR builds a tiny San Francisco." width="1500" height="500" loading="lazy" /><figcaption class="meta"><span><b>X header</b><small>1500 × 500</small></span><span class="dl"><a href="social/x-header.jpg" download>JPG</a></span></figcaption></figure>
+            <figure class="shot wide" style="margin: 0; --ar: 1584 / 396"><img src="social/linkedin-banner.jpg" alt="LinkedIn banner: the city by day, with the headline: A Tamagotchi for your startup." width="1584" height="396" loading="lazy" /><figcaption class="meta"><span><b>LinkedIn banner</b><small>1584 × 396</small></span><span class="dl"><a href="social/linkedin-banner.jpg" download>JPG</a></span></figcaption></figure>
+            <figure class="shot" style="margin: 0; --ar: 1 / 1"><img src="social/square-launch.jpg" alt="Square launch post: the TinyTown logo, the headline and the city rising out of the sand." width="1080" height="1080" loading="lazy" /><figcaption class="meta"><span><b>Launch post</b><small>1080 × 1080, X, LinkedIn, Instagram</small></span><span class="dl"><a href="social/square-launch.jpg" download>JPG</a></span></figcaption></figure>
+            <div class="note">
+              <h3>Posting them</h3>
+              <ul>
+                <li>Upload the files as they are. They’re exact sizes, so nothing gets cropped except the avatar corner on X and LinkedIn, which the layouts leave clear.</li>
+                <li>Caption the demo honestly: “Nightjar, a demo startup”.</li>
+                <li>Need a different size or another corner of the city? <a href="/legal/contact.html">Ask</a>; they’re rendered from the game, so it’s quick.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <svg class="skyline" viewBox="0 0 280 64" aria-hidden="true">
+          <path class="water" d="M0 60.5h280" />
+          <path class="bridge" d="M20 44h96M44 56V14M92 56V14M20 50 44 15Q68 42 92 15L116 50M41 14h6M89 14h6" />
+          <path class="city" d="M0 56q10-14 22-8M118 56V40h8V30h8v-6h4v32M142 56V36h6V28h6v28M156 56l8-44 8 44M175 56V30h15v26M192 56V40h8v16M202 56q16-26 40-20 22 6 38 20M223 40.5h2.4M228.5 38.6h2.4M234 37.4h2.4M239.5 36.9h2.4M245 37.2h2.4M250.5 38h2.4M0 56h280" />
+          <path class="sun" d="M252 20a7 7 0 1 0 14 0a7 7 0 1 0-14 0" />
+        </svg>
+        <p>Questions, interviews or higher-resolution renders: <a href="/legal/contact.html">get in touch</a>.</p>
+      </footer>
+    </div>
+  </body>
+</html>

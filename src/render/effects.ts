@@ -84,6 +84,8 @@ export class Fireworks {
   private bursts: Burst[] = [];
   private queue: { delay: number; at: THREE.Vector3; colour: number }[] = [];
   private material: THREE.ShaderMaterial;
+  /** Called as each shell bursts (the sound listens). */
+  onBurst: (() => void) | null = null;
 
   constructor() {
     this.material = new THREE.ShaderMaterial({
@@ -172,9 +174,13 @@ export class Fireworks {
   }
 
   update(dt: number) {
+    // Most frames there's nothing in the sky: don't allocate anything for it.
+    if (!this.queue.length && !this.bursts.length) return;
     for (const q of this.queue) q.delay -= dt;
-    for (const q of this.queue.filter((q) => q.delay <= 0)) this.spawn(q.at, q.colour);
-    this.queue = this.queue.filter((q) => q.delay > 0);
+    if (this.queue.length) {
+      for (const q of this.queue.filter((q) => q.delay <= 0)) this.spawn(q.at, q.colour);
+      this.queue = this.queue.filter((q) => q.delay > 0);
+    }
 
     for (const b of this.bursts) {
       const geo = b.points.geometry;
@@ -195,6 +201,7 @@ export class Fireworks {
         if (b.rocket.y >= b.apex) {
           for (let i = 0; i < SPARKS; i++) arr.set([b.rocket.x, b.rocket.y, b.rocket.z], i * 3);
           b.rocket = null;
+          this.onBurst?.();
         }
       } else {
         b.age += dt;
@@ -254,6 +261,9 @@ export class Train {
   /** Share of the line per second (kept for the old loop's units). */
   speed = 0.02;
   private boost = 0;
+  /** Scratch vectors for the per-frame update. */
+  private at = new THREE.Vector3();
+  private heading = new THREE.Vector3();
 
   constructor(path: readonly (readonly [number, number])[], height: (x: number, z: number) => number = () => 0) {
     const pts = densify(path, 1).map(([x, z]) => new THREE.Vector3(x, height(x, z), z));
@@ -264,6 +274,14 @@ export class Train {
       this.cars.push({ group, d: (this.length * (i + 0.3)) / 3, dir: i % 2 ? -1 : 1, wait: 0 });
       this.object.add(group);
     });
+  }
+
+  /** Whether a running streetcar is within `r` of (x, z): cars wait for it at junctions. */
+  blocks(x: number, z: number, r: number): boolean {
+    // A suspended line's parked cars don't hold up traffic forever.
+    if (this.speed <= 0) return false;
+    for (const c of this.cars) if (Math.hypot(c.group.position.x - x, c.group.position.z - z) < r + 0.45) return true;
+    return false;
   }
 
   /** A PCC streetcar: rounded ends, two-tone livery, trolley pole, along +x. */
@@ -315,8 +333,8 @@ export class Train {
         }
       }
       const u = car.d / this.length;
-      const p = this.curve.getPointAt(u);
-      const t = this.curve.getTangentAt(u);
+      const p = this.curve.getPointAt(u, this.at);
+      const t = this.curve.getTangentAt(u, this.heading);
       if (car.dir < 0) t.negate();
       // Keep right: each direction has its own track.
       car.group.position.set(p.x + t.z * 0.36, p.y + 0.02, p.z - t.x * 0.36);

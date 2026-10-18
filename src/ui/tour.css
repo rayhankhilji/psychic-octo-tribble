@@ -1,0 +1,978 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   The guided tour (tour.ts): a dimmed screen with one cut-out that glides
+   from target to target, a card beside it, and a "Press here" hint where the
+   card waits for you. Everything moves with transform and opacity; the cut-out
+   is one element whose giant box-shadow is the dimming.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.tour {
+  --tour-veil: rgba(27, 34, 54, 0.5);
+  --tour-veil-open: rgba(27, 34, 54, 0.12);
+  --tour-ring: rgba(255, 250, 240, 0.92);
+  --tour-glow: rgba(246, 181, 61, 0.3);
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-3) var(--ease-out);
+}
+
+:root[data-theme='night'] .tour {
+  --tour-veil: rgba(5, 8, 18, 0.6);
+  --tour-veil-open: rgba(5, 8, 18, 0.16);
+  --tour-ring: rgba(246, 238, 223, 0.9);
+  --tour-glow: rgba(255, 138, 92, 0.32);
+}
+
+.tour.is-in {
+  opacity: 1;
+}
+
+.tour.is-leaving {
+  opacity: 0;
+  transition-duration: var(--dur-3);
+  transition-timing-function: var(--ease-in);
+}
+
+/* A dialog opened over the tour (your home, share): step aside until it closes. */
+.tour.is-paused {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--dur-2) var(--ease-out),
+    visibility 0s linear var(--dur-2);
+}
+
+.tour.is-paused * {
+  pointer-events: none !important;
+}
+
+/* Tooltips stay readable over the veil (hovering the fog shows when it lifts). */
+html.touring .tip,
+html.touring .uitip {
+  z-index: 80;
+}
+
+/* ── The cut-out ───────────────────────────────────────────────────────── */
+
+.tour-hole {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  will-change: transform;
+  box-shadow: 0 0 0 200vmax var(--tour-veil);
+  transition: box-shadow var(--dur-4) var(--ease-out);
+}
+
+.tour.is-open .tour-hole {
+  box-shadow: 0 0 0 200vmax var(--tour-veil-open);
+}
+
+.tour-ring,
+.tour-ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* A soft cream edge and a warm glow: lit from the sun, never a hard outline. */
+.tour-ring {
+  box-shadow:
+    0 0 0 1.5px var(--tour-ring),
+    0 0 0 5px var(--tour-glow),
+    0 0 34px 4px var(--tour-glow);
+  transition:
+    box-shadow var(--dur-3) var(--ease-out),
+    opacity var(--dur-2) var(--ease-out);
+}
+
+.tour-hole.is-closed .tour-ring {
+  opacity: 0;
+}
+
+/* Waiting for you: the ring turns Golden Gate orange and ripples outward. */
+.tour.is-action .tour-ring {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 0 6px var(--accent-soft),
+    0 0 30px 6px rgba(229, 81, 43, 0.32);
+}
+
+.tour-ripple {
+  opacity: 0;
+}
+
+.tour.is-action .tour-ripple {
+  animation: tour-ripple 1.8s var(--ease-out) infinite;
+}
+
+.tour.is-action .tour-ripple + .tour-ripple {
+  animation-delay: 0.9s;
+}
+
+@keyframes tour-ripple {
+  0% {
+    opacity: 0.85;
+    box-shadow: 0 0 0 0 var(--accent);
+  }
+  100% {
+    opacity: 0;
+    box-shadow: 0 0 0 16px transparent;
+  }
+}
+
+.tour-hole.is-nudged .tour-ring {
+  animation: tour-nudge 0.5s var(--ease-out);
+}
+
+@keyframes tour-nudge {
+  30% {
+    box-shadow:
+      0 0 0 3px var(--tour-ring),
+      0 0 0 9px var(--tour-glow),
+      0 0 44px 10px var(--tour-glow);
+  }
+}
+
+/* Panes around the cut-out that catch clicks on the dimmed screen. */
+.tour-block {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.tour.is-open .tour-block,
+.tour.is-leaving .tour-block {
+  pointer-events: none;
+}
+
+/* ── "Press here" ──────────────────────────────────────────────────────── */
+
+.tour-hint {
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  background: var(--accent-fill);
+  color: #fff;
+  font: 600 12.5px/1 var(--font-ui);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 4px rgba(201, 66, 31, 0.28),
+    0 8px 20px -6px rgba(201, 66, 31, 0.55);
+  opacity: 0;
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+
+.tour-hint[hidden] {
+  display: none;
+}
+
+.tour-hint.is-placed {
+  opacity: 1;
+  transition-delay: 0.28s;
+}
+
+.tour-caret {
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  width: 14px;
+  height: 8px;
+  margin-left: -7px;
+  fill: var(--accent-fill);
+  stroke: none;
+}
+
+.tour-caret path {
+  stroke: none;
+}
+
+.tour-hint[data-at='above'] .tour-caret {
+  top: auto;
+  bottom: -6px;
+  rotate: 180deg;
+}
+
+/* It leans toward what it points at, gently, while it waits. */
+.tour-hint[data-mode='press'].is-placed {
+  animation: tour-bob 1.8s var(--ease-in-out) infinite;
+}
+
+.tour-hint[data-at='above'].is-placed {
+  animation-name: tour-bob-down;
+}
+
+@keyframes tour-bob {
+  50% {
+    translate: 0 -3px;
+  }
+}
+
+@keyframes tour-bob-down {
+  50% {
+    translate: 0 3px;
+  }
+}
+
+/* Hover the fog: a quiet cream pill with a cursor, resting on the bank. */
+.tour-hint[data-mode='hover'] {
+  padding: 0 12px 0 8px;
+  background: var(--surface-solid);
+  color: var(--ink);
+  box-shadow: var(--highlight), var(--shadow-2);
+}
+
+.tour-cursor {
+  width: 16px;
+  height: 16px;
+  fill: var(--ink);
+  stroke: var(--surface-solid);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+/* ── The card ──────────────────────────────────────────────────────────── */
+
+.tour-card {
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: grid;
+  width: 352px;
+  padding: 14px 16px 12px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-solid);
+  color: var(--ink);
+  box-shadow: var(--highlight), var(--shadow-3);
+  pointer-events: auto;
+  will-change: transform;
+  /* Glides beside the cut-out as it moves; arrives with a small lift. */
+  transition:
+    transform 0.52s var(--ease-in-out),
+    opacity var(--dur-3) var(--ease-out),
+    scale var(--dur-3) var(--ease-spring),
+    width var(--dur-3) var(--ease-in-out);
+  opacity: 0;
+  scale: 0.96;
+}
+
+.tour.is-in .tour-card {
+  opacity: 1;
+  scale: 1;
+  transition-delay: 0s, 0.06s, 0.06s, 0s;
+}
+
+.tour.is-leaving .tour-card {
+  opacity: 0;
+  scale: 0.97;
+}
+
+.tour-card.is-hero {
+  width: 404px;
+  padding: 22px 22px 14px;
+  text-align: center;
+}
+
+.tour-card.is-nudged {
+  animation: tour-card-nudge 0.42s var(--ease-out);
+}
+
+@keyframes tour-card-nudge {
+  30% {
+    scale: 1.015;
+  }
+}
+
+.tour-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.tour-card.is-hero .tour-head {
+  justify-content: center;
+  order: 2;
+  margin: 16px 0 0;
+}
+
+.tour-dots {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tour-dots li {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line-strong);
+  transition:
+    width var(--dur-3) var(--ease-out),
+    background-color var(--dur-3) var(--ease-out);
+}
+
+.tour-dots li.past {
+  background: var(--ink-4);
+}
+
+.tour-dots li.on {
+  width: 20px;
+  background: var(--accent);
+}
+
+.tour-count {
+  margin-left: auto;
+  font: 500 10.5px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.tour-card.is-hero .tour-count {
+  display: none;
+}
+
+.tour-pages {
+  position: relative;
+  overflow: hidden;
+  /* Room for descenders and the fact panel's edge when the height animates. */
+  margin: -2px;
+  padding: 2px;
+  transition: height var(--dur-3) var(--ease-out);
+}
+
+.tour-page {
+  animation: tour-page-in 0.34s var(--ease-out) both;
+}
+
+.tour-pages[data-dir='back'] .tour-page {
+  animation-name: tour-page-in-back;
+}
+
+.tour-page.is-out {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  animation: tour-page-out 0.2s var(--ease-in) both;
+}
+
+.tour-pages[data-dir='back'] .tour-page.is-out {
+  animation-name: tour-page-out-back;
+}
+
+@keyframes tour-page-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+
+@keyframes tour-page-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+}
+
+@keyframes tour-page-out {
+  to {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+
+@keyframes tour-page-out-back {
+  to {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+
+.tour-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 9px;
+}
+
+.tour-card.is-hero .tour-kicker {
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.tour-kicker .tile {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.tour-kicker .tile .ico {
+  width: 16px;
+  height: 16px;
+}
+
+.tour-title {
+  margin: 0;
+  font: 750 21px/1.12 var(--font-display);
+  font-stretch: 92%;
+  letter-spacing: -0.028em;
+  text-wrap: balance;
+}
+
+.tour-card.is-hero .tour-title {
+  font-size: 27px;
+  line-height: 1.06;
+  letter-spacing: -0.032em;
+}
+
+.tour-body {
+  margin: 7px 0 0;
+  font-size: var(--t-md);
+  line-height: 1.55;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.tour-card.is-hero .tour-body {
+  font-size: 14.5px;
+  margin-top: 9px;
+}
+
+/* The real numbers behind the card, on a paper inset. */
+.tour-fact {
+  margin: 11px 0 0;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.tour-fact b {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.tour-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 10px 0 0;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.tour-card.is-hero .tour-keys {
+  justify-content: center;
+}
+
+.tour-keys span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tour-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.tour-card.is-hero .tour-foot {
+  margin-top: 18px;
+}
+
+.tour-grow {
+  flex: 1;
+}
+
+.tour-skip {
+  height: 30px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--ink-3);
+  font: 500 var(--t-sm) / 1 var(--font-ui);
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease-out);
+}
+
+.tour-skip:hover {
+  color: var(--ink);
+}
+
+.tour-skip[hidden],
+.tour-back[hidden] {
+  display: none;
+}
+
+.tour-next {
+  gap: 6px;
+  padding: 0 10px 0 12px;
+}
+
+.tour-next .ico {
+  width: 15px;
+  height: 15px;
+  transition: translate var(--dur-2) var(--ease-out);
+}
+
+.tour-next:hover .ico {
+  translate: 2px 0;
+}
+
+.tour-next.is-final .ico {
+  display: none;
+}
+
+.tour-card .btn:focus-visible,
+.tour-skip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ── The mark, on the first and last cards ─────────────────────────────── */
+
+.tour-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 76px;
+  margin: -4px 0 10px;
+}
+
+/* The last card leaves room for the burst around the mark. */
+[data-step='done'] .tour-art {
+  height: 96px;
+  margin: -8px 0 8px;
+}
+
+.tour-mark {
+  width: 62px;
+  height: 62px;
+  overflow: visible;
+  filter: drop-shadow(0 12px 12px rgba(27, 34, 54, 0.14));
+}
+
+/* It assembles like it does on the boot screen: tile, tower, blocks, then the sun. */
+.tour-mark .mk {
+  transform-box: view-box;
+  transform-origin: 24px 46px;
+  animation: tour-rise 0.62s var(--ease-spring) both;
+}
+
+.tour-mark .mk-0 {
+  animation: tour-tile 0.42s var(--ease-out) both;
+}
+
+.tour-mark .mk-1 {
+  animation-delay: 0.16s;
+}
+
+.tour-mark .mk-2 {
+  animation-delay: 0.28s;
+}
+
+.tour-mark .mk-3 {
+  animation: tour-sun 0.7s var(--ease-out) 0.44s both;
+}
+
+@keyframes tour-tile {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes tour-rise {
+  from {
+    opacity: 0;
+    transform: scaleY(0.2);
+  }
+}
+
+@keyframes tour-sun {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.tour-burst {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 108px;
+  height: 108px;
+  margin: -54px 0 0 -54px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tour-halo {
+  fill: var(--sun-400);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tour-halo 1.3s var(--ease-out) 0.5s both;
+}
+
+@keyframes tour-halo {
+  0% {
+    opacity: 0;
+    scale: 0.4;
+  }
+  35% {
+    opacity: 0.32;
+  }
+  100% {
+    opacity: 0;
+    scale: 1.5;
+  }
+}
+
+.tour-ray {
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: tour-ray 1.1s var(--ease-out) calc(0.55s + var(--i) * 45ms) both;
+}
+
+.tour-ray.tone-sun {
+  stroke: var(--sun-400);
+}
+
+.tour-ray.tone-gate {
+  stroke: var(--gate-500);
+}
+
+.tour-ray.tone-bay {
+  stroke: var(--bay-500);
+}
+
+@keyframes tour-ray {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  45% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -1;
+    opacity: 0;
+  }
+}
+
+.tour-spark {
+  fill: var(--sun-400);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tour-spark 1s var(--ease-spring) calc(0.7s + var(--i) * 70ms) both;
+}
+
+.tour-spark:nth-child(even) {
+  fill: var(--gate-400);
+}
+
+@keyframes tour-spark {
+  0% {
+    opacity: 0;
+    scale: 0;
+  }
+  40% {
+    opacity: 1;
+    scale: 1.1;
+  }
+  100% {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+/* ── Phones: the card is a sheet on the clearer edge ──────────────────── */
+
+@media (max-width: 639px) {
+  .tour-card,
+  .tour-card.is-hero {
+    width: calc(100vw - 20px);
+    padding: 14px 16px calc(12px + env(safe-area-inset-bottom) * 0.5);
+    border-radius: 20px;
+  }
+
+  .tour-card.is-hero {
+    padding-top: 18px;
+  }
+
+  .tour-title {
+    font-size: 20px;
+  }
+
+  .tour-card.is-hero .tour-title {
+    font-size: 24px;
+  }
+
+  .tour-body {
+    font-size: 13.5px;
+  }
+
+  .tour-card[data-side='sheet-bottom'] {
+    scale: 1;
+  }
+
+  .tour-art {
+    height: 64px;
+  }
+
+  .tour-mark {
+    width: 54px;
+    height: 54px;
+  }
+}
+
+/* ── The offer: "Take a 1-minute tour" ─────────────────────────────────── */
+
+.tour-chip {
+  position: absolute;
+  left: 50%;
+  bottom: var(--above-dock, 96px);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 20px);
+  padding: 4px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--highlight), var(--shadow-2);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  translate: -50% 10px;
+  opacity: 0;
+  transition:
+    translate var(--dur-3) var(--ease-spring),
+    opacity var(--dur-3) var(--ease-out);
+}
+
+.tour-chip.is-in {
+  translate: -50% 0;
+  opacity: 1;
+}
+
+.tour-chip.is-leaving {
+  translate: -50% 6px;
+  opacity: 0;
+  transition-timing-function: var(--ease-in);
+  transition-duration: var(--dur-2);
+}
+
+.tour-chip-go {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px 0 5px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    scale var(--dur-1) var(--ease-out);
+}
+
+.tour-chip-go:hover {
+  background: var(--surface-hover);
+}
+
+.tour-chip-go:active {
+  scale: 0.98;
+}
+
+.tour-chip-mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--surface-2);
+}
+
+.tour-chip-svg {
+  width: 26px;
+  height: 26px;
+}
+
+.tour-chip-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tour-chip-text b {
+  font: 650 13px/1.15 var(--font-ui);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.tour-chip-text small {
+  font-size: 11.5px;
+  line-height: 1.2;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tour-chip-go > .ico {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+  transition: translate var(--dur-2) var(--ease-out);
+}
+
+.tour-chip-go:hover > .ico {
+  translate: 2px 0;
+}
+
+.tour-chip-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+
+.tour-chip-close:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.tour-chip-close .ico {
+  width: 15px;
+  height: 15px;
+}
+
+.tour-chip :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ── Reduced motion: end states, short fades ───────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-card {
+    transition: opacity var(--dur-2) linear;
+    scale: 1;
+  }
+
+  .tour-ripple,
+  .tour-burst,
+  .tour.is-action .tour-ripple {
+    display: none;
+    animation: none;
+  }
+
+  .tour-hint.is-placed,
+  .tour-mark .mk,
+  .tour-hole.is-nudged .tour-ring,
+  .tour-card.is-nudged {
+    animation: none;
+  }
+
+  .tour-page,
+  .tour-page.is-out {
+    animation: tour-fade 0.16s linear both;
+  }
+
+  .tour-pages {
+    transition: none;
+  }
+
+  .tour-chip {
+    transition: opacity var(--dur-2) linear;
+    translate: -50% 0;
+  }
+}
+
+html.reduce-motion .tour-card {
+  transition: opacity var(--dur-2) linear;
+  scale: 1;
+}
+
+html.reduce-motion .tour-ripple,
+html.reduce-motion .tour-burst {
+  display: none;
+}
+
+html.reduce-motion .tour-hint.is-placed,
+html.reduce-motion .tour-mark .mk,
+html.reduce-motion .tour-hole.is-nudged .tour-ring,
+html.reduce-motion .tour-card.is-nudged {
+  animation: none;
+}
+
+html.reduce-motion .tour-page,
+html.reduce-motion .tour-page.is-out {
+  animation: tour-fade 0.16s linear both;
+}
+
+html.reduce-motion .tour-pages {
+  transition: none;
+}
+
+html.reduce-motion .tour-chip {
+  transition: opacity var(--dur-2) linear;
+  translate: -50% 0;
+}
+
+@keyframes tour-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.tour-card:focus {
+  outline: none;
+}

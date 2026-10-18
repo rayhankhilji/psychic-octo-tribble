@@ -6,38 +6,105 @@ Every task follows the visual bar in `CLAUDE.md`: screenshot it, day and night, 
 
 ## P0: Housekeeping
 
-- [ ] **Base branch.** `claude/tender-keller-mnunoy` is the only branch on GitHub. Ask the owner whether to create `main` from it, so future work can go through PRs.
+- [x] **Base branch.** `main` created (2026-10-13, owner's go) from the latest work. The GitHub default branch is still `claude/tender-keller-mnunoy`: the owner can switch it to `main` in the repo's Settings → General.
+- [x] **Seeded cities.** Every founder's world comes from their profile's seed: same 34 home blocks, build blocks and HQ, a different coast, Golden Gate, island, Twin Peaks and Hills plan, parks, landmarks, towns and palette. Seed 0 is the classic map, exactly. Tested over 50+ seeds.
+- [ ] Seeded leftovers: Market's angle is fixed (only its length varies); no seeded lakes yet (needs a `lakes` list in the world spec and carved terrain; Stow Lake is in); Coit Tower next to the Presidio can read as a lone column. Done: the central park and squares are in the showcase (`ls-parks`, `ls-squares`); a North Point's beach is a strip.
+
+## P0: Launch (the owner is going live to a 10,000-person waitlist)
+
+Built and committed (2026-10-13): accounts, billing, the paywall, onboarding, the account menu, server-checked saves, export and deletion, email, scheduled pipelines, the waitlist and admin console, security, observability, CI/CD, legal pages, and the launch docs. What's left is mostly the owner's: accounts, keys, money, a domain and a lawyer. **Follow `docs/LAUNCH.md`.**
+
+- [ ] **Owner: long-lead items, 14+ days out.** Submit the Stripe App for review (4 business days a round; until it's published only 25 accounts can connect, so no paid wave before then). Activate live Stripe. Buy the domain. Start warming the Resend sending domain.
+- [ ] **Owner: the $29-a-year price in Stripe.** Run `node tools/stripe-setup.mjs --dry-run`, then for real, in test and with `--live`; set `STRIPE_PRICE_YEARLY` to the new price id, remove `STRIPE_PRICE_MONTHLY` from Vercel, turn on Adaptive Pricing and Stripe's renewal reminder emails. Lawyer: bump the terms' date, drop "switch between monthly and yearly" in §3, add a local-currency clause.
+- [ ] **Owner: accounts and settings** (`docs/SETUP.md`): Supabase Pro (migrations 0001–0006, auth providers, custom SMTP and raised email limits, the six templates), Stripe (`tools/stripe-setup.mjs`, then dashboard settings), the Stripe App, the GitHub App, Resend, Vercel Pro and every env var, Turnstile, Sentry, an uptime monitor, `docs/SECURITY.md` settings, `docs/RELEASE.md` repo settings (default branch `main`, ruleset, environments and secrets).
+- [ ] **Owner and lawyer:** fill the placeholders in `public/legal/*.html` and `public/.well-known/security.txt`; decide governing law and the entity; the EU/UK 14-day withdrawal right against "no refunds" (if waived, add the consent text to Checkout); retention periods; US auto-renewal reminders; whether the repository should stay public.
+- [ ] **Owner decisions:** void unpaid invoices when a past-due founder deletes their account? Do cancelled cities expire?
+- [ ] **First real run in test mode** end to end on a Vercel preview (sign in → pay → connect → build → delete), then wave 0 (about 25 friends) with real money.
+- [ ] **Owner: capacity for launch day** (from the load test, `tools/loadtest.mjs`): one founder opening their city and building costs ~13 database calls (was ~36), so the database is the main risk at 10,000 founders. Run Supabase on Small or Medium compute for launch week and watch database CPU. Raise Supabase's auth "Email sent" limit past the wave size. Ask Stripe Support for higher limits only if you expect a sale-sized rush (they want weeks of notice).
+- [x] Cut database calls per session: one call per request (`user_state()`, migration 0007, `server/state.ts`); a session (page load + 3 builds) is 11–13 calls instead of 31–34; has-paid is still read on every request. Ship 0007 in its own PR first (the code falls back to separate reads without it). Left: a stale timeline rebuild still reads `metric_snapshots` separately; the waitlist gate in `access.ts` could reuse the plan from `user_state`.
+- [ ] Optional: env-overridable provider base URLs (loopback only) so e2e can run without the fetch-rewriting preload (patch in the QA report, kept in `tools/fake-providers.mjs` comments).
+- [x] Admins need a second factor: `/api/admin/*` refuses sessions below `aal2` (`mfa_required`), and the console walks an admin through adding an authenticator the first time. `ADMIN_MFA=off` for local testing.
+- [x] Email settings in the account menu (weekly digest, product updates).
+- [x] Fewer database calls per visit (reads rate-limited in memory; lastSeen written once a day in one call).
+- [ ] Known gaps: founders must remove the Stripe App themselves after deleting; per-instance limits on telemetry; `style-src 'unsafe-inline'` (inline `style=` attributes in the HUD). Several cities on one Stripe account is allowed on purpose: co-founders share one company account.
+
+## P0: Before launch (2026-10-14)
+
+**The owner's step-by-step is `docs/OWNER_STEPS.md`** (accounts, the three tokens in the environment's secrets, the GitHub App, the Stripe App, email, the domain, live mode). Claude does the rest.
+
+- [ ] **Owner: connect the new Supabase and Vercel** (connectors at claude.ai/customize/connectors, or `SUPABASE_ACCESS_TOKEN` / `VERCEL_TOKEN` in the environment's secrets), then a new session can create the database, run migrations 0001–0008, set env vars and deploy.
+- [ ] **Owner: say "push to main"** (a production deploy; `main` is behind this branch). Switch GitHub's default branch to `main`.
+- [ ] **A real-device pass** on a GPU laptop and a phone: the flicker fix, the grand opening, the tour, settings, the black-at-night phone render seen once in SwiftShader, the growth clip's MP4 path on Safari, sound by ear.
+- [ ] **Optional:** GA4 through Composio (Composio Pro, an auth config restricted to `analytics.readonly`, `CONNECT_VIA=composio`). Amplitude and Mixpanel are possible later; Plausible never (its daily salt inflates users).
+- [ ] Left from this wave: GTAO noise crawls faintly when panning at High (needs world-anchored noise in the AO pass); the plane prices ($12M/$30M/$50M) deviate from the gate-scaling rule on purpose; the ceremony's crowd could scale with real customers.
+
+- [x] The windmill stands in Golden Gate Park beside the Great Highway; the highway meets the grid at both ends; town streets no longer buried; unexplored land under permanent fog with "?" glyphs (`unexploredLand()`, `Unknowns`; tooltip "Unexplored · ?"). Left: the camera's pan limit (`LIMIT` in stage.ts) can't centre on the south glyphs; steep contour streets have jagged cut banks up close.
+
+## P1: Design pass follow-ups (2026-10-13)
+
+- [x] **Re-render the launch images after the fog change** (done; rerun after big visual changes): `node tools/brand-assets.mjs social --base=<dev url>` (the social kit) and `node tools/email-assets.mjs` (the invite's city picture) still show the old cloud look.
+- [x] **Owner confirmed (2026-10-14):** the invite email keeps the price ("$29 a year"), matching the terms page.
+- [ ] **Lawyer:** privacy §2 says no marketing email unless asked, but the weekly digest is on by default; and the legal pages use British spelling while the product uses US.
+- [ ] **Front door on phones:** the camera stops at `minZoom` 0.32, so the top half shows downtown cropped; let attract mode zoom out further on portrait screens (check shadows and the far plane).
+- [ ] **Mobile help button:** the floating "?" under the mini card is heavy; consider a small icon in the top bar.
+- [ ] **A real-device pass** in a GPU browser (pointer hover, the camera drift's smoothness, Turnstile with network) and a Litmus/Email on Acid run for the emails (Outlook on Windows, Gmail dark mode on Android).
+- [ ] **Next brand assets:** Stripe App listing images (≥1,600 px, no real customer data), a short golden-hour loop for X and Product Hunt, a zip on the press page.
+
+## P1: The reference-image quality push (in progress)
+
+The owner sent reference images (the Silicon Valley title slide is the art-direction target; GTA's Vinewood Hills for the Hills; SimCity BuildIt and 2013 for tidy blocks) and a screenshot of our bay they hate. Four agents worked on it, each owning its own files. See CONVERSATION_LOG for their words.
+
+- [x] **CPU.** Frames are paced: 60 fps while anything moves, 30 fps once the city has been calm for 4 s; hover raycasts at most every 100 ms and never while dragging.
+- [x] **Places menu** (pin button or G): one click to Downtown, the Hills, the Wharf, the Marina, the Airport and your island.
+- [x] **Downtown and brand assets.** Two new tower styles, a roof and signage kit, richer plot items and HQ levels, new yacht hulls and plane liveries.
+- [x] **Mansion choices.** Three Hills houses and three island estates to choose from. The first pick is free; rebuilding costs 25% of the tier's value in game money.
+- [x] **Neighbourhoods.** One street style per block, the same building line on every street, corner homes that turn the corner, richer homes, block grounds with evenly spaced street trees, gardens and corner stores.
+- [x] **Helicopter.** It comes with the island, parks on the airport helipad, and flies you to your estate's pad (and back) from Your home, with the camera following (`City.flyHelicopter`, `Stage.follow`).
+- [x] **Landscape.** The Hills as a real neighbourhood on contour streets that come down to the grid; Twin Peaks with two summits; Yerba Buena a clean dome; real backdrop towns instead of stripes; the airport on fill with a lit runway, terminal and helipad; a bigger island with a cove, jetty, beach and lighthouse; Treasure Island rebuilt.
+- [x] Landscape leftovers: warm lamp pools at night (Hills, Market, Embarcadero, Marina, island); the Marina rebuilt (breakwater, yacht club, Wave Organ, docks of sloops); Marina Green; Hyde Street Pier with the Balclutha and Eureka; Golden Gate Park (JFK Drive, Stow Lake, Spreckels Lake, polo field, bison); the Hills' oak ravines and chaparral from `az=225`; the sign's fire road; backdrop towns lit at night; the island's grounds. The classic island's cove, jetty and superyacht now face the camera, with the launch site behind the house.
+- [x] **Bay.** The Bay Bridge is one continuous structure from Rincon Point through Yerba Buena to Oakland; the Golden Gate has its viaduct, toll plaza and Waldo Tunnel; marquee bulbs on the TINYTOWN sign come on at dusk; new ferry, container ship, sloops, tugs and wakes; landmarks in detail.
+- [x] Bay leftovers: the Waldo Tunnel's headwall sits in a planted bank; the Oakland landing has an abutment, a sign gantry, lamps and the Bay Bridge Trail (Downtown Oakland's towers moved off it); the Cliff House is cleared by a line-of-sight test and has its lit sign. Also: a new airport (vaulted glass terminal, concourses, jet bridges with planes nose-in, ground crews, a control tower, runway and taxiway lights), the Palace of Fine Arts in detail with a lagoon reflection, City Hall's ribbed dome and portico, floodlit landmarks at night, art deco Bay Bridge anchorages. Left: a faint streak where the Waldo bank meets its east wing wall; gate numbers face away from the default camera.
+- [x] **Over-budget plot items** trimmed to budget with no visible change (stadium 7.9k → 4.9k, university 6.4k → 4.9k, amusement park 6.1k → 4.9k, supertall 8.5k → 7.9k, corner shops 5.4k → 5.0k); shared helpers (`post`, `ball`, `tube`, lighter people, sills and the founder's car) cut ~10.8k across every item and home. Follow-ups: the amusement park's paving is empty; the university's Palm Drive crowns overlap the south range's roof.
+- [x] The launch site moved south-east of the estate, so the rocket no longer hides the estate's helipad from the default camera (a map test keeps it off the camera side). The founder's Hills driveway now joins the house pad.
 
 ## P1: Finish the visual overhaul (leftovers from the parallel agents)
 
 The four agents' work is committed. Items each one reported as unfinished are listed here.
 
-- [ ] **Perf pass.** At handoff, `tools/perf.mjs` (day 540, `quality=high`, one render including the shadow pass) measured **755 draw calls, 2.27M triangles, 108 shader programs**. That's up from about 376 calls and 1.28M triangles before the new models. Target: a few hundred calls and under about 1.5M triangles, holding 60 fps on a mid-range laptop.
-  - **Cheapest wins:** batch district and plot items through `Batch` the same way homes are (towers and items are separate meshes today); instance park and forest trees and the tents; trim the over-budget models (see the models leftovers below).
-  - **Shadows:** consider excluding small props from casting.
-  - **Shader programs:** check why there are 108; per-model material clones may be defeating program sharing.
-  - **Then:** confirm frame time on a real GPU and tune adaptive quality (`stage.ts` `adapt()`).
-- [ ] **Bundle size.** The production chunk is over 1 MB. Split out the showcase-only code and lazy-load `ui/thumbnails.ts` and the post-processing passes if that helps first paint.
+- [x] **Perf pass: draw calls.** 742 → **263** draw calls (day 540, `quality=high`, shadow pass included). `Batch` now merges any GeoBuilder/Kit model (lit layers too) and keeps unmergeable parts on the proxy; grounds, items, founder homes, planes, yachts, Life's boats and airliners, and static scenery are batched; Ferris gondolas and sea lions instanced. `tools/perf.mjs` lists the objects that cost the most calls.
+- [x] **Lag (CPU).** The replay was rebuilding ~5,400 homes for a city of ~350 (planWorld broke "growth only adds"); fixed and tested. Homes, grounds, tents and meadows build from a frame-budgeted queue (4 ms per replay frame, 40 ms after a jump). Replay JS 30 s → under 8 s here; worst frame 1.4 s → ~0.13 s.
+- [x] **Lag (GPU).** Half-res GTAO, pixel ratio 1.5/1.25/1, MSAA 4/2/0, shadows 4096/2048/1536 by quality; adaptive quality aims for ~50 fps all session and steps back up.
+- [ ] **Perf, what's left.** Confirm frame time on a real GPU (no GPU in the container). "Other" per-day JS is HUD/GameUI DOM work (~10 ms p95 here); profile it on a laptop. Traffic is now the biggest single cost (73 calls: 9 models × 4 meshes + shadows); HQ is 19. Triangles are ~2.2M *including* the shadow pass (about 1.1M per pass); trimming the over-budget models helps. 107 shader programs (mostly post passes and per-key variants): check compile time on a real GPU. Then confirm frame time on a real GPU and tune adaptive quality (`stage.ts` `adapt()`).
+- [x] **Bundle size.** three.js is its own chunk (170 kB gzip, cached across our releases); the app chunk is 163 kB gzip. The boot screen paints from `index.html` before any JS, so lazy-loading thumbnails or post passes wouldn't change first paint much.
 
 ## P2: Polish and bugs
 
-- [ ] **Rocket missing in the boosted demo.** With `/?demo&fresh&boost=40`, the launch site at day 540 shows the launch tower but no rocket on the pad. Check whether the demo founder can afford the $2B rocket by then (`src/game/demo-script.ts`, entry 536) and whether `city.ts` places it. The README `island.png` was taken without it.
-- [ ] **Cloud banks over locked land** are bright white at night. Tint them with the atmosphere (they should go blue-grey under moonlight), or soften them with the fog colour.
-- [ ] Apartments average about 1,530 triangles, just over the 1,500 home budget. Trim them if perf needs it.
+- [x] **Rocket missing in the boosted demo.** The boosted demo crosses $1M MRR on day 537, not 536; fixed and tested. (The README `island.png` still lacks it: refresh it.)
+- [x] **Cloud banks over locked land** go moonlit blue-grey at night (`cloudMaterial`/`setCloudLight` in `models.ts`, called from `city.ts`).
+- [x] **Lighthouse beam** was built backwards as a flat wedge and shone through the island's clouds; now a soft beam, only once the island is yours.
+- [x] **Scenery tooltips** (City Hall, Market Street, the Wharf…) were never raycast; fixed.
+- [x] **Kites made the shared smooth material double-sided** for every model; fixed.
+- [x] **Night blow-outs:** Ferry Building nave and clocks, glass flatirons on Market.
+- [x] **Suburbs** read as a field of dots from above; Daly City is now terraced rows on streets over the hills, with muted roofs. The East Bay hills houses are still scattered: give them the same treatment.
+- [x] **TinyTown Hills redesign** (owner: "really not great quality"): Twin Peaks Boulevard with curbs, walls, lamps and palms; terraced lots; chaparral on golden hills; a family of four house styles in `render/hills.ts`.
+- [x] **Treasure Island** (Building One, hangars, streets, Clipper Cove), the **Bay Bridge east span** (twin decks, four-legged tower, suspension cables), **Oakland** towers, **Daly City and the East Bay** as terraced streets.
+- [ ] Next visual targets the owner will notice: the airport, the Marina and Palace of Fine Arts close up, Golden Gate Park detail, the founder's island estate, and the TINYTOWN sign's hillside.
+- [x] Apartments measure 1,195 triangles on average over real seeds (max 1,610), under the home budget.
 - [ ] `buildings.ts` leaves out the south-west street lamp of each block because `city.ts` puts a junction lamp there. If that lamp moves, add it back.
 - [ ] The camera auto-framing ease feels slow when jumping across the timeline. Check on a real GPU (in SwiftShader it never converges, which is expected).
-- [ ] Check that the house-pick **swap fee** (25% of the house's value, in game money) is wired in the home dialog (see GAME_DESIGN).
-- [ ] Accessibility pass: focus order, aria labels on icon buttons, contrast of small text on the light panels.
+- [x] Check that the house-pick **swap fee** (25% of the house's value, in game money) is wired in the home dialog (see GAME_DESIGN). (first pick free, then 25% renovation with a confirm step)
+- [x] Accessibility pass: focus order, aria labels on icon buttons, contrast of small text on the light panels. (AA tokens day and night, modals trap and return focus, labels, live regions)
 
 ## P3: Game features designed but not built
 
 All in `docs/GAME_DESIGN.md` and HANDOFF §7.
 
-- [ ] **"While you were away" summary** when the app opens: income since last visit, what was built, decay or recovery, new unlocks.
-- [ ] **Celebrations:** a moment and a share prompt when the TINYTOWN sign relights; bigger fireworks on MRR milestones; a street festival at high satisfaction and protest signs at City Hall at low satisfaction.
-- [ ] **Moon scene:** after the rocket launch, cut to the moon, show the moon house, then the return. The moon sprite during flights (`src/render/moon.ts`) is the current stand-in.
-- [ ] **Sound:** ambient city by day and night, waves and gulls, construction, fireworks, UI ticks. Off by default or very quiet, with a mute toggle.
-- [ ] **More $1B-a-month projects:** a second bridge, a new district across the bay (Oakland side), an international airport upgrade, "launch a venture" from the venture studio.
+- [x] **"While you were away" summary** when the app opens. Logic done and tested (`src/game/away.ts`, `lastSeen`/`markSeen` in `save.ts`); the card (`Hud.showAway`) is being built by the UI agent, then main.ts wires it at boot with a `?away=N` preview param for the demo. Done: card is `Hud.showAway`; try `/?demo&away=30`.
+- [x] **Celebrations, part 1:** fireworks shows over the bay for MRR milestones (smaller downtown for customer milestones); a street festival on Civic Center Plaza at satisfaction 85+, an orderly protest at City Hall below 40 with a banner naming the weakest part.
+- [x] **Celebrations, part 2:** when the TINYTOWN sign relights on the live day, the camera flies to the hillside for the fireworks and the feed offers "Share this" (a postcard). Feed toasts can carry an action button.
+- [x] **Moon scene:** a ~30 s cinematic: lift-off from the island, a tilt up into space, the founder's moon house (a lit geodesic dome, Earth with the bay's lights, a rover, a TinyTown flag, a sign with the city's name), and the return. Skippable (Esc), with a reduced-motion version. `?moon` / `?moon=<seconds>` in dev or `?debug`; `window.__moonTrip.seek(t)`. Left: on portrait screens the moon shots are wide and the house reads small; sailboats can show behind the climbing rocket.
+- [x] **Sound:** synthesised in the browser (`src/audio/`), off by default, speaker button or M. Left: someone should listen and tune levels; no volume slider yet.
+- [ ] **More big-ticket projects:** a second bridge, a new district across the bay (Oakland side), an international airport upgrade, "launch a venture" from the venture studio.
 
 ## P4: Hosted product (the next big phase)
 
@@ -48,14 +115,14 @@ The order agreed with the owner: the game loop first (done), then hosting.
 - [ ] **Connect with Stripe:** OAuth / Stripe Apps, read-only, no pasted keys. Reject test-mode data for the economy.
 - [ ] **PostHog** for monthly active users (the housing population), with a manual entry fallback. **GitHub** as an app/OAuth instead of a token.
 - [ ] **Brand import:** sign up with the startup name and URL, pull the logo and brand colour, and show them on HQ's rooftop sign and street plaque.
-- [ ] **Billing:** $12/month or $99/year with Stripe Checkout, **no free trial**. Ask the owner about a 14-day money-back guarantee. The paywall goes before connecting real data; the demo stays free to view.
+- [x] **Billing:** $29 a year (annual only) with Stripe Checkout, no free trial, no refunds. Setup is free; the paywall comes after it, and a one-time "$9 first year, then $29" offer shows on first close (48 h, server-tracked).
 - [ ] **Deploy:** Vercel (front end + API routes) + Supabase. Don't buy a domain without asking.
 
 ## P5: Social and growth
 
 - [ ] **Public world page** (opt-in, metrics hidden by default) with a shareable URL.
 - [ ] **Flights and visits:** buy a plane, pick a founder, play a cinematic flight (taxi, take off, 5–10 s over the ocean, land), then explore their city as a visitor and leave a postcard.
-- [ ] **Growth recap video:** export the replay as a 15-second clip.
+- [x] **Growth recap video:** Share → Growth clip: 15 s, square or vertical MP4/WebM, filmed frame by frame with a branded overlay and the real numbers (`src/ui/recap.ts`). Left: one run in real Chrome and Safari to confirm the MP4/H.264 path and Share on a phone; a 15 s square clip is ~10–15 MB (`bitrateFor()`).
 - [ ] **Leaderboards / public score**, satisfaction first (safer than MRR).
 
 ## P6: Later
@@ -75,9 +142,9 @@ From the four agents' final reports at handoff (homes, models, UI, traffic). The
 Done: design system (Bricolage Grotesque + Geist, sand/ink/Golden Gate orange/Bay blue tokens, automatic night theme), logo mark, favicon, OG image, boot screen, HUD, clock arc, dock chart, toasts, build drawer and bottom sheet with 3D thumbnails, home ladder, connect/share dialogs, postcard share image, mobile layout.
 
 - [ ] **Watch the motion in a real browser.** Headless SwiftShader never runs CSS transitions, so these have never been seen live: count-up numbers, toast and drawer entrances, the boot-screen build-up.
-- [ ] Night share-card screenshot after the resolution fix (the step timed out). The share card also always uses day colours; consider a night variant.
-- [ ] Thumbnails take seconds each in SwiftShader. Measure on a real GPU, and dispose the second WebGL context (`ui/thumbnails.ts`) after prewarming.
-- [ ] Left rail on short screens (< ~800px tall): it scrolls with no visible hint when the city card and both alerts overflow.
+- [x] Night share-card screenshot after the resolution fix (the step timed out). The share card also always uses day colours; consider a night variant. (postcard follows the day/night theme: `ui/postcard.ts`)
+- [x] Thumbnails take seconds each in SwiftShader. Measure on a real GPU, and dispose the second WebGL context (`ui/thumbnails.ts`) after prewarming. (lazy studio, toBlob, one context, idle-paced; still measure on a real GPU)
+- [x] Left rail on short screens (< ~800px tall): it scrolls with no visible hint when the city card and both alerts overflow.
 - [ ] Speed control cycles 1× → 3× → ½× through one button. A segmented control would need `onSpeed(index)` in `main.ts`.
 - [ ] Accessibility of the 3D canvas: plot picking is mouse/touch only, with no keyboard or screen-reader path.
 - [ ] The connect dialog shows "TinyTown Pro · $12/month or $99/year". This matches the owner's pricing, but there's no billing behind it yet (P4).
@@ -87,7 +154,7 @@ Done: design system (Bricolage Grotesque + Geist, sand/ink/Golden Gate orange/Ba
 Done: shared `Kit` in `towers.ts` with three extra lit layers (window glass tinted by day and lit at night, neon with chase/blink/shimmer `FX`, LED screens), plus facade, signage and pixel-font helpers. Four seeded tower styles (555 California, Millennium, 181 Fremont, deco), the Transamerica pyramid, the Salesforce-style spire with the transit-centre park, HQ levels 0–4 with a rooftop sign and street plaque, every plot and block item, all nine founder homes, the vehicles and `airliner()`, and cloud bank, plot marker and encampment. Close-ups: `/showcase.html?set=tt-one&what=item:stadium` (also `home:villa`, `plane:jet`, `hq:3`, `airliner`).
 
 - [ ] **Use the shared `airliner()` in `life.ts`.** `life.ts` still builds its own private airliner (around line 298) because it needs strobe and beacon materials. The shared `models.ts` `airliner(seed)` (A320-class, faces +x, five fictional liveries) puts its nav lights in the neon layer instead. Switch over and drive the blinking through the neon `FX`.
-- [ ] **Trim over-budget models:**
+- [x] **Trim over-budget models** (supertall 8.2k, HQ2 6.5k, HQ4 8.0k, amusement park 5.4k, shops 5.0k; pyramid 5.6k and university 6.2k still a bit over):
 
   | Model | Triangles | Target |
   |---|---|---|
@@ -96,13 +163,13 @@ Done: shared `Kit` in `towers.ts` with three extra lit layers (window glass tint
   | HQ level 4 | 9.0k | ~8k |
   | Amusement park | 9.8k | ~5k |
   | Shops | 5.9k | ~5k |
-- [ ] Rocket: stronger Starship grid fins and chines; the stainless reads close to white.
-- [ ] Day yacht: flare the hull more (slightly boxy).
-- [ ] Concorde: refine the wing planform.
-- [ ] Ballpark: soften the dark left-field bleachers.
-- [ ] Hacker house and studio: more rooftop detail.
-- [ ] Encampment: close-up review (handle with dignity).
-- [ ] Check founder homes and block items from the back (`az=225`).
+- [x] Rocket: stronger Starship grid fins and chines; the stainless reads close to white.
+- [x] Day yacht: flare the hull more (slightly boxy).
+- [x] Concorde: refine the wing planform.
+- [x] Ballpark: soften the dark left-field bleachers.
+- [x] Hacker house and studio: more rooftop detail.
+- [x] Encampment: close-up review (handle with dignity).
+- [x] Check founder homes and block items from the back (`az=225`).
 
 ### Traffic and pedestrians (traffic agent's report)
 
@@ -116,8 +183,8 @@ Done:
 - **Showcase sets:** `cars` (`&only=sedan,taxi`) and `people`.
 
 - [ ] **Bridge ramps:** bridge decks end in fades instead of ramps into the city (the decks float about 2.3 above the approaches). Draw ramps in `landmarks.ts` so bridge traffic joins the grid.
-- [ ] **Streetcars vs cars:** cars crossing Market or Powell can pass through an F-line car or cable car. Wire `traffic.blocked` from `Life` (cable cars) and `Train` (F-line).
-- [ ] Fading cars still cast a full shadow.
+- [x] **Streetcars vs cars:** cars wait at junctions for running F-line streetcars and cable cars (soak-tested, no gridlock).
+- [x] Fading cars still cast a full shadow (dithered depth material for cars and pedestrians).
 - [ ] Shadow side: the shadow offset (0.03) is bigger than car ground clearance, so cars now cast shadows from both faces. Check other low objects for missing shadows.
 - [ ] Not built yet: pedestrian walk signals, lane changes on the bridges, people on Market's plazas and the piers, umbrellas in rain.
 - [ ] Cab (638) and sports car (648) are about 8% over the ~600 triangle budget.

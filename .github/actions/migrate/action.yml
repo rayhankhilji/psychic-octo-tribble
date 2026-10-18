@@ -1,0 +1,76 @@
+name: Apply Supabase migrations
+description: >
+  Links one Supabase project, shows which files in supabase/migrations it hasn't
+  run yet, and applies them in order with `supabase db push`. Skips with a
+  warning when the environment has no credentials yet, so CI stays green before
+  the owner sets it up.
+
+inputs:
+  name:
+    description: The environment's name, for the log and the run summary.
+    required: true
+  access-token:
+    description: SUPABASE_ACCESS_TOKEN (a personal access token from the Supabase dashboard).
+    required: true
+  db-password:
+    description: SUPABASE_DB_PASSWORD (the project's Postgres password).
+    required: true
+  project-ref:
+    description: SUPABASE_PROJECT_REF (the 20-letter project id).
+    required: true
+  cli-version:
+    description: Supabase CLI version, pinned so a CLI release can't change how migrations run.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check credentials
+      id: ready
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+        HAS_TOKEN: ${{ inputs.access-token != '' }}
+        HAS_PASSWORD: ${{ inputs.db-password != '' }}
+        HAS_REF: ${{ inputs.project-ref != '' }}
+      run: |
+        if [ "$HAS_TOKEN" = true ] && [ "$HAS_PASSWORD" = true ] && [ "$HAS_REF" = true ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=No migrations applied to ${NAME}::The ${NAME} environment needs SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD and SUPABASE_PROJECT_REF (docs/RELEASE.md)."
+          echo "Skipped: the **${NAME}** environment has no Supabase credentials yet." >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    # The credentials are given only to the steps that run the CLI, never to the
+    # step that installs it.
+    - if: steps.ready.outputs.ready == 'true'
+      uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+      with:
+        version: ${{ inputs.cli-version }}
+
+    - name: Link and list pending migrations
+      if: steps.ready.outputs.ready == 'true'
+      shell: bash
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.access-token }}
+        SUPABASE_DB_PASSWORD: ${{ inputs.db-password }}
+        SUPABASE_PROJECT_REF: ${{ inputs.project-ref }}
+      run: |
+        supabase link --project-ref "$SUPABASE_PROJECT_REF"
+        echo "::group::Migration history (local and remote)"
+        supabase migration list --linked
+        echo "::endgroup::"
+        supabase db push --linked --dry-run
+
+    - name: Apply
+      if: steps.ready.outputs.ready == 'true'
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.access-token }}
+        SUPABASE_DB_PASSWORD: ${{ inputs.db-password }}
+      run: |
+        supabase db push --linked --yes
+        files=(supabase/migrations/*.sql)
+        echo "Migrations applied to **${NAME}** at \`${GITHUB_SHA:0:7}\` (newest: \`${files[-1]##*/}\`)." >> "$GITHUB_STEP_SUMMARY"

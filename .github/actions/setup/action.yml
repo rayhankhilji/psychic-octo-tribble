@@ -1,0 +1,16 @@
+name: Set up Node and dependencies
+description: Node 22 (the version Vercel runs) with npm's download cache, then a clean install from package-lock.json.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 22.x
+        cache: npm
+
+    # `npm ci` installs exactly what the lockfile says and fails if package.json
+    # and the lockfile disagree, so CI builds what Vercel will build.
+    - name: Install dependencies
+      shell: bash
+      run: npm ci --no-audit --no-fund

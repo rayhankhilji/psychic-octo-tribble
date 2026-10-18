@@ -1,0 +1,99 @@
+# TinyTown hosted: the design
+
+How the paid, hosted product works: accounts, billing, the paywall, connecting a founder's real data, saves, and the server-checked game. The API contract is `src/api/contract.ts`. Provider setup (what accounts to create, which keys go where) is `docs/SETUP.md`.
+
+## Decisions (agreed with the owner)
+
+- **Hosting:** Vercel (static front end + one serverless function for the API) and Supabase (auth + Postgres). No domain bought without asking.
+- **Price:** $29 a year, through Stripe Checkout (local currencies via Stripe Adaptive Pricing). **No monthly plan, no free trial, no refunds.** The demo stays free to look at.
+- **Setup is free; the paywall comes when the city opens** (the owner, 2026-10-15; it used to come before connecting). Order: demo (and its guided tour) → create an account → connect Stripe → connect GitHub (optional) → choose where active users come from → "Build my city" → the paywall, led by their own headline numbers → Checkout → the grand opening. No card is needed until the paywall.
+- **One introductory offer, once:** the first time a founder who has never paid closes the paywall, it turns into "$9 for your first year, then $29 a year", open for 48 hours from that moment by the server's clock (below). After that the paywall is $29 again.
+- **No pasted keys for Stripe.** Founders install the TinyTown Stripe App (OAuth 2.0, read-only permissions) and approve it on Stripe.
+- **The one rule holds:** nothing earns or sells in-game money. Billing buys access to the hosted game, never money, land or speed.
+- **Metrics are honest:** test-mode Stripe data never drives the economy (allowed only when `ALLOW_TEST_MODE=1`, for development).
+
+## Shape
+
+```
+browser (Vite build, three.js)
+  │  supabase-js, lazy-loaded: sign-in only (magic link, Google, GitHub)
+  │  everything else: fetch /api/* with the Supabase access token
+  ▼
+/api/*  ── one handler, `server/app.ts` (web-standard Request → Response)
+  │         on Vercel: one Node 22 function built by `server/build-vercel.mjs` (Build Output API v3);
+  │         locally: `server/index.ts` through the same handler (`server/node.ts` adapts Node's req/res)
+  ├─ Supabase Auth: who is this token? (GET /auth/v1/user)
+  ├─ Supabase Postgres via PostgREST with the service-role key (server only)
+  ├─ Stripe (our account): Checkout, customer portal, webhooks
+  ├─ Stripe (the founder's account): Stripe App OAuth tokens → subscriptions → MRR history
+  ├─ GitHub App: installation tokens → releases and commits
+  └─ PostHog (optional): monthly active users
+```
+
+- **Vercel build:** `npm run build && node server/build-vercel.mjs` (set in `vercel.json`) writes `.vercel/output`: the static site plus one function at `/api`. Vercel's own TypeScript compile isn't used, because the server imports `.ts` files across `src/`; Vite bundles the function instead and the build ends with a smoke test.
+- The server has **no npm dependencies**: Stripe, Supabase and GitHub are plain `fetch` calls, as `server/sources.ts` already does. The browser adds one dependency, `@supabase/supabase-js`, loaded only when someone signs in.
+- **Local development keeps working with no accounts.** Without `SUPABASE_URL`, `/api/config` says `hosted: false`, the app runs the demo or the `.env` integrations exactly as before, and no sign-in UI appears.
+
+## Data (Supabase Postgres, `supabase/migrations/`)
+
+All tables have row-level security on and **no policies**: the browser can't read or write them directly. Only the server, with the service-role key, touches them.
+
+| Table | Holds |
+|---|---|
+| `profiles` | one per user: world seed, world name, joined/last-seen days, when the first-year offer was first shown and used (0009) |
+| `subscriptions` | our Stripe customer and subscription, status, interval, period end (written by the webhook) |
+| `connections` | per user and provider: account id, display name, livemode, **encrypted** refresh token or key, metadata |
+| `worlds` | the founder's actions (builds, home picks) as JSON |
+| `timelines` | cached metrics timeline per user, with when it was fetched |
+| `user_state()` (function) | the caller's profile, plan and asked-for rows in one call (below) |
+| (no `oauth_states`) | OAuth `state` is an HMAC-signed, expiring token naming the user, plus a nonce in an HttpOnly cookie so a callback only completes in the browser that started it |
+
+Secrets at rest (Stripe refresh tokens, PostHog keys) are encrypted with AES-256-GCM under `TOKEN_ENCRYPTION_KEY`, which lives only in the server environment.
+
+### One round trip per request
+
+Every signed-in route needs the same few rows: the profile, the plan (to answer 402), and depending on the route the connections, the world or the cached timeline. `public.user_state()` (migration `0007`) returns them in one call, read in one transaction; `server/state.ts` calls it and keeps the answer on the request (`ctx.userState`), so each row is read at most once per request.
+
+- **"Has paid" is never cached between requests.** The plan comes back with every call, so a revoked comp or an ended plan loses access on the very next request, on every instance.
+- **First sight:** the function makes the profile if there isn't one (with the seed the server picked) and says so (`created`), so `/api/me` costs one call even for a new founder. 0006's guard still applies: no profile for a deleted user, and the request gets 401.
+- **Write routes count their shared rate limit in the same call** (it calls `rate_hit()` from 0002). The in-memory window still runs first, so a loop costs no database call at all.
+- **No writes that change nothing:** reading the world doesn't create a row (the first build inserts it), and `PATCH /api/world` with the values already stored sends no update.
+- **Before the migration has run** (the code can go live ahead of the database, `docs/RELEASE.md`), PostgREST answers 404 and the server falls back to separate reads in parallel, asking again once a minute per instance.
+
+What one founder's visit costs (no `ACCESS_MODE`; `tools/loadtest.mjs` measures it):
+
+| Request | Database calls |
+|---|---|
+| `GET /api/me` | 1 |
+| `GET /api/world/actions` | 1 |
+| `GET /api/timeline` | 1 cached; 3 when it's rebuilt (plus Stripe and GitHub) |
+| `PATCH /api/world` (lastSeen, once a day) | 2 (1 if nothing changed) |
+| `POST /api/world/actions` | 2 |
+| A page load and three builds | 11 to 13 (was 31 to 34) |
+
+With `ACCESS_MODE=waitlist`, the gate (`server/access.ts`) adds two reads (waitlist and plan) once per founder per five minutes per instance, and one write the first time an invited founder signs in.
+
+## The game on the server
+
+`POST /api/world/actions` re-runs `simulate()` from `src/game/economy.ts` on the server's own copy of the founder's timeline, with the saved actions plus the new one, and saves it only if the game accepts it (money, land and unlock rules all apply). The browser simulates too, for instant feedback, but the server's answer is the truth. Treasury is never stored; it's always recomputed from metrics and actions.
+
+## Flows
+
+- **Setup before paying:** the connect routes (`/api/connect/*`, the repository pick, the users source, Google Analytics) and `GET /api/preview` need a sign-in and the waitlist gate, not a plan. They keep their rate limits (10 to 20 a minute per founder, writes counted in Postgres), and the timeline they build is cached for 15 minutes like any other, so an unpaid account can't hammer anyone's Stripe or GitHub. The city itself (`/api/timeline`, `/api/world*`) stays paid (402).
+- **The preview:** `GET /api/preview` builds (or reads the cached) timeline exactly as `/api/timeline` does, and answers only the headline numbers (`src/api/preview.ts`): MRR, customers, active users if a source gives them, releases, commits in 30 days, the first paying day, days of history, a 48-point MRR sparkline. The setup cards and the paywall's "your city is ready" read it.
+- **Back pay starts when the city opens:** `profiles.joined_at` is set when a founder has both a connection and a plan, whichever comes second (the Stripe or GitHub callback with a plan, or the webhook's first paid event with a connection).
+- **Checkout:** `POST /api/billing/checkout` creates (or reuses) our Stripe customer for the user and a Checkout Session in subscription mode for the chosen price; the browser goes there; Stripe sends `checkout.session.completed` and `customer.subscription.*` to the webhook, which writes `subscriptions`. Back at `/?checkout=success`, the app waits for the webhook and opens the city (the grand opening plays the first time); a founder who paid before connecting goes on to setup.
+- **The first-year offer** (`server/offer.ts`): `GET /api/me` carries `offer` (`status` unseen/open/expired/used, `expiresAt`, the first-year `amount` and the `regular` price, worked out from the coupon Stripe actually has) for founders who have never paid, when `STRIPE_OFFER_COUPON` is set. The browser shows it the first time the paywall closes and calls `POST /api/billing/offer/seen`, whose first call sets `profiles.offer_shown_at` (later calls change nothing). `POST /api/billing/checkout { interval: 'year', offer: true }` is checked on the server (shown under 48 hours ago, never used, never paid before: 409 otherwise) and adds the coupon as the session's only discount (no promotion code box beside it) plus `offer` in the subscription's metadata. The webhook's first paid event for such a subscription sets `offer_used_at`. The coupon is 68.97% off, `duration: once`: $29 becomes $9.00 for the first invoice, renewals are $29, and with Adaptive Pricing the same percentage comes off the local price.
+- **Funnel** (`server/analytics.ts`, PostHog): `signed_up`, `connected_stripe`/`connected_github`, `paywall_shown` (with `teaser`), `offer_shown`, `checkout_started` (with `offer`), `offer_accepted`, `plan_started` and `checkout_completed` (with `plan` and `offer`).
+- **Stripe App install:** `POST /api/connect/stripe` returns the marketplace install link with a signed `state`; Stripe redirects to `/api/connect/stripe/callback?code=…&state=…`; the server exchanges the code at `https://api.stripe.com/v1/oauth/token` with our app's secret key, stores the encrypted refresh token, and redirects to `/?connected=stripe`. Access tokens last an hour; the server refreshes as needed (refresh tokens roll on each use).
+- **GitHub App install:** `POST /api/connect/github` returns `https://github.com/apps/<slug>/installations/new?state=…`; GitHub redirects to the callback with `installation_id`; the server checks the installation belongs to the user (via the user's GitHub OAuth code from the same flow), saves it, then the founder picks a repository.
+- **Timeline:** `GET /api/timeline` returns the cached timeline if fresh (15 minutes), otherwise rebuilds it from the founder's connections with the same `revenueHistory`/`shippingActivity`/`mergeHistory` code the local server uses.
+
+## Security checklist
+
+- Every `/api` route except config, the webhook and the OAuth callbacks requires a valid Supabase token; the city's data routes also require a paid plan (402). Setup (connecting and the preview) is open to any signed-in founder through the waitlist gate, rate-limited.
+- The offer is decided on the server only: its window is a database timestamp, its eligibility is checked again at Checkout, and the coupon id never comes from the browser.
+- Webhook: Stripe signature (`Stripe-Signature`, HMAC-SHA256 over `t.payload`, 5-minute tolerance), checked before parsing.
+- OAuth `state`: HMAC-SHA256 under `STATE_SECRET`, carries user id, provider and expiry (10 minutes); rejected if tampered or stale.
+- No secret reaches the browser; `/api/config` exposes only the Supabase URL and anon key.
+- Rate limits: cheap per-user throttles on actions and timeline rebuilds.

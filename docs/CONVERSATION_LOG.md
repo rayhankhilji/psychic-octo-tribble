@@ -210,3 +210,17 @@ The house is a free reward; the airport and jets you buy. Old houses stay on the
 - **Moon house:** the $1M MRR house is on the moon. The clouded part of the island clears to a launch site, and you buy a rocket that flies to the moon and back.
 - **Hosting:** Supabase is fine (with Vercel).
 - **Spending at scale:** $1B a month funds big civic projects, such as top universities, ventures, a $200M amusement park and infrastructure upgrades.
+
+
+## Settled 2026-10-14
+
+> i honestly think composio is fine its bigger so foudners trust it the real issue is does it give us the data that we need? to power our app. if it does its way more convenient man. anyways once they are completley done (background agents) lets get this launched pleae.s also one thing, i feel like 1m mrr to go moon adn all other benchmarks are masisbely hard and out of reach should we make everything 10x easier, so instead of unlocks that happen at 10k they happen at 1k same for 100 and 1000 etc. etc .also add in a paywall and whatnotas well please. whats a good one do u tihnk £19/yr $29/yr ? what , should we do motnhly? or only arr?
+
+- **Pricing:** $29 a year, annual only (picked from the options offered). No free trial, no refunds.
+- **Difficulty:** every MRR unlock and price at a tenth (moon at $100k MRR). Housing stays at $0.20 of MRR per active user.
+- **Connectors:** Composio if it gives the data we need; otherwise native.
+- Earlier the same day: keep the price in the invite email; a settings panel with the current quality as the default; a guided tour; an inauguration ceremony per founder; fix night-time light flicker.
+
+> studio 10 bungalow 50 tinytown hills 250 estate is 1k island is 5k moon is 10k and then get everything on that wavelength.
+
+- **Final ladder (supersedes "10x easier"):** hacker house $0, studio $10, bungalow $50, TinyTown Hills $250, estate $1k, island $5k, **moon $10k MRR**. Every other MRR gate follows the same curve (anchors 10→10, 100→50, 1k→250, 10k→1k, 100k→5k, 1M→10k), and prices scale with their gate. Housing stays at $0.20 per user; $1 of MRR = $10,000.

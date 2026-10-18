@@ -1,6 +1,6 @@
 # TinyTown: instructions for Claude
 
-**TinyTown is a Tamagotchi for your startup.** A tiny isometric San Francisco Bay, rendered in three.js and driven by a founder's real metrics (Stripe MRR, users, GitHub releases and commits). Every real $1 of MRR becomes $10,000 to spend on the city. Users must be housed ($0.20 of MRR each) or the city decays. The founder's own house climbs from a hacker house to a house on the moon. It's a paid product: $12/month or $99/year, no free trial.
+**TinyTown is a Tamagotchi for your startup.** A tiny isometric San Francisco Bay, rendered in three.js and driven by a founder's real metrics (Stripe MRR, users, GitHub releases and commits). Every real $1 of MRR becomes $10,000 to spend on the city. Users must be housed ($0.20 of MRR each) or the city decays. The founder's own house climbs from a hacker house to a house on the moon (at $10k MRR: studio $10, bungalow $50, Hills $250, estate $1k, island $5k, moon $10k; the owner's ladder of 2026-10-14). It's a paid product: $29 a year, annual only, no free trial, no refunds.
 
 You are picking up a project that already has a lot of history. **Read before you build.**
 
@@ -11,7 +11,8 @@ You are picking up a project that already has a lot of history. **Read before yo
 3. `docs/ARCHITECTURE.md`: the code map, coordinate system, render pipeline, conventions and gotchas.
 4. `docs/DEV_WORKFLOW.md`: running, testing, taking screenshots in a headless cloud container, the showcase, URL params, and how to run parallel agents.
 5. `docs/GAME_DESIGN.md` (every number in the game) and `docs/PRODUCT.md` (the thesis), when your task touches them.
-6. `docs/CONVERSATION_LOG.md`: the owner's messages, verbatim. Read it when you need their exact words or intent.
+6. `docs/OWNER_STEPS.md`: what the owner does to launch (and the secret names they put in the cloud environment). When those secrets are present, run the launch setup (`docs/SETUP.md`, "Automated setup").
+7. `docs/CONVERSATION_LOG.md`: the owner's messages, verbatim. Read it when you need their exact words or intent.
 
 ## Ground rules
 

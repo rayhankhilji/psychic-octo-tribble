@@ -37,9 +37,9 @@ Required: a real interactive scene on a proper rendering engine, with a recognis
 ## Monetisation (hypotheses to test)
 
 - **Free:** one basic world.
-- **Paid, around $8–$12/month:** live integrations, custom themes, historical progression, desktop mode and better sharing.
+- **Paid:** live integrations, custom themes, historical progression, desktop mode and better sharing.
 
-At $9/month, ten paying customers is $1,080 ARR. These are starting price hypotheses, not established willingness to pay.
+The first hypothesis was around $8–$12 a month. **Decided (2026-10-14): $29 a year, annual only**, with no free trial (the demo is free) and no refunds. A hundred paying customers is $2,900 ARR. The price is the owner's call, not established willingness to pay: watch conversion from the plan sheet.
 
 ## The real risk: retention
 

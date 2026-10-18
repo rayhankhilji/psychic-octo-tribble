@@ -1,16 +1,30 @@
-import { CATALOG, HOME_TIERS, HQ_LEVEL_NAMES, ITEMS, REGIONS, SWAP_FEE, type Category, type Item } from '../game/catalog.ts';
+import { CATALOG, HOME_TIERS, HQ_LEVEL_NAMES, ITEMS, REGIONS, SWAP_FEE, type Category, type Item, type Region } from '../game/catalog.ts';
 import { canBuy, decayOf, FREE_HOUSED, money, MRR_PER_USER, type GameState } from '../game/economy.ts';
-import { compact, el, escape, setHtml, setText, shortMrr, Tween } from './dom.ts';
+import { compact, el, escape, reducedMotion, returnFocusOnClose, setHtml, setText, shortMrr, showModal, Tint, Tween } from './dom.ts';
 import { ICON, type IconName } from './icons.ts';
-import { lazyThumbnail, prewarmThumbnails } from './thumbnails.ts';
+import { lazyThumbnail, prewarmThumbnails, setThumbnailBusy } from './thumbnails.ts';
+
+export type Place = 'downtown' | 'hills' | 'pier' | 'marina' | 'airport' | 'island' | 'launchpad';
+
+const PLACES: { id: Place; name: string; hint: string; icon: IconName; region?: Region }[] = [
+  { id: 'downtown', name: 'Downtown', hint: 'Your HQ and Market Street', icon: 'store' },
+  { id: 'hills', name: 'TinyTown Hills', hint: 'Under the sign', icon: 'home' },
+  { id: 'pier', name: "Fisherman's Wharf", hint: 'The pier and its rides', icon: 'heart' },
+  { id: 'marina', name: 'The Marina', hint: 'Yacht berths', icon: 'ship' },
+  { id: 'airport', name: 'Airport', hint: 'Planes and the helipad', icon: 'plane' },
+  { id: 'island', name: 'Your island', hint: 'Out in the bay', icon: 'sun', region: 'island' },
+  { id: 'launchpad', name: 'Launch site', hint: 'The far end of your island', icon: 'rocket', region: 'launchpad' },
+];
 
 export interface GameHandlers {
   onBuild(item: Item, plot?: string): void;
   onPickHome(tier: number, choice: string): void;
   onFlyToMoon(): void;
+  /** Fly the helicopter between the airport and the island. */
+  onFlyHelicopter(): void;
   onZoom(factor: number): void;
   onCancelPlacement(): void;
-  onFocus(what: 'airport' | 'marina' | 'pier' | 'hills' | 'island' | 'launchpad'): void;
+  onFocus(what: Place): void;
 }
 
 type Tab = Category | 'all';
@@ -57,14 +71,20 @@ function level(v: number, good: number, mid: number): 'good' | 'mid' | 'bad' {
  */
 export class GameUI {
   private h: GameHandlers;
+  private root: HTMLElement;
   private state: GameState | null = null;
   private tab: Tab = 'all';
   private plot: string | undefined;
   private ownsRocket = false;
+  /** Where the founder's helicopter is parked (it comes with the island). */
+  private heliAt: 'airport' | 'island' = 'airport';
 
   private card: HTMLElement;
   private treasury: HTMLElement;
   private treasuryTween: Tween;
+  private treasuryTint: Tint;
+  /** When the last purchase came off the treasury: its count is tinted as spending, not as a loss. */
+  private spentAt = -Infinity;
   private net: HTMLElement;
   private mood: HTMLElement;
   private ring: SVGCircleElement;
@@ -73,12 +93,17 @@ export class GameUI {
   private ringWrap: HTMLElement;
   private parts: Record<'housing' | 'upkeep' | 'amenities' | 'momentum', HTMLElement>;
   private housing: HTMLElement;
+  private housingStatus!: HTMLElement;
+  private housingFoot!: HTMLElement;
+  private meter!: HTMLElement;
   private alerts: HTMLElement;
   private fine: HTMLElement;
   private floaters: HTMLElement;
   private miniTreasury: HTMLElement | null;
   private miniTreasuryTween: Tween;
   private miniSat: HTMLElement | null;
+  private miniSatFill: SVGCircleElement | null = null;
+  private miniSatValue: HTMLElement | null = null;
   private lastOwned = -1;
 
   private drawer: HTMLElement;
@@ -88,13 +113,25 @@ export class GameUI {
   private grid: HTMLElement;
   private cards = new Map<string, { root: HTMLElement; action: HTMLElement; sig: string }>();
   private buildBtn: HTMLButtonElement;
+  private drawerReturn: HTMLElement | null = null;
+  private drawerTimer = 0;
 
   private homeDialog: HTMLDialogElement;
+  private homeBody: HTMLElement;
+  private homeLive: HTMLElement;
   private homeSig = '';
+  private homeStatus = '';
+  /** The renovation waiting for a second click, as `tier:option`. */
+  private confirmPick: string | null = null;
+  /** The control to focus after the next re-render (`data-key`). */
+  private focusAfter: string | undefined;
   private banner: HTMLElement;
 
   constructor(root: HTMLElement, side: HTMLElement, tools: HTMLElement, h: GameHandlers) {
     this.h = h;
+    this.root = root;
+    // Thumbnail prewarming waits out the replay (the HUD marks the root while it plays).
+    setThumbnailBusy(() => root.classList.contains('is-playing'));
 
     // ── City card ──────────────────────────────────────────────────────
     this.card = el(
@@ -103,7 +140,7 @@ export class GameUI {
       `<div class="card-head"><span class="eyebrow" data-tip-title="Your treasury" data-tip="Every $1 of real revenue is $10,000 to build with, paid daily. Nothing in the game makes money: the only way to grow your city is to grow your startup.">City treasury</span><span class="chip mood"></span></div>
        <div class="treasury"><b class="num treasury-value">–</b><span class="chip net num"></span><span class="floaters" aria-hidden="true"></span></div>
        <div class="vitals">
-         <div class="ring" tabindex="0">
+         <div class="ring" tabindex="0" role="img" aria-label="Satisfaction">
            <svg viewBox="0 0 50 50" aria-hidden="true"><circle class="ring-track" cx="25" cy="25" r="21"/><circle class="ring-fill" cx="25" cy="25" r="21" stroke-dasharray="${RING.toFixed(2)}" stroke-dashoffset="${RING.toFixed(2)}"/></svg>
            <span class="ring-value num">–</span>
          </div>
@@ -112,12 +149,14 @@ export class GameUI {
            ${(['housing', 'upkeep', 'amenities', 'momentum'] as const).map((k) => `<div class="part" data-part="${k}"><span>${k[0]!.toUpperCase() + k.slice(1)}</span><i><b></b></i></div>`).join('')}
          </div>
        </div>
-       <div class="housing" tabindex="0"></div>
+       <div class="housing" tabindex="0" role="group" aria-label="Housing"></div>
        <div class="alerts"></div>
        <p class="fine num"></p>`,
     );
     this.treasury = this.card.querySelector('.treasury-value')!;
-    this.treasuryTween = new Tween((v) => setText(this.treasury, money(v)), 700);
+    this.treasuryTween = new Tween((v) => setText(this.treasury, money(v)), 650);
+    this.treasuryTint = new Tint(this.card.querySelector('.treasury')!);
+    this.treasuryTween.onMove = (d) => performance.now() - this.spentAt > 400 && this.treasuryTint.show(d > 0 ? 'up' : 'down');
     this.net = this.card.querySelector('.net')!;
     this.mood = this.card.querySelector('.mood')!;
     this.ring = this.card.querySelector('.ring-fill')!;
@@ -126,10 +165,19 @@ export class GameUI {
     this.ringTween = new Tween((v) => {
       setText(this.ringValue, String(Math.round(v)));
       this.ring.style.strokeDashoffset = String(RING * (1 - v / 100));
-    }, 800);
+    }, 700);
+    const ringTint = new Tint(this.ringWrap);
+    this.ringTween.onMove = (d) => ringTint.show(d > 0 ? 'up' : 'down');
     const part = (k: string) => this.card.querySelector<HTMLElement>(`[data-part=${k}]`)!;
     this.parts = { housing: part('housing'), upkeep: part('upkeep'), amenities: part('amenities'), momentum: part('momentum') };
     this.housing = this.card.querySelector('.housing')!;
+    // Built once, so the meter's fill can slide to each new value rather than being redrawn.
+    this.housing.innerHTML = `<div class="housing-row"><span class="housing-label">${ICON.home}Housing</span><span class="housing-status"></span></div>
+       <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-label="Users housed"><i class="meter-housed"></i></div>
+       <div class="housing-foot num"></div>`;
+    this.housingStatus = this.housing.querySelector('.housing-status')!;
+    this.housingFoot = this.housing.querySelector('.housing-foot')!;
+    this.meter = this.housing.querySelector('.meter')!;
     this.alerts = this.card.querySelector('.alerts')!;
     this.fine = this.card.querySelector('.fine')!;
     this.floaters = this.card.querySelector('.floaters')!;
@@ -137,6 +185,15 @@ export class GameUI {
     this.miniTreasury = side.querySelector('[data-mini=treasury]');
     this.miniSat = side.querySelector('[data-mini=sat]');
     this.miniTreasuryTween = new Tween((v) => this.miniTreasury && setText(this.miniTreasury, money(v)));
+    if (this.miniTreasury) {
+      const tint = new Tint(this.miniTreasury);
+      this.miniTreasuryTween.onMove = (d) => performance.now() - this.spentAt > 400 && tint.show(d > 0 ? 'up' : 'down');
+    }
+    if (this.miniSat) {
+      this.miniSat.innerHTML = `<svg viewBox="0 0 50 50" aria-hidden="true"><circle class="ring-track" cx="25" cy="25" r="21"/><circle class="ring-fill" cx="25" cy="25" r="21" stroke-dasharray="${RING.toFixed(2)}" stroke-dashoffset="${RING.toFixed(2)}"/></svg><b class="num"></b>`;
+      this.miniSatFill = this.miniSat.querySelector('.ring-fill');
+      this.miniSatValue = this.miniSat.querySelector('b');
+    }
 
     // ── Toolbar and map ────────────────────────────────────────────────
     const home = el('button', { class: 'btn ghost', type: 'button', 'aria-label': 'Your home (H)', 'data-tip': 'Your home: the ladder from hacker house to the moon (H)' }, `${ICON.home}<span class="label">Your home</span>`);
@@ -152,6 +209,34 @@ export class GameUI {
     zoomOut.addEventListener('click', () => h.onZoom(1 / 1.4));
     map.prepend(zoomIn, zoomOut, el('span', { class: 'map-sep', 'aria-hidden': 'true' }));
 
+    // Places: one click to every corner of the world (the airport and your island are far out).
+    this.placesBtn = el('button', { class: 'btn ghost icon-only', type: 'button', 'aria-label': 'Go to a place (G)', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'data-tip': 'Go to a place (G)' }, ICON.pin);
+    this.placesBtn.addEventListener('click', () => this.togglePlaces());
+    map.append(this.placesBtn);
+    this.placesMenu = el('div', { class: 'places-menu card', role: 'menu', 'aria-label': 'Places', hidden: '' });
+    this.placesMenu.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-place]');
+      if (!btn) return;
+      this.togglePlaces(false);
+      h.onFocus(btn.dataset.place as Place);
+    });
+    this.placesMenu.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        this.togglePlaces(false);
+        this.placesBtn.focus();
+      }
+    });
+    document.addEventListener('pointerdown', (e) => {
+      const t = e.target as Node;
+      if (!this.placesMenu.hidden && !this.placesMenu.contains(t) && !this.placesBtn.contains(t)) this.togglePlaces(false);
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === 'g' || e.key === 'G') this.togglePlaces();
+    });
+    root.append(this.placesMenu);
+
     // ── Build menu ─────────────────────────────────────────────────────
     this.drawer = el('aside', { class: 'drawer card', role: 'dialog', 'aria-label': 'Build', hidden: '' });
     this.drawer.innerHTML = `
@@ -163,8 +248,8 @@ export class GameUI {
         </div>
         <button class="btn ghost icon-only" data-act="close" aria-label="Close (Esc)" data-tip="Close (Esc)">${ICON.close}</button>
       </header>
-      <nav class="tabs" role="tablist" aria-label="Categories">${TABS.map((t) => `<button class="tab" role="tab" type="button" data-tab="${t.id}" aria-selected="false"><span>${t.label}</span><small class="num"></small></button>`).join('')}</nav>
-      <div class="items" role="list"></div>
+      <nav class="tabs" role="tablist" aria-label="Categories">${TABS.map((t) => `<button class="tab" role="tab" type="button" data-tab="${t.id}" aria-selected="false" aria-controls="build-items"><span>${t.label}</span><small class="num"></small></button>`).join('')}</nav>
+      <div class="items" id="build-items" role="list" aria-label="Things to build"></div>
       <p class="drawer-foot">${ICON.coin}<span>Every dollar here came from real revenue.</span></p>`;
     this.drawerTitle = this.drawer.querySelector('.drawer-title')!;
     this.drawerSub = this.drawer.querySelector('.drawer-sub')!;
@@ -183,17 +268,40 @@ export class GameUI {
 
     // ── Your home ──────────────────────────────────────────────────────
     this.homeDialog = el('dialog', { class: 'dialog home-dialog', 'aria-labelledby': 'home-title', tabindex: '-1', autofocus: '' });
+    // The body re-renders as the city changes; the live region stays put so screen readers hear it.
+    this.homeBody = el('div', { class: 'dialog-body' });
+    this.homeLive = el('p', { class: 'sr-only', role: 'status' });
+    this.homeDialog.append(this.homeBody, this.homeLive);
     this.homeDialog.addEventListener('click', (e) => {
       if (e.target === this.homeDialog) return this.homeDialog.close();
       const btn = (e.target as HTMLElement).closest('button');
       if (!btn) return;
+      if (btn.getAttribute('aria-disabled') === 'true') return;
+      if (btn.dataset.ask) {
+        // Renovations cost real treasury: ask once more before spending it.
+        this.confirmPick = btn.dataset.ask;
+        this.focusAfter = `confirm:${btn.dataset.ask}`;
+        return this.renderHome();
+      }
+      if (btn.dataset.act === 'keep') {
+        this.focusAfter = btn.dataset.key?.replace(/^keep:/, 'pick:');
+        this.confirmPick = null;
+        return this.renderHome();
+      }
       if (btn.dataset.pick) {
         const [tier, choice] = btn.dataset.pick.split(':');
+        this.confirmPick = null;
         h.onPickHome(Number(tier), choice!);
+        // Rejected (nothing changed): show the buttons again rather than a stale confirm.
+        this.renderHome();
       }
       if (btn.dataset.act === 'moon') {
         this.homeDialog.close();
         h.onFlyToMoon();
+      }
+      if (btn.dataset.act === 'heli') {
+        this.homeDialog.close();
+        h.onFlyHelicopter();
       }
       if (btn.dataset.act === 'rocket') {
         this.homeDialog.close();
@@ -204,6 +312,11 @@ export class GameUI {
         this.homeDialog.close();
         h.onFocus(btn.dataset.focus as never);
       }
+    });
+    returnFocusOnClose(this.homeDialog, () => {
+      this.confirmPick = null;
+      this.homeStatus = '';
+      setText(this.homeLive, '');
     });
     document.body.append(this.homeDialog);
 
@@ -230,6 +343,29 @@ export class GameUI {
     });
   }
 
+  private placesBtn!: HTMLButtonElement;
+  private placesMenu!: HTMLElement;
+
+  /** Opens or closes the places menu, listing what's open in this city right now. */
+  /** The helicopter landed somewhere: the home dialog offers the flight back. */
+  setHelicopter(at: 'airport' | 'island') {
+    this.heliAt = at;
+    if (this.homeDialog.open) this.renderHome();
+  }
+
+  togglePlaces(open = this.placesMenu.hidden) {
+    if (open) {
+      const g = this.state;
+      const places = PLACES.filter((p) => !p.region || g?.regions[p.region]);
+      this.placesMenu.innerHTML = places
+        .map((p) => `<button class="place" type="button" role="menuitem" data-place="${p.id}">${ICON[p.icon]}<span><b>${p.name}</b><small>${p.hint}</small></span></button>`)
+        .join('');
+    }
+    this.placesMenu.hidden = !open;
+    this.placesBtn.setAttribute('aria-expanded', String(open));
+    if (open) this.placesMenu.querySelector<HTMLButtonElement>('.place')?.focus();
+  }
+
   setState(g: GameState) {
     const prev = this.state;
     if (!prev) {
@@ -241,9 +377,14 @@ export class GameUI {
     // A purchase: show what it cost, floating off the treasury.
     if (prev && this.lastOwned >= 0 && g.owned.length > this.lastOwned && g.t === prev.t) {
       const spent = g.owned.slice(this.lastOwned).reduce((s, o) => s + (ITEMS.get(o.item)?.price ?? 0), 0);
-      if (spent > 0) this.floater(`−${money(spent)}`);
+      if (spent > 0) {
+        this.floater(`−${money(spent)}`);
+        this.spentAt = performance.now();
+        this.treasuryTint.show('spend', true);
+      }
     }
     this.lastOwned = g.owned.length;
+    if (prev) this.notePick(prev, g);
     this.renderCard(prev);
     if (!this.drawer.hidden) this.refreshDrawer();
     if (this.homeDialog.open) this.renderHome();
@@ -253,7 +394,7 @@ export class GameUI {
 
   private renderCard(prev: GameState | null) {
     const g = this.state!;
-    const glide = !!prev && Math.abs(g.t - prev.t) <= 4 * 86_400_000;
+    const glide = !!prev && Math.abs(g.t - prev.t) <= 4 * 86_400_000 && !this.root.classList.contains('is-scrubbing');
     const sat = g.satisfaction;
     const mood = sat.score >= 80 ? 'Thriving' : sat.score >= 60 ? 'Content' : sat.score >= 40 ? 'Uneasy' : 'Unhappy';
     setText(this.mood, mood);
@@ -268,14 +409,16 @@ export class GameUI {
 
     this.ringTween.set(sat.score, glide);
     this.ringWrap.dataset.level = level(sat.score, 60, 40);
+    this.ringWrap.setAttribute('aria-label', `Satisfaction ${sat.score} out of 100, ${mood}. Housing ${Math.round(sat.housing * 100)}%, upkeep ${Math.round(sat.upkeep * 100)}%, amenities ${Math.round(sat.amenities * 100)}%, momentum ${Math.round(sat.momentum * 100)}%.`);
     this.ringWrap.dataset.tipHtml = `<b>Satisfaction ${sat.score}/100 · ${mood}</b><span>Housing counts 35%, upkeep 25%, amenities 20% and MRR momentum 20%. Only real growth raises it.</span>`;
     for (const [k, v] of Object.entries({ housing: sat.housing, upkeep: sat.upkeep, amenities: sat.amenities, momentum: sat.momentum })) {
       const p = this.parts[k as keyof typeof this.parts];
-      p.querySelector<HTMLElement>('b')!.style.width = `${Math.round(v * 100)}%`;
+      p.style.setProperty('--v', `${Math.round(v * 100)}%`);
       p.dataset.level = level(v, 0.75, 0.45);
     }
     if (this.miniSat) {
-      setHtml(this.miniSat, `<svg viewBox="0 0 50 50" aria-hidden="true"><circle class="ring-track" cx="25" cy="25" r="21"/><circle class="ring-fill" cx="25" cy="25" r="21" stroke-dasharray="${RING.toFixed(2)}" stroke-dashoffset="${(RING * (1 - sat.score / 100)).toFixed(2)}"/></svg><b class="num">${sat.score}</b>`);
+      this.miniSatFill!.style.strokeDashoffset = (RING * (1 - sat.score / 100)).toFixed(2);
+      setText(this.miniSatValue!, String(sat.score));
       this.miniSat.dataset.level = level(sat.score, 60, 40);
     }
 
@@ -292,12 +435,12 @@ export class GameUI {
           : 'Waiting for residents';
     const short = need - Math.floor(g.mrr);
     const headroom = g.unhoused > 0 ? (short > 0 ? `Need $${short.toLocaleString('en-US')} more MRR` : 'Homes failing: upkeep is short') : `Room for ${compact(Math.max(0, capacity - pop))} more`;
-    setHtml(
-      this.housing,
-      `<div class="housing-row"><span class="housing-label">${ICON.home}Housing</span><span class="housing-status">${status}</span></div>
-       <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(housedPct)}" aria-label="Users housed"><i class="meter-housed" style="width:${housedPct.toFixed(2)}%"></i><i class="meter-unhoused" style="width:${(100 - housedPct).toFixed(2)}%"></i></div>
-       <div class="housing-foot num"><span>${Math.round(housedPct)}% housed</span><span>${headroom}</span></div>`,
-    );
+    setHtml(this.housingStatus, status);
+    setHtml(this.housingFoot, `<span>${Math.round(housedPct)}% housed</span><span>${headroom}</span>`);
+    // The housed fill slides; whatever it doesn't cover is the striped unhoused share.
+    this.meter.style.setProperty('--v', `${housedPct.toFixed(2)}%`);
+    this.meter.toggleAttribute('data-short', g.unhoused > 0);
+    this.meter.setAttribute('aria-valuenow', String(Math.round(housedPct)));
     this.housing.dataset.state = g.unhoused > 0 ? 'bad' : 'good';
     this.housing.dataset.tipHtml = `<b>$0.20 of MRR houses one user</b><span>${pop.toLocaleString('en-US')} users need $${need.toLocaleString('en-US')} MRR; you're at $${Math.round(g.mrr).toLocaleString('en-US')}. The first ${FREE_HOUSED} are on the house. Short of it, people end up in tents and the city runs down.</span>`;
 
@@ -309,8 +452,8 @@ export class GameUI {
     if (worst) {
       alerts += `<div class="alert" data-tone="${g.maintenance < 60 ? 'bad' : 'warn'}">
         <span class="tile">${ICON[worst.icon]}</span>
-        <div><b>${worst.title}</b><span>Upkeep ${Math.round(g.maintenance)}% covered. Repairs start as soon as it's paid.</span>
-        <ol class="pips" aria-label="Decay stages">${DECAY_STAGES.map((s) => `<li class="${decay[s.key] ? 'on' : ''}" data-tip="${s.title} below ${s.at}% upkeep">${ICON[s.icon]}</li>`).join('')}</ol></div>
+        <div><b>${worst.title}</b><span>Upkeep ${Math.round(g.maintenance)}% covered.<em class="aside"> Repairs start as soon as it's paid.</em></span>
+        <ol class="pips" aria-label="Decay stages">${DECAY_STAGES.map((s) => `<li class="${decay[s.key] ? 'on' : ''}" data-tip="${s.title} below ${s.at}% upkeep">${ICON[s.icon]}<span class="sr-only">${decay[s.key] ? '' : 'Not yet: '}${s.title} below ${s.at}% upkeep</span></li>`).join('')}</ol></div>
       </div>`;
     }
     if (g.unhoused > 0) {
@@ -319,7 +462,8 @@ export class GameUI {
     }
     setHtml(this.alerts, alerts);
     this.card.classList.toggle('alarmed', !!alerts);
-    setText(this.fine, `Income ${money(g.incomePerDay)}/day · Upkeep ${money(g.upkeepPerDay)}/day · HQ: ${HQ_LEVEL_NAMES[g.hqLevel]}`);
+    // Non-breaking spaces keep each separator at the end of its line and "HQ: Tower" in one piece.
+    setText(this.fine, `Income ${money(g.incomePerDay)}/day\u00a0· Upkeep ${money(g.upkeepPerDay)}/day\u00a0· HQ:\u00a0${HQ_LEVEL_NAMES[g.hqLevel]}`);
     this.buildBtn.classList.toggle('has-new', CATALOG.some((i) => !canBuy(g, i)));
   }
 
@@ -351,7 +495,7 @@ export class GameUI {
   }
 
   toggleBuild(plot?: string) {
-    if (!this.drawer.hidden && plot === this.plot) return this.closeBuild();
+    if (!this.drawer.hidden && !this.drawer.classList.contains('closing') && plot === this.plot) return this.closeBuild();
     this.plot = plot;
     this.openBuild();
   }
@@ -359,13 +503,20 @@ export class GameUI {
   private openBuild(tab?: Tab) {
     if (tab) this.tab = tab;
     else if (this.plot && (this.tab === 'vehicles' || this.tab === 'hq')) this.tab = 'all';
-    const wasHidden = this.drawer.hidden;
+    const closing = this.drawer.classList.contains('closing');
+    const wasHidden = this.drawer.hidden || closing;
+    if (wasHidden && !closing) this.drawerReturn = document.activeElement as HTMLElement | null;
+    clearTimeout(this.drawerTimer);
+    this.drawer.classList.remove('closing');
+    this.drawer.inert = false;
     this.drawer.hidden = false;
     this.buildBtn.classList.add('on');
     this.buildBtn.setAttribute('aria-expanded', 'true');
     this.refreshDrawer();
     if (wasHidden) {
       this.grid.scrollTop = 0;
+      // Keyboard users land in the menu (on the selected category), not back at the top of the page.
+      this.tabsEl.querySelector<HTMLElement>('[aria-selected=true]')?.focus({ preventScroll: true });
       for (const c of this.cards.values()) {
         const img = c.root.querySelector('img')!;
         if (!img.dataset.thumb && !img.src) lazyThumbnail(img, `item:${c.root.dataset.id}`);
@@ -374,8 +525,21 @@ export class GameUI {
   }
 
   closeBuild() {
-    if (this.drawer.hidden) return;
-    this.drawer.hidden = true;
+    if (this.drawer.hidden || this.drawer.classList.contains('closing')) return;
+    const hadFocus = this.drawer.contains(document.activeElement);
+    // It slides back toward its edge, then hides; `inert` keeps it out of reach meanwhile.
+    this.drawer.classList.add('closing');
+    this.drawer.inert = true;
+    this.drawerTimer = window.setTimeout(
+      () => {
+        this.drawer.classList.remove('closing');
+        this.drawer.inert = false;
+        this.drawer.hidden = true;
+      },
+      reducedMotion() ? 0 : 200,
+    );
+    if (hadFocus) (this.drawerReturn?.isConnected && this.drawerReturn !== document.body ? this.drawerReturn : this.buildBtn).focus({ preventScroll: true });
+    this.drawerReturn = null;
     this.plot = undefined;
     this.buildBtn.classList.remove('on');
     this.buildBtn.setAttribute('aria-expanded', 'false');
@@ -418,7 +582,7 @@ export class GameUI {
       if (state === 'buy') {
         sig = `buy|${this.plot ?? ''}`;
         const label = this.plot || i.placement.kind !== 'plot' ? 'Buy' : 'Buy & place';
-        html = `<button class="btn primary buy" type="button" data-buy="${i.id}">${label}</button>`;
+        html = `<button class="btn primary buy" type="button" data-buy="${i.id}" aria-label="${label} ${escape(i.name)}, ${money(i.price)}">${label}</button>`;
       } else if (state === 'locked') {
         const pct = Math.min(100, (g.mrr / i.unlock) * 100);
         sig = `locked|${Math.round(pct)}`;
@@ -471,22 +635,50 @@ export class GameUI {
 
   openHome() {
     this.homeSig = '';
+    this.confirmPick = null;
     this.renderHome();
     if (!this.homeDialog.open) {
-      this.homeDialog.showModal();
+      showModal(this.homeDialog);
       const current = this.homeDialog.querySelector<HTMLElement>('.rung.current');
       current?.scrollIntoView({ block: 'center' });
+    }
+  }
+
+  /** A pick the founder just made: say what it cost, in the dialog and on the treasury. */
+  private notePick(prev: GameState, g: GameState) {
+    if (g.t !== prev.t) return;
+    for (const i of g.home.explicit) {
+      if (prev.home.picks[i] === g.home.picks[i] && prev.home.explicit.includes(i)) continue;
+      const t = HOME_TIERS[i]!;
+      const name = t.options.find((o) => o.id === g.home.picks[i])?.name ?? '';
+      const fee = prev.home.explicit.includes(i) ? t.value * SWAP_FEE : 0;
+      if (fee) this.floater(`−${money(fee)}`);
+      this.homeStatus = fee ? `Renovated into the ${name} for ${money(fee)}.` : `You picked the ${name}. Changing it later costs ${money(t.value * SWAP_FEE)}.`;
+      this.focusAfter = `opt:${i}:${g.home.picks[i]}`;
+      setText(this.homeLive, this.homeStatus);
     }
   }
 
   private renderHome() {
     const g = this.state;
     if (!g) return;
-    const sig = JSON.stringify([g.home, this.ownsRocket, Math.floor(g.peakMrr), g.treasury > 0 ? Math.floor(Math.log10(g.treasury) * 4) : 0]);
-    if (sig === this.homeSig) return;
-    this.homeSig = sig;
+    const html = this.homeHtml(g);
+    if (html === this.homeSig) return;
+    this.homeSig = html;
     const ladder = this.homeDialog.querySelector('.ladder');
     const scroll = ladder?.scrollTop ?? 0;
+    // Re-rendering replaces every button: put focus back on the same one (or where a pick landed).
+    const active = document.activeElement as HTMLElement | null;
+    const key = this.focusAfter ?? (active && this.homeDialog.contains(active) ? active.dataset.key : undefined);
+    this.focusAfter = undefined;
+    this.homeBody.innerHTML = html;
+    this.homeDialog.querySelectorAll<HTMLImageElement>('img[data-home]').forEach((img) => lazyThumbnail(img, `home:${img.dataset.home}`));
+    const fresh = this.homeDialog.querySelector('.ladder');
+    if (fresh && scroll) fresh.scrollTop = scroll;
+    if (key && this.homeDialog.open) this.homeDialog.querySelector<HTMLElement>(`[data-key="${key}"]`)?.focus({ preventScroll: true });
+  }
+
+  private homeHtml(g: GameState): string {
 
     const tier = g.home.tier;
     const next = HOME_TIERS[tier + 1];
@@ -508,34 +700,55 @@ export class GameUI {
       const reached = tier >= i;
       const current = tier === i;
       const picked = g.home.picks[i];
+      const many = t.options.length > 1;
+      // The first pick is free; after that, changing your mind is a renovation (see economy.ts).
+      const explicit = g.home.explicit.includes(i);
+      const fee = t.value * SWAP_FEE;
+      const afford = g.treasury >= fee;
       const opts = t.options
         .map((o) => {
           const chosen = picked === o.id && reached;
-          const canPick = reached && t.options.length > 1 && !chosen;
-          const fee = g.home.explicit.includes(i) ? t.value * SWAP_FEE : 0;
-          const afford = g.treasury >= fee;
-          const action = canPick
-            ? `<button class="btn ${fee ? 'ghost' : 'primary'} sm" type="button" data-pick="${i}:${o.id}" ${afford ? '' : 'disabled'}>${fee ? `Renovate · ${money(fee)}` : 'Choose'}</button>`
-            : chosen && t.options.length > 1
-              ? `<span class="chosen-tag">${ICON.check}Your pick</span>`
-              : '';
-          return `<div class="opt ${chosen ? 'chosen' : ''}">
+          const key = `${i}:${o.id}`;
+          const canPick = reached && many && !chosen;
+          let action = '';
+          if (canPick && !explicit) {
+            action = `<button class="btn primary sm" type="button" data-pick="${key}" data-key="pick:${key}" aria-describedby="fee-${i}" aria-label="Choose the ${escape(o.name)}, free">Choose</button>`;
+          } else if (canPick && this.confirmPick === key) {
+            action = `<span class="confirm"><button class="btn primary sm" type="button" data-pick="${key}" data-key="confirm:${key}" aria-describedby="fee-${i}">Spend ${money(fee)} to renovate</button><button class="btn ghost sm" type="button" data-act="keep" data-key="keep:${key}" aria-label="Cancel, keep the ${escape(t.options.find((x) => x.id === picked)?.name ?? 'house you have')}">Cancel</button></span>`;
+          } else if (canPick) {
+            action = `<button class="btn ghost sm renovate" type="button" data-ask="${key}" data-key="pick:${key}" aria-describedby="fee-${i}" aria-label="Renovate into the ${escape(o.name)} for ${money(fee)}"${afford ? '' : ' aria-disabled="true"'}>${ICON.wrench}<span>Renovate · ${money(fee)}</span></button>`;
+          } else if (chosen && many) {
+            action = `<span class="chosen-tag">${ICON.check}${explicit ? 'Your pick' : 'Moved in here'}</span>`;
+          }
+          return `<div class="opt ${chosen ? 'chosen' : ''}"${chosen && many ? ` tabindex="-1" data-key="opt:${key}"` : ''}>
             <span class="thumb"><span class="thumb-fallback">${ICON.home}</span><img alt="" data-home="${o.id}"></span>
             <div class="opt-body"><b>${escape(o.name)}</b><span>${escape(o.blurb)}</span>${action}</div>
           </div>`;
         })
         .join('');
+      let feeNote = '';
+      if (many && reached) {
+        const value = `25% of the house's ${money(t.value)} value`;
+        feeNote = !explicit
+          ? `<p class="rung-fee" id="fee-${i}">${ICON.info}<span>Your first pick is free. After that, changing your mind is a renovation: ${value}, so <b class="num">${money(fee)}</b> from your treasury.</span></p>`
+          : afford
+            ? `<p class="rung-fee" id="fee-${i}">${ICON.wrench}<span>Changing your pick is a renovation: <b class="num">${money(fee)}</b>, ${value}. Paid from your treasury, never real money.</span></p>`
+            : `<p class="rung-fee" id="fee-${i}" data-tone="short">${ICON.lock}<span>A renovation costs <b class="num">${money(fee)}</b> (${value}). Your treasury has ${money(g.treasury)}, so you're <b class="num">${money(fee - g.treasury)}</b> short.</span></p>`;
+      }
       let extra = '';
       if (t.where === 'moon') {
         extra = reached
           ? this.ownsRocket
-            ? `<button class="btn primary" type="button" data-act="moon">${ICON.rocket}<span class="label">Fly to the moon</span></button>`
-            : `<button class="btn ghost" type="button" data-act="rocket">${ICON.rocket}<span class="label">Buy a rocket to get there · ${money(ITEMS.get('rocket')!.price)}</span></button>`
+            ? `<button class="btn primary" type="button" data-act="moon" data-key="moon">${ICON.rocket}<span class="label">Fly to the moon</span></button>`
+            : `<button class="btn ghost" type="button" data-act="rocket" data-key="rocket">${ICON.rocket}<span class="label">Buy a rocket to get there · ${money(ITEMS.get('rocket')!.price)}</span></button>`
           : '';
       }
       if (t.yacht && reached) extra = `<span class="perk">${ICON.ship}Came with a superyacht</span>`;
-      if (t.where === 'hills' && reached && i === 3) extra = `<button class="btn ghost sm" type="button" data-focus="hills">${ICON.pin}<span class="label">Show the Hills</span></button>`;
-      if (t.where === 'island' && reached) extra += `<button class="btn ghost sm" type="button" data-focus="island">${ICON.pin}<span class="label">Show my island</span></button>`;
+      if (t.where === 'hills' && reached && i === 3) extra = `<button class="btn ghost sm" type="button" data-focus="hills" data-key="focus:hills">${ICON.pin}<span class="label">Show the Hills</span></button>`;
+      if (t.where === 'island' && reached) {
+        extra += `<button class="btn ghost sm" type="button" data-focus="island" data-key="focus:island">${ICON.pin}<span class="label">Show my island</span></button>`;
+        extra += `<button class="btn ghost sm" type="button" data-act="heli" data-key="heli">${ICON.heli}<span class="label">${this.heliAt === 'airport' ? 'Fly there from the airport' : 'Fly back to the airport'}</span></button>`;
+      }
       const node = current ? ICON.home : reached ? ICON.check : ICON.lock;
       const region = t.where === 'hills' ? REGIONS.hills : t.where === 'island' ? REGIONS.island : t.where === 'moon' ? REGIONS.launchpad : null;
       return `<li class="rung ${current ? 'current' : reached ? 'past' : 'future'}">
@@ -548,24 +761,21 @@ export class GameUI {
             ${t.options.length > 1 ? `<span class="choice">Pick ${t.options.length === 2 ? 'one of two' : `one of ${t.options.length}`}</span>` : ''}
           </div>
           <div class="opts" data-count="${t.options.length}">${opts}</div>
+          ${feeNote}
           ${extra ? `<div class="rung-extra">${extra}</div>` : ''}
           ${!reached && region && region.gate === t.mrr ? `<p class="rung-note">${escape(region.name)} opens at the same time.</p>` : ''}
         </div>
       </li>`;
     }).join('');
 
-    this.homeDialog.innerHTML = `
-      <div class="dialog-body">
+    return `
         <header class="dialog-head">
           <span class="tile tone-brand">${ICON.home}</span>
-          <div><h2 id="home-title">Your home</h2><p>You live in your <b>${escape(curName)}</b>. Every extra digit of MRR moves you up; peak MRR counts, so a bad month never evicts you.</p></div>
-          <button class="btn ghost icon-only close" type="button" data-act="close" aria-label="Close">${ICON.close}</button>
+          <div><h2 id="home-title">Your home</h2><p>You live in your <b>${escape(curName)}</b>. Each MRR milestone moves you up, all the way to the moon at ${shortMrr(HOME_TIERS[HOME_TIERS.length - 1]!.mrr)} MRR; peak MRR counts, so a bad month never evicts you.</p></div>
+          <button class="btn ghost icon-only close" type="button" data-act="close" data-key="close" aria-label="Close">${ICON.close}</button>
         </header>
         ${nextHtml}
-        <ol class="ladder">${rows}</ol>
-      </div>`;
-    this.homeDialog.querySelectorAll<HTMLImageElement>('img[data-home]').forEach((img) => lazyThumbnail(img, `home:${img.dataset.home}`));
-    const fresh = this.homeDialog.querySelector('.ladder');
-    if (fresh && scroll) fresh.scrollTop = scroll;
+        ${this.homeStatus ? `<p class="home-status">${ICON.check}<span>${escape(this.homeStatus)}</span></p>` : ''}
+        <ol class="ladder" aria-label="Your house, one rung per MRR milestone">${rows}</ol>`;
   }
 }
