@@ -12,9 +12,9 @@ import { SB_KEYS, combine, fakeStripe, fakeSupabase, fakeVercel, type FakeSupaba
  */
 
 const PEM = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+// Fake keys are joined at runtime so no literal here looks like a real one to secret scanners.
 const ENV = {
   SUPABASE_ACCESS_TOKEN: 'sbp_token',
-// Fake keys are joined at runtime so no literal here looks like a real one to secret scanners.
   VERCEL_TOKEN: 'vercel_token',
   STRIPE_SECRET_KEY: ['sk', 'test', 'TESTkeyTESTkey1234567890'].join('_'),
   GITHUB_APP_ID: '123456',
