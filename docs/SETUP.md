@@ -6,6 +6,24 @@ How it fits together is in `docs/INFRA.md`. You don't need to read it to follow 
 
 > **Never paste a secret key into a chat, an issue, a commit or a screenshot.** Secret values go in exactly two places: Vercel's environment variable settings (for the live site) and a local `.env` file on your own machine (for development, already git-ignored). If one leaks, roll it in the provider's dashboard and update Vercel.
 
+## Automated setup
+
+Most of this page can be done by one command, once the owner has made the Supabase and Vercel projects and put the tokens in the cloud environment's secrets (`docs/OWNER_STEPS.md`, Part 1):
+
+```bash
+node tools/launch.mjs --supabase-ref <ref> --vercel-project <name> --team <team-slug> --dry-run   # read only: what would happen
+node tools/launch.mjs --supabase-ref <ref> --vercel-project <name> --team <team-slug> --apply     # do it, deploy a preview, check it
+```
+
+It runs, in order: Stripe (`tools/stripe-setup.mjs`: price, coupon, webhook, portal), Supabase (`tools/supabase-setup.mjs`: migrations 0001–0009 recorded in Supabase's own migration history so CI and `supabase db push` agree, Auth URLs, email sign-in, the six templates, Resend SMTP and launch rate limits), Vercel (`tools/vercel-setup.mjs`: production branch `main`, Node 22, every environment variable for Production and Preview, and TinyTown's own four secrets generated once and never rotated), then a deploy and smoke checks of `/api/config` and `/api/health`. It ends with a checklist of what's left by hand. Values pass between the steps in memory: nothing secret is printed or written to disk. Every step reads first, so running it again changes nothing that's already right.
+
+- **Read from the environment:** `SUPABASE_ACCESS_TOKEN`, `VERCEL_TOKEN`, `STRIPE_SECRET_KEY` (test mode, `sk_test_…`; goes to Preview, and to Production until you go live). When they exist: `STRIPE_LIVE_SECRET_KEY` (with `--live`, Production only), `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY` (the `.pem` text as is), `STRIPE_APP_CLIENT_ID`, `RESEND_API_KEY`. A missing one becomes a line on the checklist.
+- **Generated, never shown:** `TOKEN_ENCRYPTION_KEY`, `STATE_SECRET`, `CRON_SECRET`, `HEALTH_SECRET`, separately for Production and Preview, only where Vercel has none.
+- **Useful flags:** `--domain tinytown.app` once a domain is on the Vercel project; `--email-from "TinyTown <hello@mail.yourdomain.com>"` with `RESEND_API_KEY` for custom SMTP; `--admin-emails you@…`; `--live` to go live; `--production` to deploy `main` to Production; `--no-deploy`; `--mark-applied 0001` for a migration pasted into the SQL Editor earlier. `node tools/launch.mjs --help` lists them all.
+- Each tool also runs on its own with the same safety (dry run unless `--apply`), e.g. `node tools/supabase-setup.mjs --ref <ref> --site-url https://YOUR-DOMAIN --apply`. `tools/stripe-setup.mjs` keeps its own behaviour: it applies unless `--dry-run`, and prints the values to paste.
+
+The sections below are the same work by hand, and what to check when something needs a person.
+
 ## What you need to decide or pay for first
 
 - **The domain.** Everything below needs the final address (Stripe, GitHub and Supabase all store it). You can start on the free `your-project.vercel.app` address and add a domain later, but then you redo the "URLs to paste" steps. Nothing is bought without your say-so.
