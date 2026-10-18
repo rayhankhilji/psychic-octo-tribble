@@ -11,7 +11,8 @@ You are picking up a project that already has a lot of history. **Read before yo
 3. `docs/ARCHITECTURE.md`: the code map, coordinate system, render pipeline, conventions and gotchas.
 4. `docs/DEV_WORKFLOW.md`: running, testing, taking screenshots in a headless cloud container, the showcase, URL params, and how to run parallel agents.
 5. `docs/GAME_DESIGN.md` (every number in the game) and `docs/PRODUCT.md` (the thesis), when your task touches them.
-6. `docs/CONVERSATION_LOG.md`: the owner's messages, verbatim. Read it when you need their exact words or intent.
+6. `docs/OWNER_STEPS.md`: what the owner does to launch (and the secret names they put in the cloud environment). When those secrets are present, run the launch setup (`docs/SETUP.md`, "Automated setup").
+7. `docs/CONVERSATION_LOG.md`: the owner's messages, verbatim. Read it when you need their exact words or intent.
 
 ## Ground rules
 

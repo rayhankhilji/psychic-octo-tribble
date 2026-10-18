@@ -30,6 +30,8 @@ Built and committed (2026-10-13): accounts, billing, the paywall, onboarding, th
 
 ## P0: Before launch (2026-10-14)
 
+**The owner's step-by-step is `docs/OWNER_STEPS.md`** (accounts, the three tokens in the environment's secrets, the GitHub App, the Stripe App, email, the domain, live mode). Claude does the rest.
+
 - [ ] **Owner: connect the new Supabase and Vercel** (connectors at claude.ai/customize/connectors, or `SUPABASE_ACCESS_TOKEN` / `VERCEL_TOKEN` in the environment's secrets), then a new session can create the database, run migrations 0001–0008, set env vars and deploy.
 - [ ] **Owner: say "push to main"** (a production deploy; `main` is behind this branch). Switch GitHub's default branch to `main`.
 - [ ] **A real-device pass** on a GPU laptop and a phone: the flicker fix, the grand opening, the tour, settings, the black-at-night phone render seen once in SwiftShader, the growth clip's MP4 path on Safari, sound by ear.
